@@ -1,0 +1,300 @@
+Build a professional AI-powered trading platform web app.
+
+IMPORTANT:
+Use REAL-TIME market prices and REAL live candles.
+
+====================================================
+TECH STACK
+==========
+
+Frontend:
+
+* React
+* TypeScript
+* Vite
+* TradingView Lightweight Charts
+
+Backend:
+
+* Python FastAPI
+* WebSocket server
+* PostgreSQL
+* Redis
+
+====================================================
+CHART REQUIREMENTS
+==================
+
+Use:
+TradingView Lightweight Charts
+
+The chart must:
+
+* display live candles
+* update in real time
+* support 5-minute timeframe
+* support zoom and drag smoothly
+* feel similar to TradingView
+
+IMPORTANT:
+The chart must stay smooth and high performance.
+
+====================================================
+MARKET DATA API
+===============
+
+Use Alpaca Markets API for live US stock market data.
+
+Requirements:
+
+* real-time prices
+* live candles
+* WebSocket streaming
+* NASDAQ stocks
+* SPY
+* QQQ
+* TSLA
+* NVDA
+* META
+
+Use Alpaca WebSocket streaming for live updates.
+
+====================================================
+LIVE DATA ENGINE
+================
+
+Create:
+
+* live candle stream
+* real-time price updates
+* OHLCV aggregation
+* 5-minute bar builder
+* WebSocket event broadcasting
+
+====================================================
+AI SIGNAL ENGINE
+================
+
+Create an AI-enhanced signal engine.
+
+The AI engine must analyze:
+
+* candlestick patterns
+* price action
+* market structure
+* trend direction
+* momentum
+* breakout/retest
+* liquidity sweeps
+* volume
+* volatility
+* VWAP
+* RSI
+* EMA
+* MACD
+
+IMPORTANT:
+These indicators must be analyzed internally only.
+
+DO NOT display them visually on the chart.
+
+====================================================
+VISUAL DESIGN
+=============
+
+The chart must remain CLEAN and MINIMAL.
+
+ONLY display:
+
+* LONG entry signal
+* SHORT entry signal
+* EXIT signal
+* STOP LOSS line
+
+DO NOT display:
+
+* EMA lines
+* RSI panels
+* MACD panels
+* VWAP lines
+* debug text
+* excessive labels
+* clutter
+
+====================================================
+ENTRY SIGNAL STYLE
+==================
+
+LONG:
+
+* small green LuxAlgo-style arrow below candle
+
+SHORT:
+
+* small red LuxAlgo-style arrow above candle
+
+EXIT:
+
+* elegant "$" icon
+
+STOP LOSS:
+
+* one thin clean line only
+
+====================================================
+IMPORTANT CHART BEHAVIOR
+========================
+
+Signals MUST:
+
+* stay attached to candles
+* stay attached to prices
+* scale correctly during zoom
+* move naturally with chart drag
+* NEVER float separately from chart candles
+
+====================================================
+AI ADAPTIVE LOGIC
+=================
+
+Implement adaptive AI-like behavior.
+
+Use:
+
+* dynamic confidence scoring
+* adaptive volatility filters
+* trend regime detection
+* anti-chop filtering
+* adaptive signal thresholds
+* signal quality scoring
+
+The AI engine should:
+
+* reduce false signals
+* avoid sideways markets
+* improve entry timing
+* improve trade quality over time
+
+====================================================
+SELF-LEARNING SYSTEM
+====================
+
+Create:
+
+* trade history database
+* signal result tracking
+* win/loss tracking
+* confidence tracking
+
+Store:
+
+* entry
+* exit
+* SL
+* TP
+* outcome
+* confidence
+* market conditions
+
+Create infrastructure for future model retraining.
+
+====================================================
+BACKEND REQUIREMENTS
+====================
+
+Build:
+
+* FastAPI backend
+* WebSocket server
+* live market ingestion
+* signal engine
+* signal broadcasting
+* REST API
+* PostgreSQL integration
+* Redis caching
+
+====================================================
+FRONTEND REQUIREMENTS
+=====================
+
+Frontend must include:
+
+* live chart
+* watchlist
+* real-time price updates
+* signal overlays
+* entry/exit markers
+* active trade display
+* clean dark institutional UI
+
+====================================================
+SIGNAL LOGIC
+============
+
+Signals must trigger only:
+
+* after candle close confirmation
+* during active market sessions
+* with strong confidence
+* with trend confirmation
+* with volume confirmation
+
+Reduce weak signals heavily.
+
+====================================================
+NO REPAINT
+==========
+
+Signals must:
+
+* never repaint
+* never move after confirmation
+* remain historically accurate
+
+====================================================
+PROJECT STRUCTURE
+=================
+
+Create clean production-grade architecture:
+
+frontend/
+backend/
+ai_engine/
+websocket/
+database/
+signals/
+market_data/
+utils/
+
+====================================================
+SECURITY
+========
+
+Use:
+
+* environment variables
+* secure API key handling
+* rate limiting
+* input validation
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing:
+
+* verify frontend runs correctly
+* verify backend runs correctly
+* verify WebSocket updates work
+* verify Alpaca connection works
+* verify chart updates live
+* verify signals render correctly
+* verify there are no syntax errors
+* verify TypeScript builds successfully
+* verify Python backend runs correctly
+
+DO NOT leave broken code.
+
+DO NOT leave placeholder code.
+
+Build a real working MVP trading platform.
