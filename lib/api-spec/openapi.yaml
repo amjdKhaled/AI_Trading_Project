@@ -3,20 +3,25 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Trading Signal Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: symbols
+    description: Watchlist symbol management
+  - name: signals
+    description: Trading signals
+  - name: bars
+    description: OHLCV bar data
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +29,133 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /symbols:
+    get:
+      operationId: listSymbols
+      tags: [symbols]
+      summary: List watchlist symbols
+      responses:
+        "200":
+          description: List of watchlist symbols
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Symbol"
+    post:
+      operationId: addSymbol
+      tags: [symbols]
+      summary: Add symbol to watchlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SymbolInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Symbol"
+
+  /symbols/{id}:
+    delete:
+      operationId: removeSymbol
+      tags: [symbols]
+      summary: Remove symbol from watchlist
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /signals:
+    get:
+      operationId: listSignals
+      tags: [signals]
+      summary: List signals with optional symbol filter
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: List of signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Signal"
+
+  /signals/stats:
+    get:
+      operationId: getSignalStats
+      tags: [signals]
+      summary: Get aggregated signal statistics
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signal statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignalStats"
+
+  /bars:
+    get:
+      operationId: listBars
+      tags: [bars]
+      summary: Get OHLCV bars for a symbol
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: timeframe
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "5m"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 200
+      responses:
+        "200":
+          description: List of OHLCV bars
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bar"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +166,117 @@ components:
       required:
         - status
 
+    Symbol:
+      type: object
+      required: [id, symbol, name, addedAt]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        name:
+          type: string
+        addedAt:
+          type: string
+          format: date-time
+
+    SymbolInput:
+      type: object
+      required: [symbol, name]
+      properties:
+        symbol:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+
+    Signal:
+      type: object
+      required: [id, signalId, symbol, timeframe, barTime, side, entryPrice, slPrice, tpPrice, confidence, riskTag, state, createdAt]
+      properties:
+        id:
+          type: integer
+        signalId:
+          type: string
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        barTime:
+          type: string
+          format: date-time
+        side:
+          type: string
+          enum: [long, short]
+        entryPrice:
+          type: number
+        slPrice:
+          type: number
+        tpPrice:
+          type: number
+        currentSlPrice:
+          type: ["number", "null"]
+        confidence:
+          type: integer
+        riskTag:
+          type: string
+          enum: [Safe, Medium, Danger]
+        state:
+          type: string
+          enum: [active, tp_hit, sl_hit, expired]
+        exitPrice:
+          type: ["number", "null"]
+        exitReason:
+          type: ["string", "null"]
+        exitBarTime:
+          type: ["string", "null"]
+          format: date-time
+        rrRatio:
+          type: ["number", "null"]
+        pattern:
+          type: ["string", "null"]
+        regime:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    SignalStats:
+      type: object
+      required: [total, active, tp_hit, sl_hit, expired, winRate, avgConfidence, avgRR]
+      properties:
+        total:
+          type: integer
+        active:
+          type: integer
+        tp_hit:
+          type: integer
+        sl_hit:
+          type: integer
+        expired:
+          type: integer
+        winRate:
+          type: number
+        avgConfidence:
+          type: number
+        avgRR:
+          type: number
+
+    Bar:
+      type: object
+      required: [time, open, high, low, close, volume]
+      properties:
+        time:
+          type: integer
+          description: Unix timestamp in seconds
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number

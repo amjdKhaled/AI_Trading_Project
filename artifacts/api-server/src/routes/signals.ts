@@ -1,0 +1,69 @@
+import { Router, type IRouter } from "express";
+import { eq, desc } from "drizzle-orm";
+import { db, signalsTable } from "@workspace/db";
+import {
+  ListSignalsQueryParams,
+  ListSignalsResponse,
+  GetSignalStatsQueryParams,
+  GetSignalStatsResponse,
+} from "@workspace/api-zod";
+
+const router: IRouter = Router();
+
+router.get("/signals", async (req, res): Promise<void> => {
+  const query = ListSignalsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+
+  const { symbol, limit } = query.data;
+  let q = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
+  if (symbol) {
+    q = q.where(eq(signalsTable.symbol, symbol)) as typeof q;
+  }
+  const rows = await q.limit(limit ?? 50);
+  res.json(ListSignalsResponse.parse(rows));
+});
+
+router.get("/signals/stats", async (req, res): Promise<void> => {
+  const query = GetSignalStatsQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+
+  const { symbol } = query.data;
+  let q = db.select().from(signalsTable);
+  if (symbol) {
+    q = q.where(eq(signalsTable.symbol, symbol)) as typeof q;
+  }
+  const rows = await q;
+
+  const total = rows.length;
+  const active = rows.filter((r) => r.state === "active").length;
+  const tp_hit = rows.filter((r) => r.state === "tp_hit").length;
+  const sl_hit = rows.filter((r) => r.state === "sl_hit").length;
+  const expired = rows.filter((r) => r.state === "expired").length;
+  const closed = tp_hit + sl_hit;
+  const winRate = closed > 0 ? tp_hit / closed : 0;
+  const avgConfidence =
+    total > 0 ? rows.reduce((s, r) => s + r.confidence, 0) / total : 0;
+  const rrs = rows.filter((r) => r.rrRatio != null).map((r) => r.rrRatio!);
+  const avgRR = rrs.length > 0 ? rrs.reduce((s, v) => s + v, 0) / rrs.length : 0;
+
+  res.json(
+    GetSignalStatsResponse.parse({
+      total,
+      active,
+      tp_hit,
+      sl_hit,
+      expired,
+      winRate: Math.round(winRate * 100) / 100,
+      avgConfidence: Math.round(avgConfidence * 10) / 10,
+      avgRR: Math.round(avgRR * 100) / 100,
+    })
+  );
+});
+
+export default router;

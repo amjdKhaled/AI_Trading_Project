@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Trading Signals"
+version = "1.0.0"
+id = "artifacts/trading-signals"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22428
+
+[services.development]
+run = "pnpm --filter @workspace/trading-signals run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/trading-signals", "run", "build" ]
+publicDir = "artifacts/trading-signals/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22428"
+BASE_PATH = "/"
