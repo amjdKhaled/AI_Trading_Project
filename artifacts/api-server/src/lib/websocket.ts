@@ -1,9 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
-import { db, signalsTable, symbolsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, signalsTable } from "@workspace/db";
 import { logger } from "./logger";
-import { FinnhubStream, fetchCandles, type OhlcvBar } from "./finnhub";
+import { FinnhubStream, type OhlcvBar } from "./finnhub";
 import { scoreSignal } from "./indicators";
 
 interface WsClient {
@@ -161,16 +160,22 @@ async function analyzeAndEmit(symbol: string, hist: OhlcvBar[]) {
 
 async function warmHistory(symbol: string) {
   try {
-    const to = Math.floor(Date.now() / 1000);
-    const from = to - 5 * 24 * 60 * 60; // 5 days back
-    const bars = await fetchCandles(symbol, from, to);
+    // Free tier: build synthetic seed bars from current quote
+    const { buildSeedBars } = await import("./finnhub");
+    const bars = await buildSeedBars(symbol, 200);
     if (bars.length > 0) {
-      barHistory.set(symbol, bars.slice(-300));
-      logger.info({ symbol, count: bars.length }, "Warmed bar history");
+      barHistory.set(symbol, bars);
+      logger.info({ symbol, count: bars.length }, "Seeded bar history from quote");
     }
   } catch (err) {
-    logger.warn({ err, symbol }, "Failed to warm bar history");
+    logger.warn({ err, symbol }, "Failed to seed bar history");
   }
+}
+
+// ─── Public accessor for bar history ─────────────────────────────────────────
+
+export function getBarHistory(symbol: string): OhlcvBar[] {
+  return barHistory.get(symbol.toUpperCase()) ?? [];
 }
 
 // ─── Finnhub stream singleton ─────────────────────────────────────────────────

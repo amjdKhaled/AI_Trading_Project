@@ -31,7 +31,7 @@ export function rsi(closes: number[], period = 14): number {
 }
 
 export function atr(bars: OhlcvBar[], period = 14): number {
-  if (bars.length < period + 1) return bars[bars.length - 1]?.close * 0.002 ?? 1;
+  if (bars.length < period + 1) return (bars[bars.length - 1]?.close ?? 500) * 0.002;
   const trs: number[] = [];
   for (let i = bars.length - period; i < bars.length; i++) {
     const prev = bars[i - 1].close;

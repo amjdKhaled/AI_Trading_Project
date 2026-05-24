@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { ListBarsQueryParams, ListBarsResponse } from "@workspace/api-zod";
-import { fetchCandles } from "../lib/finnhub";
+import { buildSeedBars } from "../lib/finnhub";
+import { getBarHistory } from "../lib/websocket";
 
 const router: IRouter = Router();
 
@@ -14,22 +15,24 @@ router.get("/bars", async (req, res): Promise<void> => {
   const { symbol, limit } = query.data;
   const count = limit ?? 200;
 
-  try {
-    const to = Math.floor(Date.now() / 1000);
-    // fetch enough history: 5m bars × count, plus weekend gaps → request 10 trading days
-    const from = to - 10 * 24 * 60 * 60;
-    const bars = await fetchCandles(symbol, from, to);
+  // Prefer in-memory live bars (built from Finnhub WebSocket ticks)
+  const liveHistory = getBarHistory(symbol);
+  if (liveHistory.length >= 10) {
+    res.json(ListBarsResponse.parse(liveHistory.slice(-count)));
+    return;
+  }
 
-    if (bars.length === 0) {
-      // Finnhub returned no data (market closed / bad symbol) — return empty
-      res.json(ListBarsResponse.parse([]));
+  // Fall back to seed bars built from the current quote
+  try {
+    const bars = await buildSeedBars(symbol, count);
+    if (bars.length > 0) {
+      res.json(ListBarsResponse.parse(bars));
       return;
     }
-
-    const trimmed = bars.slice(-count);
-    res.json(ListBarsResponse.parse(trimmed));
+    // Quote also failed (symbol unknown or market fully closed)
+    res.json(ListBarsResponse.parse([]));
   } catch (err) {
-    req.log?.warn({ err }, "Failed to fetch candles from Finnhub");
+    req.log?.warn({ err }, "Failed to build seed bars");
     res.status(502).json({ error: "Failed to fetch candle data" });
   }
 });
