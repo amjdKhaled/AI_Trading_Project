@@ -1,0 +1,298 @@
+
+Production Architecture for an AI-Enhanced TradingView-Integrated Signal Platform
+Executive summary
+What you want is technically feasible, but only if the system is split into separate layers: market data ingestion, deterministic signal logic, ML scoring, and chart rendering. TradingView’s website libraries do not include market data by default, so your platform must own the datafeed and the real-time event pipeline. For the chart itself, Lightweight Charts is open-source under Apache 2.0 and designed for streaming financial charts, while Advanced Charts is much closer to the TradingView/Supercharts experience but comes with company/public-project access constraints and stronger distribution rules. 
+
+For your specific goal—minimal LuxAlgo-style visuals, signals anchored to candles, hidden background analytics, and non-repainting entry/exit/SL on live 5-minute NASDAQ charts—the best first production stack is: React + TypeScript on the frontend, Lightweight Charts as the default renderer, FastAPI + Python for the real-time backend and ML inference, Redis Streams for durable event fan-out, PostgreSQL + TimescaleDB for bars/features/signals/backtests, and XGBoost or LightGBM for confidence scoring with MLflow for model versioning. If you later need full TradingView look-and-feel, built-in studies, and richer drawing APIs, Advanced Charts is the right upgrade path. 
+
+The non-repaint requirement should be implemented as an event-sourcing contract, not as a visual trick. Entries must be generated only from finalized candles; higher-timeframe confirmations must use only closed higher-timeframe bars; emitted signal events must be immutable; and the chart overlay must anchor by candle timestamp and price, never by viewport-relative or floating UI coordinates. TradingView’s own docs explicitly distinguish bar-tethered drawings from floating tables, and they explicitly document that createAnchoredShape() is fixed to the chart viewport rather than to bars. 
+
+The most important architectural conclusion is this: Pine Script should be treated as optional display-and-alert glue, not as the AI runtime. TradingView supports outbound alert/webhook flows and predefined request.* data sources, but the controllable surface for real external AI/ML is your own website and backend. In practice, your website becomes the primary charting/trading UI, and Pine becomes a thin mirror for users who still want TradingView-native visuals or alert routing. 
+
+Architecture and recommended stack
+The cleanest production design is an event-driven architecture in which the frontend never computes trading logic. The browser only renders candles and immutable signal events; the backend owns data normalization, bar finalization, features, signal generation, machine-learning scoring, persistence, and fan-out. This separation is what makes “anchored to candles,” “stable during zoom/scroll,” and “non-repainting” achievable in production rather than just cosmetically approximated. 
+
+Market Data Provider
+Massive / Alpaca / Finnhub / Twelve Data
+
+Ingest Workers
+WebSocket + REST fallback
+
+Redis Streams
+market_events
+
+Bar Builder
+5m finalized bars
+
+Feature Engine
+OHLCV + indicators + candle/pattern detectors
+
+Deterministic Rule Engine
+ORB / trend / mean-reversion
+
+ML Scorer + Calibrator
+confidence / risk tag
+
+PostgreSQL + TimescaleDB
+bars, features, signals, outcomes
+
+Signal Publisher
+
+FastAPI Gateway
+REST + WebSocket
+
+React + TypeScript Frontend
+Lightweight Charts / Advanced Charts
+
+Webhook Targets
+broker / Telegram / automation
+
+Trainer + Backtester
+batch retrain / walk-forward
+
+MLflow Model Registry
+
+
+
+Show code
+For the embedded chart layer, the choice should be deliberate rather than aesthetic:
+
+Option	Best fit	Main advantages	Main constraints
+Lightweight Charts	Default choice for your first production build	Small bundle, open-source, no company-license friction, full control of custom overlays, excellent for entry/exit/SL-only rendering	Fewer built-in studies/drawings than Advanced Charts
+Advanced Charts	When you need the closest TradingView UX, built-in TA tools, richer drawing API, and custom datafeed integration	TradingView-style experience, many built-in indicators/drawings, Datafeed API, drawing APIs	Access is intended for companies/public projects, free mode requires attribution/public environment, library files are not redistributable in public repos
+Trading Platform	Only if you later want chart trading, positions, and order-entry UI	Adds Broker API and trading UI on top of Advanced Charts	More complex integration and broker-side implementation
+
+These distinctions come directly from TradingView’s official product and documentation pages. Lightweight Charts is open-source and streaming-friendly; Advanced Charts/Trading Platform are hosted by you, use your data through the Datafeed API, and have explicit access/distribution constraints. 
+
+The recommended baseline stack is:
+
+Layer	Recommendation	Why
+Frontend	React + TypeScript	Strong ecosystem, easy state management, clean component boundaries for chart, watchlist, trade state, and alerts
+Chart	Lightweight Charts first; Advanced Charts later if needed	Minimal overlay requirement favors control and simplicity; Advanced Charts is the upgrade path
+API / realtime	FastAPI + Python WebSockets	Native fit with Python ML stack and documented WebSocket support
+Stream bus	Redis Streams	Durable append-only event log with consumer groups
+Primary DB	PostgreSQL + TimescaleDB	Strong OLTP + time-series partitioning + rollups
+Research warehouse	ClickHouse later	Add when analytics volume outgrows Postgres/Timescale comfort
+ML	XGBoost / LightGBM, with scikit-learn baselines	Fast, strong on tabular market features, interpretable enough for production trading signals
+Online adaptation	River	Appropriate for bounded online calibration/drift adaptation
+Model ops	MLflow	Model versions, aliases, metadata, registry
+Observability	OpenTelemetry + Prometheus + Alertmanager + Loki/Grafana	Traces, metrics, alerts, logs, and routing
+
+FastAPI’s production-oriented API model and WebSocket support are official and mature; Redis Streams is explicitly documented as an append-only log with consumer groups; Redis Pub/Sub is explicitly at-most-once and therefore unsuitable as the sole source of truth for signals; TimescaleDB hypertables and continuous aggregates are designed for time-series partitioning and rollups; and ClickHouse is explicitly positioned for large time-series analytics workloads. 
+
+Data sources and signal pipeline
+For live US equities, the provider decision is not just about price; it is about entitlements, streaming granularity, rate limits, and whether you intend public redistribution on your website.
+
+Provider	Real-time US equities WebSocket	Indicative price	Latency class	Key limits / caveats	Best production fit	Source
+Massive / Polygon	Trades, quotes, aggregates via WebSocket; real-time on Stocks Advanced	$199/mo for Stocks Advanced; lower plans delayed	Low	Starter/Developer are delayed for many stock WS feeds; individual-plan wording is oriented to individual use	Best pure market-data choice if your product is data-first	
+Alpaca Market Data	Real-time stock WS; IEX on free/basic, SIP/all exchanges on Algo Trader Plus	Free basic; $99/mo Algo Trader Plus	Low	Basic is IEX-only and limited; Plus gives all US exchanges, unlimited WS subscriptions, 10,000 historical API calls/min	Best if you also want paper/live brokerage integration	
+Finnhub	Real-time trade WS	Paid market-data plans from $49.99/mo	Low to moderate	Lower plans show 50-symbol WS limit; one WS connection per API key; 30 API calls/sec ceiling	Good for lean research or secondary/fallback feeds	
+Twelve Data	WebSocket + REST	Grow $29/mo, Pro $99/mo, Ultra $329/mo	Moderate	Credit-based WS model; free tier capped at 800/day, low WS credits on lower tiers	Good for prototyping or broader multi-asset coverage	
+
+For your use case, the best initial recommendation is either Massive/Polygon Advanced if the platform is primarily a live charting/signal product, or Alpaca Algo Trader Plus if you want one vendor to cover both live market data and eventual paper/live execution paths. In both cases, budget early for commercial/public-use data licensing review, because exchange redistribution is a real compliance issue, not a later UX detail. Nasdaq’s own policies distinguish distributor administration obligations for real-time proprietary data, and vendor pricing pages for some individual plans are explicitly framed as personal/individual use. 
+
+The signal pipeline should be deterministic first and probabilistic second:
+
+Normalize raw provider events into one internal schema.
+Build 5-minute candles server-side and maintain partial bars in memory only.
+On bar close, finalize the candle and compute all features from closed data only.
+Run deterministic candidate generation: trend-follow, opening-range breakout/retest, mean-reversion, candle/pattern confirmation, session filters, volatility gates, and market-context filters.
+Run an ML confidence model that estimates the probability that the setup reaches TP before SL within the allowed holding horizon.
+Apply cooldown and duplicate suppression.
+Emit one immutable signal.new event.
+Render only entry/exit/SL in the client, while keeping all indicators hidden in the backend.
+The data-bus choice matters here. Redis Streams is the right fan-out primitive because it behaves like an append-only log and supports consumer groups. Bare Pub/Sub should not be the system of record because Redis explicitly documents its at-most-once delivery semantics. 
+
+The feature set should come from structured bar data, not chart screenshots. For 5-minute NASDAQ trading, the production feature set should include OHLCV derivatives, EMAs, VWAP distance, ATR, RVOL, RSI, MACD, gap state, opening-range state, previous-day/high-low interactions, wick/body geometry, squeeze/expansion features, candle labels, liquidity sweeps/reclaims, and optional context from QQQ/SPY/VIX or sector ETFs. Your chart should not display these; your backend should compute them continuously and your confidence engine should use them as inputs.
+
+A robust confidence system should not be a raw “AI says buy” score. It should be a calibrated probability mapped into operational buckets such as A, B, C or Safe, Medium, Danger, with duplicate suppression based on the tuple (symbol, timeframe, side, regime_hash, entry_bar_time), plus a cooldown rule such as “no new same-side signal within N bars unless price has moved at least X ATR or regime changed.”
+
+A production-safe no-repaint contract should be explicit:
+
+Entry signals are created only on finalized bars.
+Higher-timeframe features use only closed higher-timeframe bars.
+A past signal is never moved or edited after emission.
+If a provider correction arrives, it creates a new correction event; it does not silently rewrite the chart.
+Intrabar stop-loss events are allowed only if logged as real-time runtime events, not backfilled as if they were known earlier.
+The Pine-side analogues of this rule are exactly what TradingView documents: barstate.isconfirmed on the closing update of the realtime bar, and lookahead=barmerge.lookahead_off to avoid higher-timeframe leakage. 
+
+A signal payload should look like this:
+
+json
+Copy
+{
+  "type": "signal.new",
+  "signal_id": "01JZ3AG6QYPE1X7H9Y5JY8N7NC",
+  "symbol": "NASDAQ:NVDA",
+  "timeframe": "5m",
+  "bar_time": "2026-05-24T13:35:00Z",
+  "anchor": {
+    "bar_open_time": "2026-05-24T13:35:00Z",
+    "price": 1048.42
+  },
+  "side": "long",
+  "entry": {
+    "price": 1048.42,
+    "mode": "bar_close"
+  },
+  "risk": {
+    "sl_price": 1044.85,
+    "tp_price": 1055.56,
+    "atr": 2.38,
+    "rr": 2.0
+  },
+  "score": {
+    "confidence": 87,
+    "risk_tag": "Safe",
+    "model_version": "xgb_conf_2026_05_18",
+    "rule_version": "orb_v3.2"
+  },
+  "features": {
+    "rvol": 1.84,
+    "vwap_distance_bps": 28,
+    "pattern": "orb_retest_reclaim",
+    "regime": "trend_up"
+  },
+  "state": {
+    "finalized_bar": true,
+    "no_repaint": true
+  }
+}
+A practical WebSocket flow should look like this:
+
+json
+Copy
+{"op":"subscribe","symbol":"NASDAQ:NVDA","tf":"5m"}
+{"type":"subscribed","symbol":"NASDAQ:NVDA","tf":"5m","last_bar_time":"2026-05-24T13:30:00Z"}
+{"type":"bar.partial","symbol":"NASDAQ:NVDA","tf":"5m","time":"2026-05-24T13:35:00Z","close":1047.90}
+{"type":"bar.final","symbol":"NASDAQ:NVDA","tf":"5m","time":"2026-05-24T13:35:00Z","open":1042.10,"high":1049.20,"low":1041.95,"close":1048.42,"volume":882311}
+{"type":"signal.new","signal_id":"01JZ3AG6QYPE1X7H9Y5JY8N7NC","symbol":"NASDAQ:NVDA","tf":"5m","bar_time":"2026-05-24T13:35:00Z","side":"long","entry_price":1048.42,"sl_price":1044.85,"confidence":87}
+{"type":"sl.update","signal_id":"01JZ3AG6QYPE1X7H9Y5JY8N7NC","sl_price":1046.10}
+{"type":"signal.exit","signal_id":"01JZ3AG6QYPE1X7H9Y5JY8N7NC","reason":"tp_hit","bar_time":"2026-05-24T13:50:00Z","exit_price":1055.56}
+Web Client
+FastAPI WS Gateway
+Redis Streams
+Signal Engine
+Ingest/Bar Builder
+Data Provider
+Web Client
+FastAPI WS Gateway
+Redis Streams
+Signal Engine
+Ingest/Bar Builder
+Data Provider
+subscribe(symbol, 5m)
+trades/quotes/aggs
+market_events
+bar.partial
+bar.final
+signal.new (immutable)
+bar.final
+signal.new
+sl.update / signal.exit
+sl.update / signal.exit
+
+
+Show code
+UI/UX and TradingView and Pine integration
+Your UI should adopt a strict minimal-visual contract: only show entry, exit, and active stop-loss. Everything else—EMA, VWAP, RSI, MACD, candle tags, regime flags, ORB levels, confidence components—should be calculated server-side and either stored for analytics or exposed only in an admin/debug mode outside the end-user chart. This is the only reliable way to make the chart feel clean, “professional,” and visually stable under pan/zoom on desktop and mobile.
+
+For website rendering, the anchor semantics should be data-driven:
+
+On Lightweight Charts, add series markers at the candle’s time plus position: "aboveBar" or "belowBar", and use a single horizontal price line for the active SL. Lightweight Charts explicitly documents series markers as annotations attached to specific data points, and price lines as lines drawn at a specific price value. 
+On Advanced Charts, use createShape() or createExecutionShape() with a PricedPoint or StickedPoint containing the bar timestamp and price. TradingView explicitly documents these as chart-point drawings tied to timestamps and price values. 
+Do not use createAnchoredShape() for trade markers. TradingView explicitly states these are fixed relative to the chart viewport and do not move when a user scrolls. That is exactly the behavior you said you do not want. 
+On TradingView/Pine itself, the same rule applies. Do not use tables or floating dashboards. TradingView explicitly documents that tables are positioned in fixed locations in a script’s visual space and are not anchored to bars, while plotshape(), plotchar(), and label.new() are tethered to bars and move with them as the chart scrolls or zooms. 
+
+Pine should therefore be reduced to a display-only or alert-only layer. TradingView’s docs are explicit that scripts expose alert events, but users still create the running alerts in the UI, and webhook alerts are outbound HTTP POSTs triggered by those alerts. Pine’s documented request model is limited to specific request.* data sources such as request.security() and request.seed(). That documented model makes Pine a poor home for external AI inference and a good home for deterministic parity logic and outbound alerting. 
+
+The Pine checklist to enforce anchored visuals and remove clutter is straightforward:
+
+Use indicator(..., overlay = true) so all visible objects live on the price chart.
+For simple arrows, use plotshape(..., location = location.abovebar / location.belowbar, offset = 0). TradingView documents plotshape() as bar-tethered. 
+For precise price anchoring, use label.new(bar_index, price, ..., xloc = xloc.bar_index, yloc = yloc.price). TradingView documents that xloc.bar_index uses an absolute bar index and yloc.price uses the explicit y price level. 
+Do not use yloc.abovebar / yloc.belowbar when you need exact price anchoring, because TradingView explicitly ignores the y argument in those modes. 
+Draw only one active stop-loss line with line.new(..., xloc = xloc.bar_index) and extend it right while the trade is alive.
+Gate every signal with barstate.isconfirmed. TradingView explicitly documents it as true on the closing update of a realtime bar and useful to avoid repainting. 
+Use request.security(..., lookahead = barmerge.lookahead_off) everywhere. TradingView explicitly documents this as the non-leaking mode for higher-timeframe requests. 
+Remove table.new() completely from the end-user chart. Tables are documented as floating. 
+Hide any unavoidable background plots with display = display.none. TradingView explicitly documents that hidden plots are still calculated but do not display and do not affect the scale. 
+Keep offset = 0 on all visible signal shapes so no marker is shifted into past or future bars.
+Turn off all nonessential visuals in user mode: no bgcolor, no EMA/VWAP/ORB user plots, no score tables, no debug labels.
+ML design and validation
+The correct “AI inside the system” design is not an LLM reading chart screenshots. It is a two-stage pipeline in which deterministic trading logic defines valid setups and ML ranks or filters them. For structured 5-minute bar data, gradient-boosted tree models are the right starting point: XGBoost is explicitly designed as an optimized, efficient gradient-boosting library; LightGBM is explicitly designed for fast, efficient tree learning with lower memory use and GPU support; and scikit-learn’s histogram-based gradient boosting is explicitly positioned as much faster than classic boosting once sample sizes are large. 
+
+A practical model stack should be:
+
+Model layer	Recommendation	Purpose
+Deterministic setup engine	Pure Python rules	Creates auditable candidate signals
+Confidence model	XGBoost or LightGBM	P(TP before SL within N bars)
+Calibration layer	Isotonic / Platt-style calibration	Turns raw scores into usable confidence percentages
+Online adaptation	River	Online recalibration / drift monitoring / threshold adjustment
+Deep sequence R&D	PyTorch	Only after you have enough event history to justify temporal models
+Registry and deployment control	MLflow	Versioning, aliases, metadata, rollback
+
+River is specifically built for online machine learning and streaming data, which makes it useful for controlled online recalibration. PyTorch is appropriate for future sequence-model R&D, but not necessary for the first production release. MLflow’s Model Registry is designed for registered models with versions, aliases, tags, and metadata, which is exactly what you want for auditable releases. 
+
+The training loop should be event-based, not bar-by-bar in the abstract. Label each candidate entry by realized path: whether TP was reached before SL within the allowed holding horizon, whether SL was reached first, or whether the trade timed out. That lets the model learn actual trade utility instead of generic “next bar up/down” direction. Your labels and features should be generated only from information available at the decision timestamp.
+
+For retraining cadence, start with batch retraining and move slowly toward online adjustment. Nightly or weekly batch retraining with walk-forward validation is easier to audit and safer than unrestricted online self-modification. If you want continual adaptation, use River only for bounded online recalibration or threshold tuning at first. Keep the core model versioned and promoted through MLflow after explicit validation. 
+
+Your validation framework should include both ML and trading outcomes. At minimum, track precision and recall by signal bucket, win rate, expectancy, profit factor, max drawdown, average adverse excursion, confidence calibration error, latency from bar close to user-visible signal, and duplicate-signal rate after suppression rules. The acceptance criterion should not be “best backtest equity curve”; it should be “best stable live behavior under walk-forward and paper-live conditions.”
+
+For 5-minute NASDAQ validation, use a fixed acceptance basket such as AAPL, NVDA, AMD, MSFT, AMZN, META, TSLA, and QQQ, while also using QQQ/SPY as context features. Split evaluation by regime and session slice, especially the first 90 minutes versus midday, because the system you are building is explicitly intraday and time-of-day dependent.
+
+Deployment and operations and security and compliance
+The hosting choice should be stage-dependent rather than ideological. For a first public beta, managed PaaS is faster. For a durable production platform with strict latency, observability, and licensing controls, containerized infrastructure gives you more control.
+
+Platform	Indicative cost	WebSocket posture	Region / latency posture	Practical limits / caveats	Best use	Source
+Railway	Free trial then $1/mo free tier; Hobby $5 minimum usage; usage-based CPU/RAM billing	Supported over HTTP/1.1	US East, US West, EU West, Singapore; global edge network	Public networking supports WebSockets, but Railway documents a 15-minute connection limit for long-lived WS connections; handle reconnects	Fast MVP and small beta	
+Render	Starter $10/mo, Standard $32/mo, higher tiers add capacity and connection limits	Supported	Virginia, Ohio, Oregon, Frankfurt, Singapore	Starter = 250 connections; Standard = 1,000; autoscaling requires Pro+	Straightforward production beta with simple ops	
+Fly.io	From about $1.94/mo for shared-cpu-1x 256MB; $5.70/mo for 1GB; usage-based	VM-based, good for realtime workloads	Global Anycast and worldwide regions	More operational tuning than Railway/Render; best when region placement matters	Low-latency multi-region API/WS services	
+AWS Fargate	About $35.55/mo for always-on 1 vCPU + 2GB in us-east-1 before LB/storage	Full container control	Broadest enterprise region/compliance posture	More infrastructure and networking work, but strongest production control	Serious production scale and enterprise compliance	
+
+One more practical note: Vercel is fine for a static/frontend shell, but Vercel’s own docs say Vercel Functions do not support WebSocket connections and recommend third-party realtime providers. For your platform, that means “Vercel frontend + separate realtime backend” is viable, but “Vercel-only full stack” is not the right shape for the live signals layer. 
+
+The observability stack should be standard from day one. OpenTelemetry gives you traces, metrics, and logs; Prometheus gives you a time-series monitoring system and query layer; Alertmanager handles deduplication, grouping, and routing of alerts; and Loki gives you scalable log aggregation without full log-content indexing. That stack is a good fit for monitoring data-lag, dropped subscriptions, signal latency, duplicate-signal spikes, model-version divergence, and broker/webhook failures. 
+
+Security needs to be handled as an API platform problem, not just a trading problem. OWASP’s API Security Top 10 should be your baseline for authn/authz, input validation, rate limiting, and object-level access control. OWASP’s Secrets Management guidance is directly applicable to vendor API keys, webhook credentials, broker tokens, and model-serving secrets. NIST’s SSDF is the right baseline for secure SDLC, review, and release discipline. 
+
+For this specific product, there are two compliance risks that teams often underestimate. The first is market-data redistribution: Nasdaq’s own data policies explicitly address distributor obligations and fees for real-time proprietary data. The second is vendor-plan mismatch: several vendor pages frame non-enterprise plans as personal or individual use. If the platform is a public website serving live market data and signals to users, confirm redistribution rights and exchange entitlements before launch, not after the UI is done. 
+
+Migration plan and roadmap
+The uploaded project context already points in the right direction: a Pine-based institutional 5-minute scalper that should keep the analytical depth but shed the visual clutter. The migration should therefore preserve the signal contract and logic families, while relocating the analytics to the backend and collapsing the on-chart UI to entry/exit/SL only. 
+
+The integration plan to replace the current indicator should be staged:
+
+First, freeze the signal specification. Write down the canonical strategy families, session rules, stop-loss logic, exit rules, and confidence semantics. You do not want frontend, backend, and Pine all interpreting “entry” differently.
+
+Second, move all indicator calculations server-side. That includes EMA/VWAP/ATR/RSI/MACD, candle and price-pattern detectors, regime filters, and confidence scoring. Pine should not remain the source of truth for those calculations if the website is the primary product.
+
+Third, build the website chart overlay before you simplify Pine. This gives you a reference UI: candles, entry markers, exit markers, one active SL line, tooltips, and no floating tables or indicator spaghetti.
+
+Fourth, reduce Pine to a thin deterministic mirror:
+
+visible output: entry/exit markers and one SL line only;
+hidden output: any remaining helper plots with display.none;
+alerts: webhook-ready alert() / alertcondition() that fire on closed-bar signals only;
+no tables, no background panels, no multi-line dashboards.
+That role is consistent with TradingView’s documented alert and visualization primitives. 
+Fifth, validate in three passes on 5-minute NASDAQ names:
+
+historical replay and walk-forward;
+paper-live during market hours;
+production shadow mode where the backend emits signals but only internal users see them.
+Use a core basket such as AAPL, NVDA, AMD, MSFT, AMZN, META, TSLA, and QQQ, and track latency, repaint divergence, duplicate suppression, and stop-loss behavior.
+A realistic implementation roadmap is:
+
+Milestone	Deliverables	Estimated effort	Main risks
+Licensing and architecture freeze	Provider choice, chart-library decision, environment model, canonical signal spec	1 week	Underestimating data redistribution constraints
+Data and chart MVP	Live candles on website, history load, watchlist, WS subscriptions, anchored markers prototype	2 weeks	Datafeed quirks, symbol normalization
+Deterministic signal engine	Server-side rules, SL/TP logic, event schema, duplicate suppression, persistence	2–3 weeks	Rule drift from current Pine behavior
+ML confidence layer	Labeled dataset, baseline XGBoost/LightGBM model, calibration, model registry	2–3 weeks	Leakage, overfitting, weak calibration
+Pine reduction and webhook bridge	Minimal TradingView overlay, alert payloads, no-repaint parity checks	1–2 weeks	Pine parity cannot cover external AI-native logic
+Hardening and ops	Alerts, dashboards, tracing, log aggregation, rollout controls, security review	2 weeks	Unseen live-feed edge cases and operational noise
+
+For one strong full-stack/ML engineer, this is roughly a 10–13 week path to a credible private beta. With a dedicated frontend engineer plus a backend/ML engineer, it is more realistically a 6–8 week path to the same outcome.
+
+The recommended end-state is clear: your own website is the primary real-time trading surface; the backend is the source of truth for candles, features, signals, and AI scoring; Pine is optional, minimal, and display-only; and the chart shows only what the trader actually needs during execution—entry, exit, and stop-loss.
