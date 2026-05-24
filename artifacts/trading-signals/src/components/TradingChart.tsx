@@ -18,7 +18,6 @@ interface Props {
   activeSignals: SignalNew[];
   lastBar: BarUpdate | null;
   symbol: string;
-  connected?: boolean;
 }
 
 export function TradingChart({ bars, activeSignals, lastBar, symbol }: Props) {

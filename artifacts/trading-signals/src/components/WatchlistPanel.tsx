@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useListSymbols, useAddSymbol, useRemoveSymbol, getListSymbolsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Wifi, WifiOff } from "lucide-react";
+import { Plus, X, TrendingUp, TrendingDown, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -149,19 +149,22 @@ export function WatchlistPanel({ activeSymbol, onSelectSymbol, connected }: Prop
         ) : (
           <div className="py-1">
             {symbols.map((s) => (
-              <div
+              <button
                 key={s.id}
-                role="row"
                 data-testid={`button-symbol-${s.id}`}
                 onClick={() => onSelectSymbol(s.symbol)}
-                className={`w-full flex items-center justify-between px-3 py-2 transition-colors group cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3 py-2 transition-colors group ${
                   activeSymbol === s.symbol
                     ? "bg-sidebar-accent text-foreground"
                     : "hover:bg-sidebar-accent text-sidebar-foreground hover:text-foreground"
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className={`w-1 h-1 rounded-full flex-shrink-0 ${activeSymbol === s.symbol ? "bg-primary" : "bg-transparent"}`} />
+                  {activeSymbol === s.symbol ? (
+                    <div className="w-1 h-1 rounded-full bg-primary flex-shrink-0" />
+                  ) : (
+                    <div className="w-1 h-1 rounded-full bg-transparent flex-shrink-0" />
+                  )}
                   <span className="font-mono text-xs font-medium truncate">{s.symbol}</span>
                 </div>
                 <button
@@ -171,7 +174,7 @@ export function WatchlistPanel({ activeSymbol, onSelectSymbol, connected }: Prop
                 >
                   <X size={10} />
                 </button>
-              </div>
+              </button>
             ))}
           </div>
         )}

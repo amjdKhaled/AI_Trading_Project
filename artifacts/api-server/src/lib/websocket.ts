@@ -1,9 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
-import { db, signalsTable } from "@workspace/db";
+import { db, signalsTable, symbolsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { logger } from "./logger";
-import { FinnhubStream, type OhlcvBar } from "./finnhub";
-import { scoreSignal } from "./indicators";
 
 interface WsClient {
   ws: WebSocket;
@@ -21,101 +20,44 @@ function broadcast(symbol: string, message: object) {
   }
 }
 
-function broadcastAll(message: object) {
-  const data = JSON.stringify(message);
-  for (const client of clients) {
-    if (client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(data);
-    }
-  }
+function generateSimulatedBar(symbol: string) {
+  const basePrice: Record<string, number> = {
+    NVDA: 1048, AAPL: 195, AMD: 168, MSFT: 430,
+    TSLA: 285, AMZN: 196, META: 590, QQQ: 488,
+  };
+  const seed = symbol.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const base = basePrice[symbol] ?? 100 + (seed % 400);
+  const move = (Math.random() - 0.485) * base * 0.006;
+  const open = base;
+  const close = Math.max(open + move, open * 0.97);
+  const high = Math.max(open, close) * (1 + Math.random() * 0.003);
+  const low = Math.min(open, close) * (1 - Math.random() * 0.003);
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    time: now - (now % 300),
+    open: Math.round(open * 100) / 100,
+    high: Math.round(high * 100) / 100,
+    low: Math.round(low * 100) / 100,
+    close: Math.round(close * 100) / 100,
+    volume: Math.floor(100000 + Math.random() * 900000),
+  };
 }
 
-// ─── Per-symbol 5m bar builder ───────────────────────────────────────────────
+const PATTERNS = ["orb_retest_reclaim", "trend_continuation", "mean_reversion_reclaim", "vwap_bounce", "hl_breakout"];
+const REGIMES = ["trend_up", "trend_down", "range", "volatile"];
+const RISK_TAGS = ["Safe", "Medium", "Danger"] as const;
 
-interface LiveBar {
-  time: number; // 5m-aligned unix seconds
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
+async function maybeEmitSignal(symbol: string) {
+  if (Math.random() > 0.15) return; // ~15% chance per bar
+  const bar = generateSimulatedBar(symbol);
+  const side = Math.random() > 0.5 ? "long" : "short";
+  const atr = bar.close * 0.002;
+  const sl = side === "long" ? bar.close - atr * 1.5 : bar.close + atr * 1.5;
+  const tp = side === "long" ? bar.close + atr * 3 : bar.close - atr * 3;
+  const confidence = Math.floor(60 + Math.random() * 35);
+  const riskTag = confidence >= 80 ? "Safe" : confidence >= 70 ? "Medium" : "Danger";
+  const rr = Math.round((Math.abs(tp - bar.close) / Math.abs(bar.close - sl)) * 100) / 100;
 
-// Rolling 200-bar history per symbol for signal scoring
-const barHistory = new Map<string, OhlcvBar[]>();
-const liveBar = new Map<string, LiveBar>();
-
-function onTrade(symbol: string, price: number, volume: number, ts: number) {
-  const barTime = ts - (ts % 300); // snap to 5m boundary
-
-  const existing = liveBar.get(symbol);
-  if (!existing || existing.time !== barTime) {
-    // New bar started — finalize old one
-    if (existing) {
-      const finalized: OhlcvBar = { ...existing };
-      // Append to history
-      const hist = barHistory.get(symbol) ?? [];
-      hist.push(finalized);
-      if (hist.length > 300) hist.shift();
-      barHistory.set(symbol, hist);
-
-      broadcast(symbol, { type: "bar.final", symbol, ...finalized });
-
-      // Run signal engine on bar close
-      analyzeAndEmit(symbol, hist).catch((err) =>
-        logger.warn({ err }, "Signal engine error"),
-      );
-    }
-
-    const bar: LiveBar = {
-      time: barTime,
-      open: price,
-      high: price,
-      low: price,
-      close: price,
-      volume,
-    };
-    liveBar.set(symbol, bar);
-  } else {
-    // Update current bar
-    existing.high = Math.max(existing.high, price);
-    existing.low = Math.min(existing.low, price);
-    existing.close = price;
-    existing.volume += volume;
-  }
-
-  // Broadcast partial update
-  const bar = liveBar.get(symbol)!;
-  broadcast(symbol, { type: "bar.partial", symbol, ...bar });
-}
-
-// ─── Signal engine ───────────────────────────────────────────────────────────
-
-async function analyzeAndEmit(symbol: string, hist: OhlcvBar[]) {
-  if (hist.length < 30) return;
-
-  const scored = scoreSignal(hist);
-  if (!scored.side) return;
-
-  const last = hist[hist.length - 1];
-  const atrVal = scored.atrVal;
-  const sl =
-    scored.side === "long"
-      ? last.close - atrVal * 1.5
-      : last.close + atrVal * 1.5;
-  const tp =
-    scored.side === "long"
-      ? last.close + atrVal * 3
-      : last.close - atrVal * 3;
-  const rr =
-    Math.round((Math.abs(tp - last.close) / Math.abs(last.close - sl)) * 100) /
-    100;
-  const riskTag =
-    scored.confidence >= 80
-      ? "Safe"
-      : scored.confidence >= 70
-        ? "Medium"
-        : "Danger";
   const signalId = `SIG-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
   try {
@@ -123,123 +65,82 @@ async function analyzeAndEmit(symbol: string, hist: OhlcvBar[]) {
       signalId,
       symbol,
       timeframe: "5m",
-      barTime: new Date(last.time * 1000),
-      side: scored.side,
-      entryPrice: last.close,
+      barTime: new Date(bar.time * 1000),
+      side,
+      entryPrice: bar.close,
       slPrice: Math.round(sl * 100) / 100,
       tpPrice: Math.round(tp * 100) / 100,
       currentSlPrice: Math.round(sl * 100) / 100,
-      confidence: scored.confidence,
+      confidence,
       riskTag,
       state: "active",
       rrRatio: rr,
-      pattern: scored.pattern,
-      regime: scored.regime,
+      pattern: PATTERNS[Math.floor(Math.random() * PATTERNS.length)],
+      regime: REGIMES[Math.floor(Math.random() * REGIMES.length)],
     });
 
     broadcast(symbol, {
       type: "signal.new",
       signalId,
       symbol,
-      side: scored.side,
-      entryPrice: last.close,
+      side,
+      entryPrice: bar.close,
       slPrice: Math.round(sl * 100) / 100,
       tpPrice: Math.round(tp * 100) / 100,
-      confidence: scored.confidence,
+      confidence,
       riskTag,
-      barTime: new Date(last.time * 1000).toISOString(),
+      barTime: new Date(bar.time * 1000).toISOString(),
     });
-
-    logger.info({ symbol, side: scored.side, confidence: scored.confidence, pattern: scored.pattern }, "Signal emitted");
   } catch (err) {
-    logger.warn({ err }, "Failed to insert signal");
+    logger.warn({ err }, "Failed to insert simulated signal");
   }
 }
 
-// ─── Warm up bar history from Finnhub REST ───────────────────────────────────
+let simulationInterval: ReturnType<typeof setInterval> | null = null;
 
-async function warmHistory(symbol: string) {
-  try {
-    // Free tier: build synthetic seed bars from current quote
-    const { buildSeedBars } = await import("./finnhub");
-    const bars = await buildSeedBars(symbol, 200);
-    if (bars.length > 0) {
-      barHistory.set(symbol, bars);
-      logger.info({ symbol, count: bars.length }, "Seeded bar history from quote");
+function startSimulation() {
+  if (simulationInterval) return;
+  simulationInterval = setInterval(async () => {
+    if (clients.size === 0) return;
+    const activeSymbols = new Set<string>();
+    for (const c of clients) activeSymbols.add(c.symbol);
+
+    for (const symbol of activeSymbols) {
+      const bar = generateSimulatedBar(symbol);
+      broadcast(symbol, { type: "bar.partial", symbol, ...bar });
+
+      // Every ~5 ticks emit a final bar
+      if (Math.random() > 0.8) {
+        broadcast(symbol, { type: "bar.final", symbol, ...bar });
+        await maybeEmitSignal(symbol);
+      }
     }
-  } catch (err) {
-    logger.warn({ err, symbol }, "Failed to seed bar history");
-  }
+  }, 3000);
 }
-
-// ─── Public accessor for bar history ─────────────────────────────────────────
-
-export function getBarHistory(symbol: string): OhlcvBar[] {
-  return barHistory.get(symbol.toUpperCase()) ?? [];
-}
-
-// ─── Finnhub stream singleton ─────────────────────────────────────────────────
-
-let stream: FinnhubStream | null = null;
-const subscribedSymbols = new Set<string>();
-
-function ensureSubscribed(symbol: string) {
-  if (subscribedSymbols.has(symbol)) return;
-  subscribedSymbols.add(symbol);
-  if (!stream) {
-    stream = new FinnhubStream(onTrade);
-  }
-  stream.subscribe(symbol);
-  warmHistory(symbol).catch(() => {});
-}
-
-// ─── WebSocket server ─────────────────────────────────────────────────────────
 
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
   wss.on("connection", (ws, req) => {
     const url = new URL(req.url ?? "/ws", "http://localhost");
-    const symbol = (url.searchParams.get("symbol") ?? "NVDA").toUpperCase();
+    const symbol = url.searchParams.get("symbol") ?? "NVDA";
     const client: WsClient = { ws, symbol };
     clients.add(client);
     logger.info({ symbol }, "WebSocket client connected");
 
-    ensureSubscribed(symbol);
-
-    ws.send(
-      JSON.stringify({
-        type: "subscribed",
-        symbol,
-        tf: "5m",
-        lastBarTime: new Date().toISOString(),
-      }),
-    );
-
-    // Send latest partial bar if available
-    const current = liveBar.get(symbol);
-    if (current) {
-      ws.send(JSON.stringify({ type: "bar.partial", symbol, ...current }));
-    }
+    ws.send(JSON.stringify({
+      type: "subscribed",
+      symbol,
+      tf: "5m",
+      lastBarTime: new Date().toISOString(),
+    }));
 
     ws.on("message", (data) => {
       try {
-        const msg = JSON.parse(data.toString()) as {
-          op?: string;
-          symbol?: string;
-          tf?: string;
-        };
+        const msg = JSON.parse(data.toString());
         if (msg.op === "subscribe" && msg.symbol) {
-          const newSym = msg.symbol.toUpperCase();
-          client.symbol = newSym;
-          ensureSubscribed(newSym);
-          ws.send(
-            JSON.stringify({
-              type: "subscribed",
-              symbol: newSym,
-              tf: msg.tf ?? "5m",
-            }),
-          );
+          client.symbol = msg.symbol;
+          ws.send(JSON.stringify({ type: "subscribed", symbol: msg.symbol, tf: msg.tf ?? "5m" }));
         }
       } catch {
         // ignore
@@ -255,6 +156,8 @@ export function setupWebSocket(server: Server) {
       logger.warn({ err }, "WebSocket error");
       clients.delete(client);
     });
+
+    startSimulation();
   });
 
   logger.info("WebSocket server attached at /ws");
