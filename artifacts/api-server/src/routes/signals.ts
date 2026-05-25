@@ -12,15 +12,12 @@ import { fetchHistory } from "./history";
 
 const router: IRouter = Router();
 
+// ── GET /signals ──────────────────────────────────────────────
 router.get("/signals", async (req, res): Promise<void> => {
   const query = ListSignalsQueryParams.safeParse(req.query);
-  if (!query.success) {
-    res.status(400).json({ error: query.error.message });
-    return;
-  }
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
   const { symbol, limit } = query.data;
-  // timeframe is not in the generated schema — parse manually; default to "5m"
   const timeframe = typeof req.query.timeframe === "string" && req.query.timeframe ? req.query.timeframe : "5m";
 
   const conditions: SQL[] = [];
@@ -34,7 +31,7 @@ router.get("/signals", async (req, res): Promise<void> => {
     base.where(and(...conditions))
   ).limit(limit ?? 50);
 
-  // Seed once if the DB is empty for this symbol+timeframe combo
+  // Seed once if empty for this symbol+timeframe
   if (rows.length === 0 && symbol) {
     try {
       const rawBars = await fetchHistory(symbol, timeframe);
@@ -62,7 +59,6 @@ router.get("/signals", async (req, res): Promise<void> => {
             });
           } catch { /* duplicate — skip */ }
         }
-        // Re-query after seeding
         const seeded = await (
           conditions.length === 0 ? db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt)) :
           conditions.length === 1 ? db.select().from(signalsTable).where(conditions[0]).orderBy(desc(signalsTable.createdAt)) :
@@ -77,33 +73,58 @@ router.get("/signals", async (req, res): Promise<void> => {
   res.json(ListSignalsResponse.parse(rows));
 });
 
-router.get("/signals/stats", async (req, res): Promise<void> => {
-  const query = GetSignalStatsQueryParams.safeParse(req.query);
-  if (!query.success) {
-    res.status(400).json({ error: query.error.message });
+// ── PATCH /signals/:signalId/state ────────────────────────────
+router.patch("/signals/:signalId/state", async (req, res): Promise<void> => {
+  const { signalId } = req.params;
+  const body = req.body as { state?: string; exitPrice?: number };
+  const validStates = ["active", "tp_hit", "sl_hit", "expired"];
+
+  if (!body.state || !validStates.includes(body.state)) {
+    res.status(400).json({ error: `state must be one of: ${validStates.join(", ")}` });
     return;
   }
+
+  const updateData: Record<string, unknown> = { state: body.state };
+  if (body.exitPrice != null && isFinite(body.exitPrice)) {
+    updateData.exitPrice   = body.exitPrice;
+    updateData.exitBarTime = new Date();
+    updateData.exitReason  = body.state === "tp_hit" ? "TP reached" : body.state === "sl_hit" ? "SL triggered" : "manual";
+  }
+
+  try {
+    await db.update(signalsTable).set(updateData).where(eq(signalsTable.signalId, signalId));
+    res.json({ ok: true, signalId, state: body.state });
+  } catch (err) {
+    req.log?.warn({ err, signalId }, "Failed to update signal state");
+    res.status(500).json({ error: "Failed to update signal" });
+  }
+});
+
+// ── GET /signals/stats ────────────────────────────────────────
+router.get("/signals/stats", async (req, res): Promise<void> => {
+  const query = GetSignalStatsQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
 
   const { symbol } = query.data;
   const base = db.select().from(signalsTable);
   const rows = symbol ? await base.where(eq(signalsTable.symbol, symbol)) : await base;
 
-  const total  = rows.length;
-  const active = rows.filter((r) => r.state === "active").length;
-  const tp_hit = rows.filter((r) => r.state === "tp_hit").length;
-  const sl_hit = rows.filter((r) => r.state === "sl_hit").length;
+  const total   = rows.length;
+  const active  = rows.filter((r) => r.state === "active").length;
+  const tp_hit  = rows.filter((r) => r.state === "tp_hit").length;
+  const sl_hit  = rows.filter((r) => r.state === "sl_hit").length;
   const expired = rows.filter((r) => r.state === "expired").length;
   const closed  = tp_hit + sl_hit;
   const winRate = closed > 0 ? tp_hit / closed : 0;
-  const avgConfidence = total > 0 ? rows.reduce((s, r) => s + r.confidence, 0) / total : 0;
-  const rrs    = rows.filter((r) => r.rrRatio != null).map((r) => r.rrRatio!);
-  const avgRR  = rrs.length > 0 ? rrs.reduce((s, v) => s + v, 0) / rrs.length : 0;
+  const avgConf = total > 0 ? rows.reduce((s, r) => s + r.confidence, 0) / total : 0;
+  const rrs     = rows.filter((r) => r.rrRatio != null).map((r) => r.rrRatio!);
+  const avgRR   = rrs.length > 0 ? rrs.reduce((s, v) => s + v, 0) / rrs.length : 0;
 
   res.json(GetSignalStatsResponse.parse({
     total, active, tp_hit, sl_hit, expired,
-    winRate:        Math.round(winRate * 100) / 100,
-    avgConfidence:  Math.round(avgConfidence * 10) / 10,
-    avgRR:          Math.round(avgRR * 100) / 100,
+    winRate:       Math.round(winRate * 100) / 100,
+    avgConfidence: Math.round(avgConf * 10) / 10,
+    avgRR:         Math.round(avgRR * 100) / 100,
   }));
 });
 

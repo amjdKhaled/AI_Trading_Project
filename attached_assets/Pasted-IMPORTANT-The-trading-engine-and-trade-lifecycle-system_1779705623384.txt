@@ -1,0 +1,309 @@
+IMPORTANT:
+The trading engine and trade lifecycle system are still incorrect.
+
+The platform currently behaves like:
+
+* one permanent trade
+* static SL/TP lines
+* unrealistic trade management
+* incorrect market pricing
+* incomplete trading workflow
+
+This must now be rebuilt into a REAL trading lifecycle engine.
+
+====================================================
+CRITICAL PRICE DATA ISSUE
+=========================
+
+The current chart prices are incorrect and unrealistic.
+
+Previously the prices were more accurate.
+
+Fix the market data pipeline immediately.
+
+Requirements:
+
+* correct OHLC values
+* correct scaling
+* realistic candles
+* proper historical normalization
+* correct intraday pricing
+* proper live market updates
+
+Verify:
+
+* NVDA prices
+* TSLA prices
+* SPY prices
+* QQQ prices
+
+The chart must reflect REALISTIC market pricing.
+
+====================================================
+IMPORTANT TRADE LIFECYCLE SYSTEM
+================================
+
+The current system incorrectly stays in one trade forever.
+
+This is WRONG.
+
+I want a COMPLETE TRADE MANAGEMENT FLOW.
+
+====================================================
+CORRECT TRADE FLOW
+==================
+
+1. Signal appears
+2. User clicks signal
+3. Trade becomes ACTIVE
+4. SL/TP lines appear
+5. Trade remains active
+6. Trade exits automatically:
+
+   * TP hit
+   * SL hit
+   * exit signal
+7. Trade closes
+8. Active trade visuals disappear
+9. New signals become available again
+
+====================================================
+VERY IMPORTANT
+==============
+
+DO NOT keep one permanent active trade forever.
+
+After trade closes:
+
+* system must reset properly
+* next signals can appear
+* next trades can activate
+
+====================================================
+CLICKABLE ENTRY SIGNALS
+=======================
+
+Every LONG or SHORT signal must be clickable.
+
+When clicked:
+
+* activate trade
+* store trade state
+* create SL
+* create TP
+* begin trade monitoring
+
+====================================================
+ON SIGNAL CLICK
+===============
+
+When user clicks LONG:
+
+* activate LONG trade
+
+When user clicks SHORT:
+
+* activate SHORT trade
+
+Then:
+
+* display active SL line
+* display active TP line
+* display active entry marker
+
+====================================================
+ACTIVE TRADE ENGINE
+===================
+
+Build a proper active trade state manager.
+
+Track:
+
+* active trade
+* entry price
+* SL
+* TP
+* side
+* confidence
+* trade duration
+* trade status
+
+====================================================
+TRADE EXIT ENGINE
+=================
+
+Trades must automatically close when:
+
+1. TP reached
+2. SL reached
+3. market structure failure
+4. momentum collapse
+5. exit signal triggered
+6. volatility spike invalidates setup
+
+====================================================
+AFTER TRADE CLOSE
+=================
+
+When trade closes:
+
+* remove active SL line
+* remove active TP line
+* remove active entry visuals
+* display clean EXIT marker
+* unlock system for new trades
+
+====================================================
+ONLY ONE ACTIVE TRADE
+=====================
+
+At any time:
+ONLY ONE ACTIVE TRADE should exist.
+
+Prevent:
+
+* overlapping trades
+* duplicated entries
+* stacked SL/TP lines
+
+====================================================
+SIGNAL DISPLAY LOGIC
+====================
+
+Signals should:
+
+* appear naturally
+* disappear after activation if needed
+* not clutter chart
+* not overlap each other
+
+====================================================
+LUXALGO-STYLE SIGNALS
+=====================
+
+Improve signal appearance further.
+
+Signals should:
+
+* look premium
+* modern
+* minimalist
+* professional
+
+LONG:
+
+* elegant green marker
+
+SHORT:
+
+* elegant red marker
+
+EXIT:
+
+* subtle clean "$"
+
+====================================================
+SL / TP LOGIC IMPROVEMENTS
+==========================
+
+Current SL/TP behavior is unrealistic.
+
+Improve:
+
+* ATR-based placement
+* structure-aware placement
+* volatility-aware placement
+* risk-aware placement
+
+TP should:
+
+* adapt to trend strength
+* adapt to volatility
+* adapt to momentum
+
+====================================================
+IMPORTANT:
+NO STATIC FOREVER LINES
+=======================
+
+SL/TP lines must:
+
+* belong ONLY to active trade
+* disappear after trade closes
+* update correctly
+
+====================================================
+REALISTIC MARKET ANALYSIS
+=========================
+
+Improve signal quality heavily.
+
+Signals currently feel random.
+
+The analysis engine must properly combine:
+
+* candlestick analysis
+* chart patterns
+* market structure
+* volume
+* trend
+* breakout quality
+* momentum
+* volatility
+
+====================================================
+SIGNAL CONFIRMATION
+===================
+
+Only generate entries when:
+
+* confidence is high
+* structure confirms
+* momentum confirms
+* volume confirms
+* candle confirms
+* volatility conditions are valid
+
+Reduce low-quality signals heavily.
+
+====================================================
+LIVE MARKET BEHAVIOR
+====================
+
+The system must:
+
+* work in real time
+* monitor active trade continuously
+* update during live candles
+* react to SL/TP hits instantly
+
+====================================================
+FINAL RESULT
+============
+
+The final system should behave like:
+
+* a real institutional trading assistant
+* a real trade lifecycle engine
+* a professional active position management system
+
+NOT a static chart with permanent lines.
+
+====================================================
+VERIFY BEFORE FINISHING
+=======================
+
+Verify:
+
+* prices are realistic
+* signals are clickable
+* trades activate correctly
+* SL/TP logic works
+* exits work
+* trades close correctly
+* new signals appear after exits
+* only one active trade exists
+* no permanent static lines remain
+* no UI bugs exist
+* no TypeScript errors exist
+* no backend state issues exist
