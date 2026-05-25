@@ -56,18 +56,33 @@ function alpacaConnect() {
           alpacaSubscribeNew([...getActiveSymbols()]);
 
         } else if (msg.T === "b" && typeof msg.S === "string") {
-          // Completed bar — broadcast bar.final to subscribed clients
-          const sym = msg.S as string;
-          broadcast(sym, {
-            type:   "bar.final",
-            symbol: sym,
-            time:   Math.floor(new Date(msg.t as string).getTime() / 1000),
-            open:   msg.o,
-            high:   msg.h,
-            low:    msg.l,
-            close:  msg.c,
-            volume: msg.v,
-          });
+          // 1-minute bar completed from Alpaca WS.
+          //
+          // IMPORTANT: We do NOT broadcast bar.final here.  Alpaca only streams
+          // 1-minute bars, but clients may be viewing 5m or 15m charts.  Sending
+          // bar.final with 1-minute OHLC would overwrite the client's accumulated
+          // 5m/15m state every minute, producing giant candles.
+          //
+          // Instead: use the accurate 1-minute close to update currentBars, then
+          // immediately broadcast bar.partial so clients get a more timely update
+          // than waiting for the next 10-second poll cycle.
+          const sym  = msg.S as string;
+          const now  = Date.now() / 1000;
+          const barTs = Math.floor(now / 300) * 300;
+          const prev  = currentBars.get(sym);
+          const isNewBar = prev?.time !== barTs;
+          const close = typeof msg.c === "number" ? msg.c : (prev?.close ?? 0);
+          if (close <= 0) continue; // ignore malformed bar
+          const updatedBar: CurrentBar = {
+            time:   barTs,
+            open:   isNewBar ? close : (prev?.open ?? close),
+            high:   isNewBar ? close : Math.max(close, prev?.high ?? close),
+            low:    isNewBar ? close : Math.min(close, prev?.low  ?? close),
+            close,
+            volume: (prev?.volume ?? 0) + (typeof msg.v === "number" ? msg.v : 0),
+          };
+          currentBars.set(sym, updatedBar);
+          broadcast(sym, { type: "bar.partial", symbol: sym, ...updatedBar });
         }
         // Ignore subscription confirmations and other messages
       }

@@ -26,3 +26,14 @@ The on-connect snapshot also used `snap.open / snap.high / snap.low` (daily valu
 
 ## Why snap.open ≠ current 5m open
 `fetchAlpacaSnapshot` returns `data.dailyBar.o` as `open`.  The Alpaca snapshot API's `dailyBar` is the **session bar** (full day), not a per-minute bar.  Never use `snap.open/high/low` for intraday partial bar construction.
+
+## Bug C — Alpaca WS streams 1-MINUTE bars, not 5m/15m bars
+`{ action: "subscribe", bars: ["NVDA"] }` via the IEX WebSocket returns **1-minute** completed bars.
+When these were broadcast as `bar.final` and the client used their OHLC authoritatively, it overwrote the accumulated 5m/15m state **every minute** with just one minute of data — producing a perfectly-explained giant candle geometry (correct low/close, wrong open/high from a 1m slice).
+
+**Fix:** Server converts 1-minute Alpaca WS bars → updates `currentBars` → broadcasts `bar.partial` (not `bar.final`).  Client ignores `type` field entirely — all ticks go through the same merge accumulator.  No `bar.final` special case exists on the client.
+
+## Final architecture (stable)
+- Server: `pollSnapshots()` every 10s + immediately on each 1m Alpaca bar close → `bar.partial`
+- Client: single merge accumulator in `liveBarRef` → single `candleSeries.update()` call
+- No path exists to bypass the merge accumulator; `type` field is unused on the client

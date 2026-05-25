@@ -328,26 +328,30 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
   // Architecture: WebSocket tick → validation pipeline → merge into liveBarRef
   //               → candleSeries.update(liveBarRef)
   //
-  // Raw server OHLC is NEVER passed to update() directly.  Every tick is merged
-  // into a client-owned LiveBar object so the chart always gets internally-consistent
-  // OHLC regardless of what the server sends.
+  // Single writer rule: ONLY this effect calls candleSeries.update().
+  // The server sends two types of messages, but both are treated identically here:
+  //
+  //   bar.partial  — snapshot poll every 10 s (and immediately when a 1m Alpaca bar closes)
+  //   bar.final    — no longer emitted by the server for intraday data; treated as partial
+  //                  if somehow received (same merge path, no special-casing)
+  //
+  // Why no special bar.final path: Alpaca streams 1-MINUTE bars via WebSocket.  If we
+  // used their OHLC as the authoritative final state for a 5m or 15m bar, we'd overwrite
+  // the accumulated 5m/15m OHLC with just one minute of data — producing giant candles.
+  // The server was fixed to broadcast bar.partial instead; the client ignores the type field.
   //
   // Validation pipeline (all guards must pass in order):
   //   G1  Symbol match          — discard ticks from a different symbol
   //   G2  Market open           — discard all ticks when exchange is closed
   //   G3  Incoming OHLC valid   — reject impossible H/L/O/C values or NaN/Infinity
-  //   G4  ATR spike filter      — reject ticks whose H-L range > 5× rolling avg bar range
-  //   G5  Historical boundary   — t must be STRICTLY AFTER last historical bar (≤ rejected)
+  //   G4  ATR spike filter      — reject ticks whose H-L > 5× rolling avg bar range
+  //   G5  Historical boundary   — aligned t must be STRICTLY AFTER last historical bar
   //
-  // State machine transitions:
-  //   liveBarRef === null        → first tick after load: seed new bar at close price
-  //   t > liveBarRef.time        → new 5m period: seed fresh bar at close price
-  //   t === liveBarRef.time      → same period: merge (keep open, expand H/L, update close)
+  // State machine (keyed on aligned bar timestamp t):
+  //   liveBarRef === null        → first tick: seed new bar (all OHLC = current price)
+  //   t > liveBarRef.time        → new interval: seed fresh bar (all OHLC = current price)
+  //   t === liveBarRef.time      → same interval: merge (keep open, expand H/L, update close)
   //   t < liveBarRef.time        → stale tick: discard
-  //
-  // For bar.final (completed bar from Alpaca WS): the authoritative server OHLC is used
-  // directly (replaces the accumulated partial state) then liveBarRef is cleared so the
-  // next period starts fresh.
   useEffect(() => {
     if (!candleRef.current || !lastBar || !bars.length) return;
 
@@ -357,7 +361,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
     // G2 — market open
     if (!isMarketOpen) return;
 
-    const { type, open: rO, high: rH, low: rL, close: rC } = lastBar;
+    const { open: rO, high: rH, low: rL, close: rC } = lastBar;
 
     // G3 — incoming OHLC integrity
     if (!isValidOhlc(rO, rH, rL, rC)) return;
@@ -370,29 +374,17 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
     const maxRange = atr > 0 ? Math.max(atr * 5, px * 0.02) : px * 0.05;
     if ((rH - rL) > maxRange) return;
 
-    // G5 — historical boundary (strict ≤: t must be AFTER, not equal to, last hist bar)
-    // Alpaca historical API only returns completed bars, so the current live bar's aligned
-    // timestamp is always > lastHistTimeRef.current.  The ≤ catches the edge case where a
-    // bar.final arrives for the exact last historical bar (same timestamp).
+    // G5 — historical boundary (strict ≤: t must be STRICTLY AFTER the last historical bar).
+    // Alpaca historical REST only returns completed bars so the live bar is always newer.
+    // The ≤ guard closes the edge case where a redundant tick arrives for the exact
+    // last-history timestamp (same value, not less-than, so < would let it through).
     const t = lastBar.time - (lastBar.time % intervalSec);
     if (t <= lastHistTimeRef.current) return;
 
+    // ── Merge into client-owned live bar ─────────────────────────────────────
+    // All ticks — regardless of type — go through the same merge path.
+    // This is the single writer for candleSeries.update().
     const live = liveBarRef.current;
-
-    // ── bar.final: completed bar from Alpaca WS ─────────────────────────────
-    // Use the authoritative server OHLC directly.  This bar is DONE — clear the
-    // live state so the next partial tick starts a fresh accumulation.
-    if (type === "bar.final") {
-      if (live !== null && t < live.time) return; // stale final for a bar we already passed
-      if (!isValidOhlc(rO, rH, rL, rC)) return;
-      const finalBar: LiveBar = { time: t, open: rO, high: rH, low: rL, close: rC };
-      liveBarRef.current = finalBar;
-      try { candleRef.current.update({ time: t as Time, open: rO, high: rH, low: rL, close: rC }); }
-      catch { /* chart may not be ready */ }
-      return;
-    }
-
-    // ── bar.partial: accumulate into client-owned live bar ──────────────────
     let next: LiveBar;
 
     if (live === null || t > live.time) {

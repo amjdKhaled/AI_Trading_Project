@@ -1,0 +1,254 @@
+The giant malformed candles still appearing on BOTH 5m and 15m prove that the bug is NOT fully solved yet.
+
+The previous fixes were correct improvements, but the remaining issue clearly shows there is STILL a live-bar state corruption path that survives all current guards.
+
+The screenshot strongly indicates that:
+
+* the current live bar is still occasionally inheriting invalid OHLC state
+  OR
+* finalized historical bars are still being mutated indirectly
+  OR
+* multiple update sources are racing each other during the same interval
+
+====================================================
+IMPORTANT:
+THE BUG IS NOW MOST LIKELY A DUAL-WRITER STATE CORRUPTION
+=========================================================
+
+You currently have MULTIPLE systems capable of touching candle state:
+
+1. Historical loader
+2. WebSocket partial updates
+3. WebSocket finalized bars
+4. Snapshot polling
+5. Symbol switching
+6. Live merge accumulator
+7. LightweightCharts update()
+
+Even with guards, if TWO writers mutate the same timestamped candle, malformed giant candles can still appear.
+
+====================================================
+THE SCREENSHOT REVEALS THE EXACT FAILURE TYPE
+=============================================
+
+The malformed candle is NOT random volatility.
+
+It specifically looks like:
+
+* open/high inherited from stale state
+* low/close updated from live tick
+* OR a finalized bar got partially overwritten
+
+The candle body/wick geometry is mathematically inconsistent with surrounding volatility.
+
+This means:
+A corrupted OHLC state is STILL reaching candleSeries.update().
+
+====================================================
+CRITICAL ARCHITECTURE FIX REQUIRED
+==================================
+
+STOP allowing multiple systems to write directly to chart state.
+
+You need a SINGLE SOURCE OF TRUTH architecture.
+
+====================================================
+NEW REQUIRED ARCHITECTURE
+=========================
+
+Create ONE centralized Candle State Manager.
+
+ONLY this manager may:
+
+* create candles
+* mutate live candles
+* finalize candles
+* append candles
+* send candles to LightweightCharts
+
+====================================================
+IMPORTANT:
+NO OTHER SYSTEM MAY TOUCH candleSeries.update()
+===============================================
+
+Currently websocket/snapshot/history logic may still indirectly reach update().
+
+This MUST STOP.
+
+Only:
+CandleStateManager
+may call:
+
+* candleSeries.update()
+* candleSeries.setData()
+
+====================================================
+STRICT DATA FLOW
+================
+
+New architecture:
+
+Historical Loader
+↓
+CandleStateManager
+↓
+Immutable Historical Store
+
+WebSocket
+↓
+Validation Pipeline
+↓
+LiveBarAccumulator
+↓
+CandleStateManager
+↓
+Renderer
+
+Snapshot Polling
+↓
+Validation Pipeline
+↓
+LiveBarAccumulator
+↓
+CandleStateManager
+
+====================================================
+IMPORTANT:
+LIVE BAR MUST BE ISOLATED
+=========================
+
+liveBarRef must NEVER share references with:
+
+* historical arrays
+* chart arrays
+* websocket payloads
+* snapshot payloads
+
+Always deep-clone incoming data before merge.
+
+====================================================
+CURRENT BUG LIKELY STILL COMES FROM:
+====================================
+
+1. reference mutation
+2. stale object reuse
+3. websocket + polling race
+4. finalized/live overlap
+5. async symbol-switch race
+6. duplicate update scheduling
+7. stale React closure state
+8. partial-bar overwrite after finalization
+
+====================================================
+ADD STRICT BAR OWNERSHIP
+========================
+
+Each timestamp must exist in ONLY ONE state:
+
+EITHER:
+
+* finalized historical bar
+  OR
+* active live bar
+
+NEVER BOTH.
+
+====================================================
+STRICT FINALIZATION RULE
+========================
+
+When a bar.final arrives:
+
+1. freeze finalized candle
+2. append immutable finalized candle
+3. destroy current live accumulator
+4. create brand-new empty accumulator for next interval
+
+DO NOT reuse objects.
+
+====================================================
+IMPORTANT:
+DO NOT TRUST SERVER OHLC FOR partial BARS
+=========================================
+
+For partial updates:
+ONLY trust:
+
+* incoming close
+
+Then derive:
+
+* high = max()
+* low = min()
+* open = locked at bar creation
+
+====================================================
+ADD WRITE LOCKS
+===============
+
+Prevent simultaneous mutation from:
+
+* polling loop
+* websocket
+* historical refresh
+* symbol switch
+
+Only ONE update cycle may mutate liveBarRef at a time.
+
+====================================================
+ADD TIMESTAMP OWNERSHIP VALIDATION
+==================================
+
+Before ANY render:
+verify:
+
+* timestamp belongs to current interval
+* timestamp is newer than finalized history
+* timestamp matches current active interval
+* interval continuity is valid
+
+====================================================
+DISABLE SNAPSHOT WRITES DURING ACTIVE WEBSOCKET
+===============================================
+
+If websocket stream is healthy:
+DO NOT allow snapshot polling to mutate live candles.
+
+Snapshot polling should become:
+
+* fallback only
+* not co-writer
+
+Right now polling + websocket may still conflict.
+
+====================================================
+MOST IMPORTANT FIX
+==================
+
+There must NEVER exist:
+
+* two active representations
+  of the same timestamp.
+
+That is the most likely remaining root cause.
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* only one writer controls candle state
+* websocket and polling cannot race
+* finalized bars are immutable
+* live bars are isolated objects
+* no shared references exist
+* no timestamp collisions exist
+* no stale object reuse exists
+* no malformed giant candles appear
+* 5m behaves correctly
+* 15m behaves correctly
+* chart visually matches TradingView
+* no rendering corruption remains
+* no synchronization bugs remain
+* no TypeScript errors exist
