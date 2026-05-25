@@ -1,0 +1,124 @@
+I want you to REMOVE ALL previous market data providers and integrations completely.
+
+DELETE:
+- Alpaca
+- Polygon
+- Finnhub
+- TwelveData
+- Yahoo Finance
+- Any old websocket/polling implementation
+- Any custom aggregation logic based on those providers
+
+I want a COMPLETE rebuild using the same TradingView websocket/datafeed method shown in this video:
+
+https://www.youtube.com/watch?v=UmYcyviNcR4
+
+The goal is:
+I want the chart candles, prices, volume, and timing to match TradingView as closely as possible because the current providers still produce visible differences.
+
+IMPORTANT:
+Do NOT partially mix TradingView data with old providers.
+TradingView data must become the ONLY source of:
+- price
+- OHLC
+- volume
+- historical candles
+- live candles
+
+REQUIREMENTS:
+
+1. Implement TradingView websocket session architecture
+Use the same structure TradingView uses internally:
+- websocket connection
+- session creation
+- chart session
+- symbol resolution
+- quote session
+- series loading
+- live updates
+
+2. Historical candles
+Load historical candles directly from the TradingView feed.
+Do NOT rebuild candles from Alpaca or Polygon anymore.
+
+3. Live candles
+Use TradingView live websocket updates directly.
+No polling.
+No synthetic candle generation.
+No local OHLC reconstruction.
+
+4. Candle timing
+Candles MUST align exactly like TradingView:
+5m:
+00,05,10,15,20,25,30,35,40,45,50,55
+
+15m:
+00,15,30,45
+
+No shifted candles.
+No 13:43 timestamps.
+No drift.
+
+5. Session handling
+Match TradingView session logic exactly:
+- regular hours
+- premarket
+- afterhours
+- timezone alignment
+- DST handling
+
+Use America/New_York timezone internally.
+
+6. Volume
+Volume must match TradingView volume exactly.
+No local volume aggregation.
+
+7. Rendering
+Keep lightweight-charts frontend but make rendering behave like TradingView:
+- candle width
+- spacing
+- wick rendering
+- body rendering
+- doji rendering
+- autoscaling
+- crosshair
+- price formatting
+
+8. Data normalization
+Normalize TradingView websocket payloads into:
+{
+  time,
+  open,
+  high,
+  low,
+  close,
+  volume
+}
+
+9. Stability
+Implement:
+- reconnect handling
+- heartbeat handling
+- stale socket detection
+- automatic resubscribe
+- symbol switching cleanup
+- interval switching cleanup
+
+10. Performance
+Cache historical responses locally.
+Prevent duplicate websocket subscriptions.
+
+11. Final goal
+I want the chart to visually match TradingView almost exactly:
+- same candles
+- same prices
+- same volume
+- same timing
+- same movement
+- same candle structure
+
+The current chart still visibly differs from TradingView.
+This rebuild should eliminate those differences.
+
+Research how TradingView websocket/datafeed works and implement the architecture properly.
+Do not keep legacy code from the old providers.
