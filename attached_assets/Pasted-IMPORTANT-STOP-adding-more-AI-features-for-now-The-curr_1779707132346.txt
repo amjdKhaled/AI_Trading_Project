@@ -1,0 +1,356 @@
+IMPORTANT:
+STOP adding more AI features for now.
+
+The current platform has fundamental architecture and signal-engine problems that MUST be fixed FIRST before adding advanced AI.
+
+Right now the platform suffers from:
+
+* incorrect market prices
+* unrealistic candles
+* bad signal timing
+* random entries
+* missed obvious opportunities
+* poor SL/TP logic
+* weak market structure understanding
+* broken data synchronization
+* incorrect trade lifecycle handling
+
+These are CORE ENGINE problems, not AI problems.
+
+====================================================
+PHASE 1 — REBUILD THE CORE SYSTEM
+=================================
+
+Your job now is to REBUILD and STABILIZE the ENTIRE:
+
+* Market Data Engine
+* Candle Engine
+* Signal Engine
+* Trade Lifecycle Engine
+* Market Structure Engine
+* Price Action Engine
+
+DO NOT focus on adding more fancy AI features yet.
+
+====================================================
+CRITICAL MARKET DATA FIX
+========================
+
+The market prices are now WRONG and unrealistic.
+
+This is the highest priority issue.
+
+The current chart appears to have:
+
+* incorrect scaling
+* mixed candle sources
+* broken OHLC normalization
+* invalid intraday synchronization
+* fake-looking prices
+
+This must be fixed immediately.
+
+====================================================
+CORRECT DATA ARCHITECTURE
+=========================
+
+Implement proper separation between:
+
+1. LONG-TERM HISTORY
+
+* yfinance daily/weekly/monthly candles
+
+2. INTRADAY DATA
+
+* 5m
+* 15m
+
+3. LIVE DATA
+
+* Alpaca or Finnhub WebSocket
+
+====================================================
+IMPORTANT:
+DO NOT incorrectly merge:
+
+* daily candles
+  with
+* intraday candles
+
+This currently causes:
+
+* broken scaling
+* fake prices
+* unrealistic charts
+
+====================================================
+PROPER INTRADAY SYSTEM
+======================
+
+For:
+
+* 5m
+* 15m
+
+Use ONLY:
+
+* valid intraday data
+* properly normalized OHLC candles
+* correct timestamps
+* proper timezone handling
+* no duplicated candles
+* no overlapping bars
+
+====================================================
+TIMEZONE FIX
+============
+
+Use proper:
+
+* US market timezone
+* EST/EDT handling
+* trading session handling
+
+Prevent:
+
+* shifted candles
+* broken timestamps
+* future candles
+* invalid gaps
+
+====================================================
+REBUILD THE SIGNAL ENGINE
+=========================
+
+The current signals are random and weak.
+
+The platform is:
+
+* entering late
+* missing obvious setups
+* taking weak trades
+* failing trend continuation entries
+
+This must be rebuilt properly.
+
+====================================================
+THE SIGNAL ENGINE MUST UNDERSTAND
+=================================
+
+1. Trend continuation
+2. Pullbacks
+3. Breakout confirmation
+4. Retests
+5. Liquidity sweeps
+6. Momentum continuation
+7. Exhaustion
+8. Trend failure
+9. Compression before expansion
+10. Volume confirmation
+
+====================================================
+IMPORTANT:
+STOP GENERATING RANDOM SIGNALS
+==============================
+
+Only generate entries when:
+
+* trend aligns
+* volume confirms
+* momentum confirms
+* candle confirms
+* structure confirms
+* volatility conditions are valid
+
+====================================================
+REBUILD MARKET STRUCTURE ENGINE
+===============================
+
+Properly detect:
+
+* Higher High
+* Higher Low
+* Lower High
+* Lower Low
+* BOS
+* CHOCH
+* swing highs
+* swing lows
+* trend shifts
+* pullback quality
+
+====================================================
+REBUILD CANDLE ANALYSIS ENGINE
+==============================
+
+Properly implement Japanese candlestick analysis.
+
+The current system is barely using candle logic.
+
+Implement proper scoring for:
+
+* engulfing candles
+* hammers
+* shooting stars
+* momentum candles
+* breakout candles
+* rejection candles
+* exhaustion candles
+* continuation candles
+
+====================================================
+REBUILD VOLUME ENGINE
+=====================
+
+Analyze:
+
+* RVOL
+* breakout volume
+* accumulation
+* distribution
+* exhaustion volume
+* climax volume
+* absorption
+
+Use volume as REAL confirmation logic.
+
+====================================================
+TRADE LIFECYCLE ENGINE
+======================
+
+The current trade management is incorrect.
+
+Implement proper lifecycle:
+
+1. Signal appears
+2. User clicks signal
+3. Trade activates
+4. SL/TP created
+5. Trade monitored
+6. Exit triggered
+7. Trade closed
+8. New signals allowed again
+
+====================================================
+ONLY ONE ACTIVE TRADE
+=====================
+
+At any moment:
+ONLY ONE ACTIVE TRADE may exist.
+
+====================================================
+SL / TP ENGINE FIX
+==================
+
+Current SL/TP logic is unrealistic.
+
+SL and TP must:
+
+* respect volatility
+* respect structure
+* respect ATR
+* respect trend strength
+
+====================================================
+EXIT ENGINE
+===========
+
+Implement real exits:
+
+* TP reached
+* SL reached
+* trend failure
+* momentum collapse
+* structure break
+* exhaustion
+
+====================================================
+IMPORTANT:
+REMOVE STATIC FOREVER TRADES
+============================
+
+Trades must:
+
+* close naturally
+* disappear correctly
+* allow new setups afterward
+
+====================================================
+VISUAL REQUIREMENTS
+===================
+
+Keep chart CLEAN.
+
+ONLY SHOW:
+
+* LONG entry
+* SHORT entry
+* EXIT
+* active SL
+* active TP
+
+Hide all analysis internally.
+
+====================================================
+SIGNAL QUALITY TARGET
+=====================
+
+I want:
+
+* fewer signals
+* higher-quality setups
+* institutional-grade entries
+* smarter timing
+* less noise
+* less late entries
+
+====================================================
+DO NOT ADD MORE AI YET
+======================
+
+DO NOT:
+
+* add LLM features
+* add self-learning
+* add AI chat
+* add prediction gimmicks
+
+FIRST:
+fix the trading engine foundation.
+
+====================================================
+FINAL RESULT
+============
+
+The platform should behave like:
+
+* a professional scalping platform
+* an institutional signal engine
+* a real market structure analyzer
+* a realistic trading assistant
+
+NOT:
+
+* a random indicator generator
+
+====================================================
+VERIFY BEFORE FINISHING
+=======================
+
+Verify:
+
+* prices are realistic
+* candles are correct
+* no fake scaling exists
+* no invalid candle merging exists
+* signal timing is improved
+* trend continuation works
+* pullback entries work
+* market structure works
+* SL/TP behaves logically
+* exits work correctly
+* trades close naturally
+* only one active trade exists
+* no UI rendering bugs exist
+* no TypeScript errors exist
+* no backend synchronization issues exist
