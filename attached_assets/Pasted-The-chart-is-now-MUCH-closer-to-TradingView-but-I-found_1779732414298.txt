@@ -1,0 +1,121 @@
+The chart is now MUCH closer to TradingView, but I found another important issue:
+
+====================================================
+TIME BUCKET ALIGNMENT IS WRONG
+==============================
+
+The 5m candles are NOT aligned to proper market intervals.
+
+Right now I see timestamps like:
+13:43
+
+But on a true 5m chart they MUST align exactly to:
+13:40
+13:45
+13:50
+etc.
+
+This means the aggregation engine is currently creating candles using floating timestamps instead of fixed interval boundaries.
+
+====================================================
+THIS CAUSES:
+============
+
+* candle structure divergence
+* slightly different OHLC
+* different candle grouping
+* volume mismatch
+* different momentum structure
+* chart drift from TradingView
+
+Even if the raw data is correct, wrong interval alignment changes the entire candle sequence.
+
+====================================================
+REQUIRED FIX
+============
+
+Implement STRICT timeframe bucketing.
+
+====================================================
+5M RULE
+=======
+
+Every 5m candle timestamp MUST be aligned exactly to:
+
+00
+05
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+
+Example:
+13:43 data belongs inside the:
+13:40 candle
+
+NOT a custom 13:43 candle.
+
+====================================================
+15M RULE
+========
+
+Every 15m candle MUST align exactly to:
+
+00
+15
+30
+45
+
+Example:
+13:43 belongs to:
+13:30 candle
+
+====================================================
+IMPLEMENT PROPER FLOOR ALIGNMENT
+================================
+
+Use deterministic interval flooring:
+
+For 5m:
+timestamp = floor(timestamp / 300000) * 300000
+
+For 15m:
+timestamp = floor(timestamp / 900000) * 900000
+
+====================================================
+IMPORTANT
+=========
+
+This alignment must happen:
+BEFORE candle aggregation.
+
+Not after rendering.
+
+====================================================
+AFTER FIXING
+============
+
+Verify:
+
+* candle timestamps match TradingView
+* candle boundaries match TradingView
+* volume grouping matches TradingView
+* OHLC structure becomes closer to TradingView
+* no floating timestamps remain
+* no custom intervals exist
+* all bars snap perfectly to official market intervals
+
+====================================================
+FINAL GOAL
+==========
+
+I want the chart intervals to behave exactly like:
+TradingView / institutional charting systems.
+
+No floating 13:43-style candle buckets on a 5m chart.

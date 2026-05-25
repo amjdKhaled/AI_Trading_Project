@@ -100,16 +100,20 @@ export async function fetchPolygonBars(symbol: string, interval: string, days = 
   const tf = TIMEFRAME_MAP[interval];
   if (!tf) throw new Error(`Unsupported Polygon interval: ${interval}`);
 
-  const endMs   = Date.now();
-  const startMs = startDate
-    ? Date.parse(`${startDate}T00:00:00Z`)
-    : endMs - days * 86_400_000;
+  // CRITICAL: Polygon anchors aggregate windows to the `from` parameter. Passing
+  // a wall-clock ms timestamp (e.g. 18:07:45.568) produces bars at :03/:08/:13...
+  // instead of the wall-clock :00/:05/:10... that TradingView shows. Using a
+  // YYYY-MM-DD date string anchors the windows to 00:00 UTC of that day, which
+  // divides cleanly into every supported intraday timeframe (1m/5m/15m/…),
+  // so bars land on standard market boundaries (e.g. 09:30, 09:35, 09:40 ET).
+  const toDate = new Date().toISOString().slice(0, 10);
+  const fromDate = startDate
+    ? startDate
+    : new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 
-  // Polygon's range endpoint accepts either YYYY-MM-DD or ms-since-epoch as the
-  // `from`/`to` path params. We use ms so we can express precise windows.
   const initialUrl =
     `${REST_BASE}/v2/aggs/ticker/${encodeURIComponent(symbol)}` +
-    `/range/${tf.multiplier}/${tf.timespan}/${startMs}/${endMs}` +
+    `/range/${tf.multiplier}/${tf.timespan}/${fromDate}/${toDate}` +
     `?adjusted=true&sort=asc&limit=50000`;
 
   const bars: Bar[] = [];
