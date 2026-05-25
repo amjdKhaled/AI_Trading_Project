@@ -18,9 +18,11 @@ interface Props {
   activeSignals: SignalNew[];
   lastBar: BarUpdate | null;
   symbol: string;
+  timeframe: string;
+  intervalSec: number;
 }
 
-export function TradingChart({ bars, activeSignals, lastBar, symbol }: Props) {
+export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, intervalSec }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -38,6 +40,7 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol }: Props) {
       }));
   }, []);
 
+  // Create chart once
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -75,7 +78,6 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol }: Props) {
       wickDownColor: "#ef4444",
     });
 
-    // v5 markers API
     const markersPlugin = createSeriesMarkers(candleSeries, []);
 
     chartRef.current = chart;
@@ -101,7 +103,7 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol }: Props) {
     };
   }, []);
 
-  // Load historical bars
+  // Load bars whenever symbol or timeframe changes
   useEffect(() => {
     if (!seriesRef.current || !bars.length) return;
     const data: CandlestickData<Time>[] = bars.map((b) => ({
@@ -121,12 +123,11 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol }: Props) {
     markersPluginRef.current.setMarkers(buildMarkers(activeSignals));
   }, [activeSignals, buildMarkers]);
 
-  // Live bar updates from WebSocket — only update if we have existing data loaded
+  // Live bar tick from WebSocket — only meaningful on 5m, but align to any interval
   useEffect(() => {
     if (!seriesRef.current || !lastBar || !bars.length) return;
     try {
-      // Align to 5m bar boundary so it matches our historical bar times
-      const alignedTime = (lastBar.time - (lastBar.time % 300)) as Time;
+      const alignedTime = (lastBar.time - (lastBar.time % intervalSec)) as Time;
       seriesRef.current.update({
         time: alignedTime,
         open: lastBar.open,
@@ -135,18 +136,19 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol }: Props) {
         close: lastBar.close,
       });
     } catch {
-      // ignore time ordering errors from stale updates
+      // swallow time-ordering errors from stale updates
     }
-  }, [lastBar, bars.length]);
+  }, [lastBar, bars.length, intervalSec]);
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-white/5">
+      {/* Symbol / timeframe header row */}
+      <div className="flex items-center gap-3 px-3 py-2 border-b border-white/5 flex-shrink-0">
         <span className="font-mono text-sm font-semibold text-foreground">{symbol}</span>
-        <span className="text-xs text-muted-foreground">5m</span>
+        <span className="text-xs text-muted-foreground font-mono">{timeframe.toUpperCase()}</span>
         <span className="text-xs text-muted-foreground">NASDAQ</span>
         <div className="flex-1" />
-        <span className="text-[10px] text-green-400 font-mono">LIVE</span>
+        <span className="text-[10px] text-green-400 font-mono tracking-wider">LIVE</span>
         <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
       </div>
       <div ref={containerRef} className="flex-1 min-h-0" />
