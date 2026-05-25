@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import {
   createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries,
   type IChartApi, type ISeriesApi, type CandlestickData,
-  type HistogramData, type Time, type LineData,
+  type HistogramData, type Time, type LineData, type AutoscaleInfo,
 } from "lightweight-charts";
 import type { PriceUpdate, SignalNew } from "@/hooks/useMarketSocket";
 import type { ActiveTrade, TradeResult } from "@/pages/ChartPage";
@@ -208,6 +208,40 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
       upColor: "#26a69a", downColor: "#ef5350",
       borderUpColor: "#26a69a", borderDownColor: "#ef5350",
       wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+      // Explicit price precision — 2 decimals with 1-cent minimum movement.
+      // Without this, lightweight-charts auto-detects precision and can quantize
+      // tiny consolidation bars (open≈close within a few cents) into dash-like
+      // artifacts.  Forcing minMove=0.01 guarantees every cent is rendered as a
+      // distinct vertical step.
+      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+      // Ensures tiny doji-like bodies still render as a visible body rather than
+      // collapsing to the wick line.  Without this lightweight-charts can draw
+      // very small bodies as a single-pixel-tall rect that looks like a dash.
+      borderVisible:  true,
+      // Wicks always drawn even when body is tiny — prevents "horizontal stick"
+      // appearance during low-volatility periods.
+      wickVisible:    true,
+      // Adds rendering padding around the data range so tight consolidation
+      // periods get more vertical pixels instead of being compressed into a flat
+      // band when zoomed out alongside wider-range bars.
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+        const res = original();
+        if (!res || !res.priceRange) return res;
+        const { minValue, maxValue } = res.priceRange;
+        const range = maxValue - minValue;
+        // Ensure a minimum visible price range so a 50-bar consolidation that
+        // moves only $0.20 doesn't get rendered in 3 vertical pixels next to
+        // wider bars.  Floor at 0.25% of price, or the natural range — whichever
+        // is larger.
+        const mid     = (minValue + maxValue) / 2;
+        const minSpan = Math.max(mid * 0.0025, 0.1);
+        if (range >= minSpan) return res;
+        const pad = (minSpan - range) / 2;
+        return {
+          ...res,
+          priceRange: { minValue: minValue - pad, maxValue: maxValue + pad },
+        };
+      },
     });
     const volume = chart.addSeries(HistogramSeries, {
       priceScaleId: "volume", priceFormat: { type: "volume" },

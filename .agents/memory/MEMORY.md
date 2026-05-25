@@ -1,1 +1,2 @@
-- [Live candle architecture](live-candle-architecture.md) — server is pure price relay; client builds OHLC; giant-candle root causes documented.
+- [Live candle architecture](live-candle-architecture.md) — server is pure price relay; client's CandleStateManager is sole writer to candleSeries.update().
+- [Candle rendering precision](candle-rendering-precision.md) — priceFormat minMove + autoscaleInfoProvider stop consolidation bars from collapsing to dashes in lightweight-charts.

@@ -1,0 +1,215 @@
+NOW I understand the exact remaining problem.
+
+The issue is NOT only giant candles anymore.
+
+The remaining problem is these tiny horizontal dash-like candles/artifacts.
+
+They appear as:
+
+* small cyan horizontal lines
+* tiny floating dash candles
+* malformed miniature candles
+
+Comparing the chart with real TradingView:
+those candles SHOULD be full normal candles.
+
+So the problem is now specifically:
+CANDLE GEOMETRY COLLAPSE during rendering.
+
+====================================================
+IMPORTANT
+THIS IS A RENDERING PRECISION / GEOMETRY BUG
+============================================
+
+The OHLC data itself is likely mostly correct now.
+
+But during rendering:
+
+* candle body geometry collapses
+* wick geometry collapses
+* tiny candles become horizontal artifacts
+* body height becomes near-zero incorrectly
+
+====================================================
+THE EXACT PROBLEM
+=================
+
+Some candles are being rendered as:
+
+open ≈ close
+high ≈ low
+
+OR:
+the renderer is compressing tiny body differences into a flat line.
+
+This creates:
+
+* dash-like candles
+* floating horizontal artifacts
+* malformed miniature candles
+
+====================================================
+LIKELY ROOT CAUSES
+==================
+
+The issue is likely one or more of:
+
+1. floating-point precision loss
+2. price rounding issues
+3. renderer body-height threshold collapse
+4. minMove / precision formatting problems
+5. autoscale compression
+6. decimal normalization issues
+7. subpixel rendering collapse
+8. LightweightCharts precision configuration
+
+====================================================
+IMPORTANT:
+THIS IS NOW A CANDLE GEOMETRY PROBLEM
+=====================================
+
+The chart is losing:
+
+* candle body height
+* wick proportions
+* tiny price movement precision
+
+during rendering.
+
+====================================================
+FIX PRICE PRECISION HANDLING
+============================
+
+Audit ALL:
+
+* rounding
+* formatting
+* normalization
+* decimal handling
+
+Especially:
+
+* toFixed()
+* parseFloat()
+* Math.round()
+* price normalization
+* LightweightCharts priceFormat
+
+====================================================
+USE CORRECT PRICE PRECISION
+===========================
+
+For stocks around:
+$200–$300
+
+Use proper decimal precision:
+
+* 0.01
+* or finer internally
+
+DO NOT truncate candle geometry.
+
+====================================================
+FORCE MINIMUM CANDLE BODY VISIBILITY
+====================================
+
+Implement:
+minimum visual body rendering.
+
+If:
+abs(open - close)
+is extremely small,
+
+the renderer should STILL display:
+
+* a visible candle body
+* not collapse into a horizontal dash
+
+TradingView handles this correctly.
+
+====================================================
+FIX SUBPIXEL COLLAPSE
+=====================
+
+The current renderer likely collapses tiny candles into subpixel artifacts.
+
+Implement:
+
+* pixel snapping
+* minimum body height
+* proper wick rendering
+* anti-collapse rendering
+
+====================================================
+AUTOSCALE ENGINE
+================
+
+The autoscale engine may still be compressing tiny candles.
+
+Fix:
+
+* price range normalization
+* visible range padding
+* volatility scaling
+
+Prevent:
+
+* candle flattening
+* micro-body collapse
+
+====================================================
+LIGHTWEIGHTCHARTS CONFIG
+========================
+
+Audit:
+
+* priceFormat
+* minMove
+* autoscaleInfoProvider
+* localization precision
+* coordinate transforms
+
+====================================================
+IMPORTANT:
+MATCH TRADINGVIEW VISUALLY
+==========================
+
+Use the attached TradingView screenshot as the visual reference.
+
+The candles in the custom chart should visually match TradingView closely:
+
+* same body visibility
+* same wick visibility
+* same tiny-candle rendering
+
+====================================================
+RENDER ENGINE REQUIREMENTS
+==========================
+
+Tiny candles must NEVER become:
+
+* horizontal dash artifacts
+* floating cyan lines
+* collapsed geometry
+
+They must remain:
+
+* real visible candles
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* no dash-like candles exist
+* no floating cyan artifacts exist
+* tiny candles render correctly
+* body geometry is preserved
+* wick geometry is preserved
+* decimal precision is stable
+* no subpixel collapse exists
+* autoscaling is stable
+* candles visually match TradingView
+* no rendering corruption remains
+* no TypeScript errors exist
