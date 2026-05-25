@@ -15,9 +15,9 @@ const INTERVAL_CONFIG: Record<string, { yf: string; period: string; cacheTtl: nu
   "30m": { yf: "30m", period: "60d", cacheTtl:  120_000 },
   "1h":  { yf: "60m", period: "max", cacheTtl:  300_000 },
   "4h":  { yf: "4h",  period: "max", cacheTtl:  300_000 },
-  "1d":  { yf: "1d",  period: "max", cacheTtl: 3_600_000 },
-  "1w":  { yf: "1wk", period: "max", cacheTtl: 3_600_000 },
-  "1M":  { yf: "1mo", period: "max", cacheTtl: 3_600_000 },
+  "1d":  { yf: "1d",  period: "max", cacheTtl: 3_600_000 },   // → full history (often 30–50 yrs)
+  "1w":  { yf: "1wk", period: "max", cacheTtl: 3_600_000 },   // → full history
+  "1M":  { yf: "1mo", period: "max", cacheTtl: 3_600_000 },   // → full history
 };
 
 // In-memory response cache
