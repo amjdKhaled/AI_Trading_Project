@@ -6,6 +6,7 @@ import {
 } from "lightweight-charts";
 import type { PriceUpdate, SignalNew } from "@/hooks/useMarketSocket";
 import type { ActiveTrade, TradeResult } from "@/pages/ChartPage";
+import { CandleStateManager, type CSMTelemetry } from "@/lib/CandleStateManager";
 
 interface Bar { time: number; open: number; high: number; low: number; close: number; volume: number; }
 
@@ -62,11 +63,25 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
   // Timestamp of the last bar in the most-recently loaded historical dataset.
   // Live ticks are only allowed for timestamps STRICTLY AFTER this value.
   const lastHistTimeRef  = useRef<number>(0);
-  // Client-side live bar state — the ONLY source of truth for the currently-forming candle.
-  // WebSocket ticks are MERGED into this object; the merged result is what gets passed to
-  // candleSeries.update().  Raw server OHLC is never passed to update() directly.
-  type LiveBar = { time: number; open: number; high: number; low: number; close: number };
-  const liveBarRef = useRef<LiveBar | null>(null);
+  // CandleStateManager: SOLE writer to the candle series.  Nothing else in the
+  // codebase may call candleSeries.update().  It owns OHLC construction, validation,
+  // interval state machine, finalization, and telemetry.
+  const csmRef = useRef<CandleStateManager | null>(null);
+  const [telemetry, setTelemetry] = useState<CSMTelemetry | null>(null);
+  // Telemetry display is throttled — re-rendering the full chart on every tick
+  // would defeat the purpose of the chart engine's incremental update path.
+  const telemetryLastPushMs   = useRef<number>(0);
+  const telemetryLastRejected = useRef<number>(0);
+  const telemetryLastFinal    = useRef<number>(0);
+  const TELEMETRY_THROTTLE_MS = 2_000;
+
+  // Stable refs that CandleStateManager closures read from
+  const symbolRef       = useRef(symbol);
+  const intervalSecRef  = useRef(intervalSec);
+  const isMarketOpenRef = useRef(isMarketOpen);
+  symbolRef.current       = symbol;
+  intervalSecRef.current  = intervalSec;
+  isMarketOpenRef.current = isMarketOpen;
 
   // stable refs for computeMarkers closure
   const signalsRef     = useRef<SignalNew[]>([]);
@@ -208,6 +223,19 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     candleRef.current = candle;
     volumeRef.current = volume;
 
+    // Build the CandleStateManager and attach it to the candle series.
+    // From this point on it is the SOLE writer to candle.update().
+    const csm = new CandleStateManager({
+      getSymbol:              () => symbolRef.current,
+      getIntervalSec:         () => intervalSecRef.current,
+      isMarketOpen:           () => isMarketOpenRef.current,
+      getHistoryAtrRange:     () => avgBarRange(barsRef.current, 50),
+      getLastHistoricalClose: () => barsRef.current[barsRef.current.length - 1]?.close ?? null,
+      getLastHistoricalTime:  () => lastHistTimeRef.current,
+    });
+    csm.attachSeries(candle);
+    csmRef.current = csm;
+
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeMarkers);
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
@@ -221,6 +249,8 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeMarkers);
       removeSLTP();
       tradeIdRef.current = null;
+      csmRef.current?.detach();
+      csmRef.current = null;
       chart.remove();
       chartRef.current = candleRef.current = volumeRef.current = null;
     };
@@ -245,7 +275,9 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     // ensure it only updates bars that come AFTER the historical dataset ends.
     const lastHistTime = validBars[validBars.length - 1].time;
     lastHistTimeRef.current = lastHistTime;
-    liveBarRef.current      = null; // reset live bar — new dataset, no live bar yet
+    // Reset the CandleStateManager — new dataset, no live bar yet, telemetry cleared.
+    csmRef.current?.reset();
+    setTelemetry(csmRef.current?.getTelemetry() ?? null);
 
     candleRef.current.setData(validBars.map<CandlestickData<Time>>((b) => ({
       time: b.time as Time, open: b.open, high: b.high, low: b.low, close: b.close,
@@ -323,96 +355,33 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
 
-  // ── Live bar state machine ────────────────────────────────────────────────
+  // ── Live tick ingestion ────────────────────────────────────────────────────
   //
-  // Architecture:  price.update → validation pipeline → merge into liveBarRef
-  //                → candleSeries.update(liveBarRef)   ← SINGLE WRITER
-  //
-  // The server sends ONE message type for live data: { type:"price.update", price, timestamp }
-  // It is a raw trade price — no OHLC, no synthetic partials, no polling.
-  // This component builds all four OHLC fields itself from the price stream.
-  //
-  // Validation pipeline:
-  //   G1  Symbol match          — discard ticks from a different symbol
-  //   G2  Market open           — discard all ticks when exchange is closed
-  //   G3  Price sanity          — price must be finite, positive
-  //   G4  ATR spike filter      — price must be within 5× rolling avg bar range of last close
-  //   G5  Historical boundary   — aligned timestamp must be STRICTLY AFTER last historical bar
-  //
-  // State machine (keyed on interval-aligned timestamp t):
-  //   liveBarRef === null     → first tick after load: create bar, seed all OHLC = price
-  //   t > liveBarRef.time     → new interval started:  create bar, seed all OHLC = price
-  //   t === liveBarRef.time   → same interval:          keep open, expand H/L, update close
-  //   t < liveBarRef.time     → stale/reordered tick:  discard
+  // The CandleStateManager owns OHLC construction, validation, the interval state
+  // machine, finalization, and telemetry.  This effect's only job is to forward
+  // each incoming price.update message to the manager.  Nothing else in this
+  // file calls candleSeries.update() — CSM is the SOLE writer.
   useEffect(() => {
-    if (!candleRef.current || !lastPrice || !bars.length) return;
+    const csm = csmRef.current;
+    if (!csm || !lastPrice || !bars.length) return;
+    csm.ingestTick(lastPrice.symbol, lastPrice.price, lastPrice.timestamp);
 
-    // G1 — symbol match
-    if (lastPrice.symbol !== symbol) return;
-
-    // G2 — market open
-    if (!isMarketOpen) return;
-
-    // G3 — price sanity
-    const price = lastPrice.price;
-    if (!isFinite(price) || isNaN(price) || price <= 0) return;
-
-    // G4 — ATR spike filter
-    // A single price tick should not deviate by more than 5× the rolling average bar range
-    // (or 2% of price, whichever is larger) from the live bar's accumulated close.
-    // This rejects erroneous trade prints that survived exchange filtering.
-    const atr      = avgBarRange(barsRef.current, 50);
-    const refPrice = liveBarRef.current?.close
-      ?? barsRef.current[barsRef.current.length - 1]?.close
-      ?? price;
-    const maxDelta = atr > 0 ? Math.max(atr * 5, refPrice * 0.02) : refPrice * 0.05;
-    if (Math.abs(price - refPrice) > maxDelta) return;
-
-    // G5 — historical boundary
-    // Align the incoming timestamp to the current interval boundary.
-    // The live bar must live STRICTLY AFTER the last bar in the historical dataset.
-    const t = lastPrice.timestamp - (lastPrice.timestamp % intervalSec);
-    if (t <= lastHistTimeRef.current) return;
-
-    // ── Build OHLC from the raw price stream ──────────────────────────────────
-    const live = liveBarRef.current;
-    let next: LiveBar;
-
-    if (live === null || t > live.time) {
-      // New interval (or first tick after a dataset load).
-      // Seed a brand-new bar object.  ALL FOUR fields start at the current price.
-      // No state is inherited from any previous bar.
-      next = { time: t, open: price, high: price, low: price, close: price };
-
-    } else if (t === live.time) {
-      // Same interval: accumulate.
-      // Lock the open (price at bar creation), expand H/L, update close.
-      next = {
-        time:  t,
-        open:  live.open,                    // immutable for this interval
-        high:  Math.max(live.high, price),
-        low:   Math.min(live.low,  price),
-        close: price,
-      };
-
-    } else {
-      return; // t < live.time → stale tick, discard
+    // Throttle the telemetry React state update.  Push immediately when something
+    // notable happens (a bar finalized, a new rejection), otherwise at most once
+    // every TELEMETRY_THROTTLE_MS.  This keeps the chart's incremental-update path
+    // hot and avoids re-rendering the SVG overlay on every accepted tick.
+    const t      = csm.getTelemetry();
+    const now    = performance.now();
+    const notable =
+      t.barsFinalized   !== telemetryLastFinal.current ||
+      t.ticksRejected   !== telemetryLastRejected.current;
+    if (notable || now - telemetryLastPushMs.current >= TELEMETRY_THROTTLE_MS) {
+      telemetryLastPushMs.current   = now;
+      telemetryLastFinal.current    = t.barsFinalized;
+      telemetryLastRejected.current = t.ticksRejected;
+      setTelemetry(t);
     }
-
-    // Paranoia check: the accumulated bar must still be internally valid
-    if (!isValidOhlc(next.open, next.high, next.low, next.close)) return;
-
-    liveBarRef.current = next;
-    try {
-      candleRef.current.update({
-        time:  next.time  as Time,
-        open:  next.open,
-        high:  next.high,
-        low:   next.low,
-        close: next.close,
-      });
-    } catch { /* chart may not be ready */ }
-  }, [lastPrice, bars.length, intervalSec, isMarketOpen, symbol]);
+  }, [lastPrice, bars.length]);
 
   return (
     <div className="flex flex-col h-full">
@@ -426,6 +395,24 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
           </span>
         )}
         <div className="flex-1" />
+        {telemetry && telemetry.ticksAccepted + telemetry.ticksRejected > 0 && (
+          <span
+            className="text-[10px] text-muted-foreground/60 font-mono hidden lg:inline"
+            title={
+              `Accepted: ${telemetry.ticksAccepted}\n` +
+              `Rejected: ${telemetry.ticksRejected}\n` +
+              `Finalized bars: ${telemetry.barsFinalized}\n` +
+              Object.entries(telemetry.rejectedByReason)
+                .map(([k, v]) => `  ${k}: ${v}`).join("\n")
+            }
+          >
+            <span className="text-emerald-500/70">✓{telemetry.ticksAccepted}</span>
+            {telemetry.ticksRejected > 0 && (
+              <span className="text-amber-500/70 ml-2">⚠{telemetry.ticksRejected}</span>
+            )}
+            <span className="text-muted-foreground/40 ml-2">·{telemetry.barsFinalized}f</span>
+          </span>
+        )}
         {isMarketOpen ? (
           <>
             <span className="text-[10px] text-emerald-400 font-mono tracking-widest">LIVE</span>

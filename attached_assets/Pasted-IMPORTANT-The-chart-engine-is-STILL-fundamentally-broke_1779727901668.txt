@@ -1,0 +1,403 @@
+IMPORTANT:
+The chart engine is STILL fundamentally broken.
+
+I am now using Replit Power mode, so I want you to completely rebuild and professionally stabilize the ENTIRE charting system.
+
+Do NOT patch the current system anymore.
+
+The current architecture still produces:
+
+* giant malformed candles
+* corrupted volatility
+* broken wick rendering
+* timestamp corruption
+* interval desync
+* scaling issues
+* unstable live behavior
+
+At this point I want a FULL PROFESSIONAL REBUILD of the intraday chart engine.
+
+====================================================
+GOAL
+====
+
+Build a PROFESSIONAL institutional-grade intraday chart engine similar to:
+
+* TradingView
+* ThinkOrSwim
+* Webull
+* professional trading terminals
+
+The chart must become:
+
+* stable
+* accurate
+* smooth
+* realistic
+* visually correct
+* architecturally clean
+
+====================================================
+CRITICAL REQUIREMENT
+====================
+
+STOP patching old logic.
+
+DELETE the current live candle architecture entirely.
+
+Rebuild it cleanly from scratch.
+
+====================================================
+FULL REBUILD REQUIREMENTS
+=========================
+
+Rebuild ALL of the following:
+
+1. Market data engine
+2. Historical loader
+3. Live websocket engine
+4. Candle construction engine
+5. Candle state manager
+6. Timestamp alignment system
+7. Interval state machine
+8. Autoscale engine
+9. Visible-range engine
+10. Signal synchronization engine
+11. Symbol switching engine
+12. Live update renderer
+13. Websocket reconnect engine
+14. Historical/live merge engine
+
+====================================================
+NEW CORE ARCHITECTURE
+=====================
+
+The system MUST use:
+
+====================================================
+IMMUTABLE HISTORICAL BARS
+=========================
+
+Historical bars:
+
+* loaded once
+* frozen
+* immutable forever
+* NEVER mutated again
+
+Historical bars must NEVER:
+
+* receive websocket updates
+* receive polling updates
+* receive merge overwrites
+
+====================================================
+LIVE CANDLE ENGINE
+==================
+
+ONLY ONE active live candle may exist.
+
+Create:
+currentLiveBar = {
+time,
+open,
+high,
+low,
+close,
+volume
+}
+
+====================================================
+IMPORTANT:
+BUILD LIVE CANDLES LOCALLY
+==========================
+
+DO NOT trust server-generated OHLC partial bars.
+
+The websocket server should ONLY stream:
+
+* price
+* trade
+* timestamp
+* volume
+
+The CLIENT must build candles locally.
+
+====================================================
+LIVE CANDLE RULES
+=================
+
+When new interval starts:
+open = current price
+high = current price
+low = current price
+close = current price
+
+For every new trade:
+high = max(high, tradePrice)
+low = min(low, tradePrice)
+close = latest tradePrice
+volume += tradeVolume
+
+====================================================
+STRICT FINALIZATION SYSTEM
+==========================
+
+When interval closes:
+
+1. freeze live candle
+2. append immutable finalized candle
+3. create brand-new empty live candle
+
+DO NOT reuse objects.
+
+====================================================
+STRICT TIMESTAMP ENGINE
+=======================
+
+Implement:
+
+* interval alignment
+* interval ownership
+* timestamp continuity validation
+* interval state machine
+
+Rules:
+
+* only one candle per timestamp
+* timestamps strictly increasing
+* no overlap allowed
+* no duplicate timestamps
+* no stale timestamps
+
+====================================================
+REMOVE SNAPSHOT POLLING
+=======================
+
+Completely REMOVE:
+
+* pollSnapshots()
+* snapshot OHLC usage
+* snapshot-based candle construction
+
+Snapshot polling must NEVER participate in intraday candle building again.
+
+====================================================
+WEBSOCKET ARCHITECTURE
+======================
+
+Use websocket ONLY for:
+
+* trade stream
+* live prices
+* live volume
+
+NO server-generated intraday OHLC bars.
+
+====================================================
+STRICT WRITE OWNERSHIP
+======================
+
+Only ONE system may write to the chart:
+CandleStateManager
+
+NO OTHER CODE may call:
+
+* candleSeries.update()
+* candleSeries.setData()
+
+====================================================
+ABSOLUTE RULE
+=============
+
+There must NEVER be:
+
+* dual writers
+* dual ownership
+* stale references
+* timestamp collisions
+* mutable history
+* shared candle objects
+
+====================================================
+AUTOSCALE ENGINE REBUILD
+========================
+
+Completely rebuild:
+
+* visible range calculations
+* volatility scaling
+* autoscale logic
+* price normalization
+* viewport calculations
+
+Prevent:
+
+* giant candle stretching
+* compressed volatility
+* malformed scaling
+* broken wick rendering
+
+====================================================
+VOLATILITY ENGINE
+=================
+
+Build ATR-aware scaling.
+
+The chart should visually behave naturally:
+
+* volatility expands correctly
+* consolidation compresses correctly
+* wick/body proportions look realistic
+
+====================================================
+SIGNAL ENGINE REBUILD
+=====================
+
+After chart stabilization:
+rebuild signal synchronization.
+
+Signals must:
+
+* align with real candle structure
+* align with true momentum
+* align with real volatility
+* align with real intraday movement
+
+====================================================
+TRADING LOGIC
+=============
+
+Improve:
+
+* breakout continuation detection
+* pullback entries
+* trend continuation entries
+* liquidity sweeps
+* BOS/CHOCH structure
+* candlestick analysis
+* volume confirmation
+* momentum continuation
+
+====================================================
+CANDLE PATTERN ENGINE
+=====================
+
+Implement proper detection for:
+
+* engulfing
+* hammer
+* shooting star
+* doji
+* morning star
+* evening star
+* inside bars
+* breakout candles
+* exhaustion candles
+
+====================================================
+MARKET STRUCTURE ENGINE
+=======================
+
+Implement:
+
+* swing highs/lows
+* trend direction
+* BOS
+* CHOCH
+* liquidity zones
+* support/resistance
+* trend continuation
+
+====================================================
+MULTI-TIMEFRAME ENGINE
+======================
+
+Focus ONLY on:
+
+* 5m
+* 15m
+
+NO fake timeframe blending.
+
+If user selects:
+5m → ONLY true 5m candles
+15m → ONLY true 15m candles
+
+====================================================
+HISTORICAL ENGINE
+=================
+
+Load:
+
+* ALL available Alpaca intraday history
+* earliest available date
+* continuous chronological loading
+* proper pagination
+
+NO synthetic candles.
+
+====================================================
+LIVE MARKET BEHAVIOR
+====================
+
+The chart must:
+
+* update smoothly
+* scroll smoothly
+* zoom smoothly
+* behave like TradingView
+* remain visually stable
+
+====================================================
+DEBUG SYSTEM
+============
+
+Build internal debug telemetry for:
+
+* malformed bars
+* timestamp collisions
+* stale updates
+* websocket desync
+* invalid OHLC
+* interval corruption
+
+Automatically reject corrupted updates.
+
+====================================================
+FINAL VISUAL TARGET
+===================
+
+The final result should look and behave VERY close to:
+
+* TradingView
+* professional institutional terminals
+
+NOT:
+
+* a hacked prototype
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* no giant candles exist
+* no malformed candles exist
+* no corrupted wicks exist
+* no timestamp collisions exist
+* no stale updates exist
+* no mutable history exists
+* no dual writers exist
+* autoscaling is stable
+* volatility rendering is realistic
+* websocket engine is stable
+* 5m works perfectly
+* 15m works perfectly
+* signals synchronize correctly
+* symbol switching works correctly
+* no rendering corruption remains
+* no synchronization bugs remain
+* no TypeScript errors exist
+* chart behaves like professional trading software
