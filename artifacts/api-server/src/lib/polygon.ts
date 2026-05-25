@@ -37,6 +37,36 @@ export interface PolygonSnapshot {
   prevClose: number;
 }
 
+// ── Regular Trading Hours filter ─────────────────────────────────────────────
+// TradingView's default US-equities session is Regular Trading Hours only:
+// 09:30 – 16:00 America/New_York, Mon–Fri (DST-aware). Polygon's aggregates
+// include all extended-hours activity (04:00 – 20:00 ET), which inflates the
+// bar count, changes volume, and distorts the OHLC of the 5m bars that
+// straddle 09:30 / 16:00. Filtering to RTH here brings our chart in line with
+// the default TradingView display.
+//
+// A bar's `time` is its START. We keep bars whose start is in [09:30, 16:00) ET,
+// i.e. minute-of-day in [570, 960). The 15:55 bar (start 955) is included; the
+// 16:00 bar (start 960) is excluded — same convention TradingView uses.
+
+const ET_PARTS_FMT = new Intl.DateTimeFormat("en-US", {
+  timeZone:   "America/New_York",
+  hourCycle:  "h23",
+  weekday:    "short",
+  hour:       "2-digit",
+  minute:     "2-digit",
+});
+
+function isRegularTradingHours(epochSec: number): boolean {
+  const parts = ET_PARTS_FMT.formatToParts(new Date(epochSec * 1000));
+  const wd = parts.find((p) => p.type === "weekday")?.value;
+  if (wd === "Sat" || wd === "Sun") return false;
+  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  const minutes = hh * 60 + mm;
+  return minutes >= 570 && minutes < 960; // 09:30 ≤ t < 16:00 ET
+}
+
 // ── Internal fetch helper ────────────────────────────────────────────────────
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -141,7 +171,11 @@ export async function fetchPolygonBars(symbol: string, interval: string, days = 
 
   // Polygon returns ascending order already; sort as a defensive measure.
   bars.sort((a, b) => a.time - b.time);
-  return bars;
+
+  // Filter to Regular Trading Hours so OHLCV, volume profile, and bar boundaries
+  // match TradingView's default US-equities session. Drops pre-market (04:00–09:30
+  // ET) and after-hours (16:00–20:00 ET), and excludes the 16:00 closing-cross bar.
+  return bars.filter((b) => isRegularTradingHours(b.time));
 }
 
 // ── Live snapshot ────────────────────────────────────────────────────────────

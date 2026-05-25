@@ -1,0 +1,91 @@
+The chart is MUCH closer now.
+
+Do NOT switch APIs again.
+
+The remaining divergence now looks like:
+
+* session handling
+* market-hours alignment
+* RTH vs ETH handling
+* adjusted/unadjusted data handling
+* timezone/session bucket differences
+
+NOT rendering anymore.
+
+====================================================
+IMPORTANT OBSERVATION
+=====================
+
+The overall structure is now very close to TradingView:
+
+* momentum structure
+* reversals
+* general candle flow
+* volume behavior
+
+But there are still:
+
+* price offsets
+* slightly different candle grouping
+* different highs/lows
+* different session structure
+
+====================================================
+LIKELY ROOT CAUSE NOW
+=====================
+
+Please investigate:
+
+1. Regular Trading Hours (RTH) vs Extended Hours (ETH)
+2. Session filtering
+3. Timezone alignment
+4. Adjusted vs unadjusted OHLC
+5. Pre-market/post-market inclusion
+6. Intraday session boundaries
+
+====================================================
+REQUIRED BEHAVIOR
+=================
+
+I want the chart configured to behave like TradingView equities:
+
+* proper NASDAQ session handling
+* proper market-open/close boundaries
+* proper intraday session aggregation
+* proper timezone alignment
+* correct 5m/15m session bucketing
+
+====================================================
+DO NOT SWITCH APIs AGAIN
+========================
+
+The problem is now:
+market session configuration and aggregation behavior.
+
+Not candle rendering.
+
+Not websocket corruption.
+
+Not chart styling.
+
+====================================================
+VERIFY AGAINST TRADINGVIEW
+==========================
+
+Please compare:
+
+* same symbol
+* same timeframe
+* same session settings
+* same timezone
+* same date range
+
+Then align the chart behavior as closely as possible to TradingView.
+
+Focus specifically on:
+
+* session boundaries
+* intraday alignment
+* RTH/ETH
+* adjusted data behavior
+* price continuity

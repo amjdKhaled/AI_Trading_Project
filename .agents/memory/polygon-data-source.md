@@ -32,3 +32,10 @@ Polygon's `/v2/aggs/ticker/{sym}/range/{mult}/{timespan}/{from}/{to}` anchors th
 **Why:** Polygon treats `from` as the bucket origin. Date strings (`YYYY-MM-DD`) are parsed as 00:00 UTC, which divides evenly into every supported intraday multiplier, so buckets snap to the wall clock.
 
 **How to apply:** Always pass `from`/`to` as `YYYY-MM-DD` strings, never as raw ms epochs. Sanity-check: after a fetch, every bar should satisfy `time % (multiplier * 60) === 0`.
+
+## Session: Regular Trading Hours filtering (CRITICAL for TradingView parity)
+Polygon's intraday aggregates include all extended-hours trading (04:00 – 20:00 ET). TradingView's default US-equities session is **RTH only: 09:30 – 16:00 ET, Mon–Fri**. If you ship Polygon bars unfiltered, you get ~2.5× the bar count, inflated volume, and visibly different OHLC on the 5m bars straddling 09:30 / 16:00 — even though every individual trade is correct.
+
+**Why:** Pre-market and after-hours trades change the high/low/close of the open/close 5m bars, and add ~150 extra bars/day that TradingView doesn't show by default. The chart will look "almost right but offset" until you filter.
+
+**How to apply:** Filter on the server using `Intl.DateTimeFormat({timeZone:"America/New_York", hourCycle:"h23"})` (DST-aware). A bar's `time` is its START, so keep bars whose ET minute-of-day is in `[570, 960)` — 09:30 inclusive, 16:00 exclusive. Reject Sat/Sun. Sanity check: a single trading day should yield 78 bars at 5m / 26 at 15m.
