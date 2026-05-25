@@ -83,6 +83,8 @@ export async function fetchAlpacaBars(symbol: string, interval: string, days = 9
       end:        end.toISOString(),
       limit:      "10000",
       adjustment: "all",
+      // IEX feed — available on all Alpaca accounts, goes back to ~2020.
+      // SIP (consolidated tape) requires a paid subscription not available on this account.
       feed:       "iex",
     };
     if (pageToken) params.page_token = pageToken;

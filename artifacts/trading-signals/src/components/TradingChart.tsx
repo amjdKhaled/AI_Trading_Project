@@ -28,7 +28,8 @@ interface Props {
 }
 
 const PRICE_SCALE_W = 68;
-const VOLUME_RATIO  = 0.28;
+// Fraction of chart height reserved for the volume pane (must match scaleMargins bottom below)
+const VOLUME_RATIO  = 0.22;
 
 export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar, symbol, timeframe, intervalSec, isMarketOpen }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -141,8 +142,22 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
       layout: { background: { color: "#0b0e14" }, textColor: "#9ca3af", fontFamily: "'JetBrains Mono','Menlo',monospace", fontSize: 11 },
       grid:   { vertLines: { color: "#151b26" }, horzLines: { color: "#151b26" } },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#1f2937", textColor: "#9ca3af" },
-      timeScale: { borderColor: "#1f2937", timeVisible: true, secondsVisible: false },
+      rightPriceScale: {
+        borderColor: "#1f2937",
+        textColor:   "#9ca3af",
+        autoScale:   true,
+        // Prevent bars from collapsing to sub-pixel width when zoomed far out
+        minimumWidth: 1,
+      },
+      timeScale: {
+        borderColor:      "#1f2937",
+        timeVisible:      true,
+        secondsVisible:   false,
+        // Prevent candles from being crushed to invisible width on zoom-out
+        minBarSpacing:    0.5,
+        // Keep the right edge ~5% inset so the last candle isn't flush against the price scale
+        rightOffset:      5,
+      },
       width:  containerRef.current.offsetWidth,
       height: containerRef.current.offsetHeight || 500,
     });
@@ -156,11 +171,11 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
       priceScaleId: "volume", priceFormat: { type: "volume" },
       priceLineVisible: false, lastValueVisible: false,
     });
-    // Volume pane: bottom 22% of chart height
-    // Candle pane: top 78%, with 8% breathing room above highest visible price
-    // This mirrors TradingView's default intraday proportions
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
-    candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
+    // Volume pane occupies the bottom 22% (matches VOLUME_RATIO constant).
+    // Candle pane: 78% of height with 5% breathing room above the high-of-range.
+    // 5% top + 22% bottom = TradingView-like proportions where candles fill 73% of the pane.
+    volume.priceScale().applyOptions({ scaleMargins: { top: 1 - VOLUME_RATIO, bottom: 0 } });
+    candle.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: VOLUME_RATIO } });
 
     chartRef.current  = chart;
     candleRef.current = candle;
@@ -196,10 +211,16 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
       color: b.close >= b.open ? "#26a69a28" : "#ef535028",
     })));
 
-    // Show last 100 bars on load: for 5m that's ~8 hours (one full session).
-    // Keeps candles wide and readable; user can zoom out to see full history.
-    if (bars.length > 100) {
-      chartRef.current.timeScale().setVisibleLogicalRange({ from: bars.length - 100, to: bars.length + 3 });
+    // Default view: last 78 bars = exactly one NYSE session (9:30–16:00 = 78 × 5m bars).
+    // This matches TradingView's default zoom on a 5m chart — one full day is visible,
+    // each candle is wide enough to clearly show body + wicks.
+    // User can scroll left for full multi-year history or zoom out for a wider view.
+    const defaultBars = 78;
+    if (bars.length > defaultBars) {
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: bars.length - defaultBars,
+        to:   bars.length + 5,  // small right-side padding so last bar isn't cut off
+      });
     } else {
       chartRef.current.timeScale().fitContent();
     }

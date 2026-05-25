@@ -93,8 +93,8 @@ router.get("/history", async (req, res): Promise<void> => {
   try {
     const bars = isIntraday
       // Pure Alpaca intraday — no blending with daily candles.
-      // "2020-01-01" reaches Alpaca IEX's earliest available intraday data.
-      ? await fetchAlpacaBars(rawSymbol, rawInterval, 90, "2020-01-01")
+      // SIP feed goes back to ~2016; "2015-01-01" ensures we always capture the full range.
+      ? await fetchAlpacaBars(rawSymbol, rawInterval, 90, "2015-01-01")
       : await runPython(rawSymbol, dailyConf!.yf, dailyConf!.period);
 
     cache.set(cacheKey, { data: bars, expiresAt: Date.now() + cacheTtl });

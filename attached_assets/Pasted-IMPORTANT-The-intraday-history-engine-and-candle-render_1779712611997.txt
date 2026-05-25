@@ -1,0 +1,271 @@
+IMPORTANT:
+The intraday history engine and candle rendering engine are STILL broken.
+
+The current implementation is NOT behaving like real TradingView intraday data.
+
+I can clearly see two major remaining problems:
+
+1. Intraday historical range limitation
+2. Incorrect candle rendering / missing candle structure
+
+Both MUST be fixed properly.
+
+====================================================
+CRITICAL PROBLEM #1
+INTRADAY HISTORY LIMITATION
+===========================
+
+The current platform only loads intraday history back to around 2020.
+
+This is incorrect because:
+the Alpaca plan clearly supports:
+
+* 9+ years historical data
+
+I want the platform to load:
+
+* the MAXIMUM AVAILABLE REAL intraday history
+  for:
+* 5m
+* 15m
+
+====================================================
+IMPORTANT
+=========
+
+DO NOT artificially limit:
+
+* date range
+* API pagination
+* historical requests
+
+====================================================
+IMPLEMENT FULL HISTORICAL PAGINATION
+====================================
+
+The current system likely only loads:
+
+* one request page
+  or
+* one limited historical batch
+
+This is WRONG.
+
+Implement FULL pagination for Alpaca historical bars.
+
+Keep requesting historical bars until:
+
+* no older bars remain
+  or
+* API limit is reached
+
+====================================================
+IMPORTANT:
+LOAD ALL AVAILABLE INTRADAY BARS
+================================
+
+For:
+
+* 5m
+* 15m
+
+Load:
+
+* every real intraday candle available
+* from the earliest available Alpaca intraday date
+
+====================================================
+NO FAKE DATA
+============
+
+DO NOT:
+
+* fake candles
+* interpolate candles
+* convert daily candles into intraday candles
+* synthesize missing history
+
+ONLY use REAL Alpaca bars.
+
+====================================================
+CRITICAL PROBLEM #2
+BROKEN CANDLE RENDERING
+=======================
+
+The candle rendering is STILL visually incorrect.
+
+Comparing the platform candles with TradingView:
+
+* wick sizes are wrong
+* candle body proportions are wrong
+* volatility compression exists
+* some candles appear visually incomplete
+* candle range is distorted
+* strong momentum candles are rendered too small
+
+The platform candles DO NOT match real TradingView candles.
+
+====================================================
+FIX OHLC RENDERING COMPLETELY
+=============================
+
+Verify:
+
+* open price
+* high price
+* low price
+* close price
+
+Ensure:
+
+* body height is accurate
+* wick height is accurate
+* candle range renders naturally
+* strong volatility candles expand visually
+
+====================================================
+IMPORTANT:
+FIX PRICE SCALE ENGINE
+======================
+
+The current chart scaling is compressing volatility.
+
+Rebuild:
+
+* autoscale engine
+* visible range calculations
+* intraday scaling logic
+* volatility-aware scaling
+
+====================================================
+VISIBLE RANGE REQUIREMENTS
+==========================
+
+Candles should:
+
+* expand naturally during volatility
+* compress naturally during consolidation
+* visually match TradingView behavior
+
+====================================================
+TRADINGVIEW VISUAL MATCH
+========================
+
+I want the chart to visually behave VERY close to:
+
+* TradingView
+* professional trading terminals
+
+Candles should:
+
+* have natural spacing
+* natural body size
+* natural wick size
+* natural volatility representation
+
+====================================================
+DO NOT DISTORT VOLATILITY
+=========================
+
+Prevent:
+
+* flattened candles
+* compressed movement
+* stretched candles
+* distorted price ranges
+
+====================================================
+VERIFY CANDLE ORDERING
+======================
+
+Ensure:
+
+* timestamps are ordered correctly
+* bars are sorted correctly
+* no duplicated bars exist
+* no malformed bars exist
+* no missing OHLC values exist
+
+====================================================
+VERIFY SESSION HANDLING
+=======================
+
+Ensure proper:
+
+* market session handling
+* premarket handling
+* after-hours handling
+* timezone handling
+
+Prevent:
+
+* giant gaps
+* malformed sessions
+* shifted candles
+
+====================================================
+IMPORTANT:
+PURE TIMEFRAME INTEGRITY
+========================
+
+If user selects:
+
+* 5m
+
+ALL candles MUST remain:
+
+* true 5-minute candles only
+
+If user selects:
+
+* 15m
+
+ALL candles MUST remain:
+
+* true 15-minute candles only
+
+NO timeframe blending.
+
+====================================================
+SIGNAL ENGINE SYNCHRONIZATION
+=============================
+
+After fixing candle rendering:
+
+* rebuild signal synchronization
+* signals must align with REAL candle structure
+* signals must align with REAL volatility
+
+====================================================
+PERFORMANCE
+===========
+
+Optimize:
+
+* large intraday history rendering
+* scrolling
+* zooming
+* live updates
+* autoscaling
+* pagination
+
+====================================================
+FINAL VERIFICATION
+==================
+
+Before finishing verify:
+
+* Alpaca pagination works correctly
+* maximum historical intraday bars load
+* no artificial history limits exist
+* candles visually match TradingView
+* wick sizes are correct
+* body sizes are correct
+* volatility scaling is correct
+* no compressed candles exist
+* no malformed candles exist
+* no missing candle sections exist
+* OHLC rendering is accurate
+* chart behaves like professional trading software
+* no TypeScript errors exist
+* no rendering bugs exist
