@@ -1,0 +1,226 @@
+The fixes are good and the architecture is now MUCH better, but the chart corruption problem is STILL not fully eliminated.
+
+The remaining issue visible in the screenshot strongly suggests there is STILL a timestamp-alignment or live-bar mutation bug occurring after all guards pass.
+
+The malformed giant candle indicates that a corrupted live bar is STILL reaching the chart renderer under certain edge cases.
+
+====================================================
+IMPORTANT
+THE BUG IS NOW LIKELY IN LIGHTWEIGHT CHARTS UPDATE FLOW
+=======================================================
+
+The remaining corruption likely comes from:
+
+* partial live-bar mutation
+* incorrect timestamp alignment
+* stale current-bar replacement
+* chart update ordering
+* out-of-order websocket updates
+* mixed partial/live candle states
+* historical/live overlap during active candle mutation
+
+====================================================
+CRITICAL FIX:
+SEPARATE HISTORICAL BARS FROM LIVE BAR STATE
+============================================
+
+Right now the live engine is probably mutating:
+
+* the same array/object references
+  used by:
+* historical candle storage
+
+This can silently corrupt bars.
+
+Implement STRICT separation between:
+
+1. immutable historical bars
+2. mutable active live candle
+
+====================================================
+IMPORTANT:
+NEVER MUTATE HISTORICAL DATA
+============================
+
+Historical bars must become:
+
+* immutable
+* frozen
+* never updated after insertion
+
+ONLY the currently active candle may mutate.
+
+====================================================
+REBUILD CURRENT-BAR ENGINE
+==========================
+
+Implement a dedicated:
+currentLiveBar state.
+
+The live websocket should:
+
+* ONLY update currentLiveBar
+* NEVER touch historical bars directly
+
+When the candle closes:
+
+1. freeze currentLiveBar
+2. append finalized candle
+3. create fresh empty currentLiveBar
+
+====================================================
+IMPORTANT:
+DO NOT USE candleSeries.update() BLINDLY
+========================================
+
+LightweightCharts update() can silently overwrite bars by timestamp.
+
+Instead:
+
+* track active live timestamp separately
+* reject updates that target finalized bars
+* prevent overwrite collisions
+
+====================================================
+STRICT LIVE TIMESTAMP STATE MACHINE
+===================================
+
+Maintain:
+
+* lastHistoricalTimestamp
+* currentLiveTimestamp
+* finalizedBarSet
+
+Rules:
+
+* finalized bars are immutable
+* live updates only allowed on currentLiveTimestamp
+* any older timestamp is rejected instantly
+* any future jump beyond one interval is rejected
+
+====================================================
+ADD INTERVAL CONSISTENCY CHECKS
+===============================
+
+For 5m:
+timestamps must ALWAYS increase by exactly:
+300 seconds
+
+For 15m:
+timestamps must ALWAYS increase by exactly:
+900 seconds
+
+Reject:
+
+* malformed intervals
+* duplicate timestamps
+* skipped malformed jumps
+* partial overlaps
+
+====================================================
+ADD LIVE BAR SANITY VALIDATION
+==============================
+
+Before rendering live candle:
+validate:
+
+* bar range relative to rolling ATR
+* body size relative to volatility
+* wick/body ratio sanity
+* timestamp continuity
+* symbol consistency
+
+====================================================
+REBUILD CHART UPDATE PIPELINE
+=============================
+
+New flow should be:
+
+1. Receive websocket tick
+2. Validate symbol
+3. Validate session
+4. Align timestamp
+5. Validate interval continuity
+6. Validate OHLC
+7. Validate ATR anomaly
+8. Validate against finalized bars
+9. Mutate ONLY currentLiveBar
+10. Render currentLiveBar only
+
+====================================================
+IMPORTANT:
+NO DIRECT WEBSOCKET → CHART WRITES
+==================================
+
+Websocket events should NEVER directly mutate chart series.
+
+Instead:
+Websocket
+→ validation pipeline
+→ live bar state manager
+→ renderer
+
+====================================================
+VISIBLE SYMPTOM EXPLANATION
+===========================
+
+The remaining giant candle strongly suggests:
+
+* a finalized candle is still being overwritten
+  OR
+* a live bar inherits stale OHLC state
+  OR
+* a timestamp collision still exists
+
+The bug is now architectural, not just validation-based.
+
+====================================================
+ADD DEBUG TELEMETRY
+===================
+
+Temporarily log:
+
+* timestamp
+* OHLC
+* ATR
+* interval alignment
+* source event
+* mutation target
+* finalized/live state
+
+ONLY for rejected bars.
+
+This will expose the exact corruption path.
+
+====================================================
+IMPORTANT:
+DO NOT HIDE THE BUG
+===================
+
+Do NOT:
+
+* visually clamp candles
+* crop spikes
+* fake autoscaling
+
+Fix the actual root state corruption.
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* no finalized candle is ever mutated
+* live bars are isolated from historical bars
+* timestamp collisions are impossible
+* interval continuity is enforced
+* no malformed giant candles appear
+* no stale websocket overwrites occur
+* no duplicate timestamps exist
+* chart visually matches TradingView behavior
+* live candles behave naturally
+* autoscaling remains stable
+* no rendering corruption remains
+* no synchronization race conditions remain
+* no TypeScript errors exist

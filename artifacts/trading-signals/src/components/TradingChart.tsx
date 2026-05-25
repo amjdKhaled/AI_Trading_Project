@@ -59,13 +59,14 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
   const tpRef        = useRef<ISeriesApi<"Line"> | null>(null);
   const tradeIdRef       = useRef<string | null>(null);
   const barsRef          = useRef<Bar[]>([]);
-  // Tracks the timestamp of the last bar in the most-recently loaded historical dataset.
-  // The live-tick handler uses this to ensure it NEVER overwrites a historical bar —
-  // only bars with time >= lastHistTime are eligible for live updates.
+  // Timestamp of the last bar in the most-recently loaded historical dataset.
+  // Live ticks are only allowed for timestamps STRICTLY AFTER this value.
   const lastHistTimeRef  = useRef<number>(0);
-  // Tracks the aligned timestamp of the currently-active live bar. Prevents stale
-  // WebSocket updates from a previous 5m boundary from being applied to a new bar slot.
-  const liveBarTimeRef   = useRef<number>(0);
+  // Client-side live bar state — the ONLY source of truth for the currently-forming candle.
+  // WebSocket ticks are MERGED into this object; the merged result is what gets passed to
+  // candleSeries.update().  Raw server OHLC is never passed to update() directly.
+  type LiveBar = { time: number; open: number; high: number; low: number; close: number };
+  const liveBarRef = useRef<LiveBar | null>(null);
 
   // stable refs for computeMarkers closure
   const signalsRef     = useRef<SignalNew[]>([]);
@@ -244,7 +245,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
     // ensure it only updates bars that come AFTER the historical dataset ends.
     const lastHistTime = validBars[validBars.length - 1].time;
     lastHistTimeRef.current = lastHistTime;
-    liveBarTimeRef.current  = 0; // reset live bar — new dataset, no live bar yet
+    liveBarRef.current      = null; // reset live bar — new dataset, no live bar yet
 
     candleRef.current.setData(validBars.map<CandlestickData<Time>>((b) => ({
       time: b.time as Time, open: b.open, high: b.high, low: b.low, close: b.close,
@@ -322,55 +323,111 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
 
-  // ── Live tick engine ──────────────────────────────────────────────────────
-  // Strict rules that prevent every known source of chart corruption:
+  // ── Live bar state machine ────────────────────────────────────────────────
   //
-  //  1. Symbol guard       — reject bars from a different symbol (symbol switch race)
-  //  2. Market-open guard  — never apply ticks when exchange is closed
-  //  3. OHLC integrity     — reject any bar with impossible H/L/O/C relationships
-  //  4. ATR spike filter   — reject ticks whose range exceeds 5× the rolling avg bar range
-  //  5. Historical guard   — only update bars whose aligned timestamp is STRICTLY AFTER
-  //                          the last bar in the historical dataset (never overwrite history)
-  //  6. Live bar tracking  — record the current live-bar timestamp; if an update arrives
-  //                          for an older boundary it is discarded as stale
+  // Architecture: WebSocket tick → validation pipeline → merge into liveBarRef
+  //               → candleSeries.update(liveBarRef)
+  //
+  // Raw server OHLC is NEVER passed to update() directly.  Every tick is merged
+  // into a client-owned LiveBar object so the chart always gets internally-consistent
+  // OHLC regardless of what the server sends.
+  //
+  // Validation pipeline (all guards must pass in order):
+  //   G1  Symbol match          — discard ticks from a different symbol
+  //   G2  Market open           — discard all ticks when exchange is closed
+  //   G3  Incoming OHLC valid   — reject impossible H/L/O/C values or NaN/Infinity
+  //   G4  ATR spike filter      — reject ticks whose H-L range > 5× rolling avg bar range
+  //   G5  Historical boundary   — t must be STRICTLY AFTER last historical bar (≤ rejected)
+  //
+  // State machine transitions:
+  //   liveBarRef === null        → first tick after load: seed new bar at close price
+  //   t > liveBarRef.time        → new 5m period: seed fresh bar at close price
+  //   t === liveBarRef.time      → same period: merge (keep open, expand H/L, update close)
+  //   t < liveBarRef.time        → stale tick: discard
+  //
+  // For bar.final (completed bar from Alpaca WS): the authoritative server OHLC is used
+  // directly (replaces the accumulated partial state) then liveBarRef is cleared so the
+  // next period starts fresh.
   useEffect(() => {
     if (!candleRef.current || !lastBar || !bars.length) return;
 
-    // 1. Symbol guard
+    // G1 — symbol match
     if (lastBar.symbol !== symbol) return;
 
-    // 2. Market-open guard
+    // G2 — market open
     if (!isMarketOpen) return;
 
-    const { open, high, low, close } = lastBar;
+    const { type, open: rO, high: rH, low: rL, close: rC } = lastBar;
 
-    // 3. OHLC integrity
-    if (!isValidOhlc(open, high, low, close)) return;
+    // G3 — incoming OHLC integrity
+    if (!isValidOhlc(rO, rH, rL, rC)) return;
 
-    // 4. ATR-based spike rejection.
-    //    Compute rolling average bar range from the last 50 historical bars.
-    //    Reject any tick whose H-L range exceeds 5× that average — or a hard cap
-    //    of 5% of price, whichever is more permissive.  This catches daily-range
-    //    contamination that somehow slipped through and wild data spikes.
+    // G4 — ATR spike filter
+    // Rolling average H-L range over the last 50 historical bars is the baseline ATR.
+    // Reject any tick whose range exceeds 5× ATR (or 2% of price, whichever is larger).
     const atr = avgBarRange(barsRef.current, 50);
-    const price = close || 1;
-    const maxAllowedRange = atr > 0
-      ? Math.max(atr * 5, price * 0.02)   // 5× ATR or 2% of price, whichever is larger
-      : price * 0.05;                      // fallback: 5% when we have no history yet
-    if ((high - low) > maxAllowedRange) return;
+    const px  = rC || 1;
+    const maxRange = atr > 0 ? Math.max(atr * 5, px * 0.02) : px * 0.05;
+    if ((rH - rL) > maxRange) return;
 
-    // 5. Historical guard — NEVER overwrite a bar that already exists in the
-    //    historical dataset.  Only timestamps that are strictly after the last
-    //    fetched bar are eligible for live updates.
+    // G5 — historical boundary (strict ≤: t must be AFTER, not equal to, last hist bar)
+    // Alpaca historical API only returns completed bars, so the current live bar's aligned
+    // timestamp is always > lastHistTimeRef.current.  The ≤ catches the edge case where a
+    // bar.final arrives for the exact last historical bar (same timestamp).
     const t = lastBar.time - (lastBar.time % intervalSec);
-    if (t < lastHistTimeRef.current) return;
+    if (t <= lastHistTimeRef.current) return;
 
-    // 6. Live bar tracking — discard stale updates for past 5m boundaries
-    if (liveBarTimeRef.current > 0 && t < liveBarTimeRef.current) return;
-    liveBarTimeRef.current = t;
+    const live = liveBarRef.current;
 
+    // ── bar.final: completed bar from Alpaca WS ─────────────────────────────
+    // Use the authoritative server OHLC directly.  This bar is DONE — clear the
+    // live state so the next partial tick starts a fresh accumulation.
+    if (type === "bar.final") {
+      if (live !== null && t < live.time) return; // stale final for a bar we already passed
+      if (!isValidOhlc(rO, rH, rL, rC)) return;
+      const finalBar: LiveBar = { time: t, open: rO, high: rH, low: rL, close: rC };
+      liveBarRef.current = finalBar;
+      try { candleRef.current.update({ time: t as Time, open: rO, high: rH, low: rL, close: rC }); }
+      catch { /* chart may not be ready */ }
+      return;
+    }
+
+    // ── bar.partial: accumulate into client-owned live bar ──────────────────
+    let next: LiveBar;
+
+    if (live === null || t > live.time) {
+      // New 5m period (or first tick after a dataset load).
+      // Seed ALL four OHLC at the current close price.  Never inherit stale OHLC from a
+      // previous period — that is the direct cause of giant-candle corruption.
+      next = { time: t, open: rC, high: rC, low: rC, close: rC };
+
+    } else if (t === live.time) {
+      // Same period: merge this tick into the accumulated live bar.
+      // Keep the OPEN from when the bar started; expand H/L; update close.
+      next = {
+        time:  t,
+        open:  live.open,
+        high:  Math.max(live.high, rH),
+        low:   Math.min(live.low,  rL),
+        close: rC,
+      };
+
+    } else {
+      return; // stale tick for a period we already closed — discard
+    }
+
+    // Final validation of the merged bar before it touches the chart
+    if (!isValidOhlc(next.open, next.high, next.low, next.close)) return;
+
+    liveBarRef.current = next;
     try {
-      candleRef.current.update({ time: t as Time, open, high, low, close });
+      candleRef.current.update({
+        time:  next.time  as Time,
+        open:  next.open,
+        high:  next.high,
+        low:   next.low,
+        close: next.close,
+      });
     } catch { /* chart may not be ready */ }
   }, [lastBar, bars.length, intervalSec, isMarketOpen, symbol]);
 
