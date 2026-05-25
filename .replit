@@ -34,3 +34,9 @@ externalPort = 3000
 [nix]
 channel = "stable-25_05"
 packages = ["glibcLocales"]
+
+[userenv]
+
+[userenv.shared]
+ALPACA_API_KEY = "PK6I6DKAOVZKO52JUPY4YIDZCN"
+ALPACA_SECRET_KEY = "2DJyspYy5XYtWrNj2FKPBnSpbeP6DqWqPShJY6rjYT7T"

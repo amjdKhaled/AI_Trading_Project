@@ -1,159 +1,217 @@
 import { WebSocketServer, WebSocket } from "ws";
-import { spawn } from "child_process";
-import path from "path";
 import type { Server } from "http";
+import { fetchAlpacaSnapshot, isNyseOpen } from "./alpaca";
 import { logger } from "./logger";
 
-interface WsClient {
-  ws: WebSocket;
-  symbol: string;
-}
+// ── Client registry ──────────────────────────────────────────────────────────
 
+interface WsClient { ws: WebSocket; symbol: string; }
 const clients: Set<WsClient> = new Set();
 
 function broadcast(symbol: string, message: object) {
   const data = JSON.stringify(message);
-  for (const client of clients) {
-    if (client.symbol === symbol && client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(data);
-    }
+  for (const c of clients) {
+    if (c.symbol === symbol && c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
   }
 }
 
-// ── Real-price fetcher via yfinance_fetch.py live ─────────────────────────
-const PYTHON_SCRIPT = path.join(process.cwd(), "src", "yfinance_fetch.py");
-
-interface LivePrice {
-  symbol: string;
-  price: number;
-  lastClose: number;
-  isMarketOpen: boolean;
-  timestamp: number;
-  bar: { time: number; open: number; high: number; low: number; close: number; volume: number } | null;
-  error?: string;
+function getActiveSymbols(): Set<string> {
+  const s = new Set<string>();
+  for (const c of clients) s.add(c.symbol);
+  return s;
 }
 
-// In-process cache: avoid hammering yfinance on every tick
-const priceCache = new Map<string, { data: LivePrice; ts: number }>();
-const CACHE_TTL_MS = 12_000; // 12 seconds — yfinance updates ~every 15s
+// ── Alpaca WebSocket streaming ────────────────────────────────────────────────
+// Receives completed bars in real time during market hours.
 
-function fetchLivePrice(symbol: string): Promise<LivePrice | null> {
-  const cached = priceCache.get(symbol);
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return Promise.resolve(cached.data);
+const ALPACA_WS_URL = "wss://stream.data.alpaca.markets/v2/iex";
 
-  return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    const proc = spawn("python3", [PYTHON_SCRIPT, symbol, "live"]);
-    proc.stdout.on("data", (c: Buffer) => { stdout += c.toString(); });
-    proc.stderr.on("data", (c: Buffer) => { stderr += c.toString(); });
-    proc.on("close", () => {
-      try {
-        const data: LivePrice = JSON.parse(stdout.trim());
-        if (!data.error) priceCache.set(symbol, { data, ts: Date.now() });
-        resolve(data.error ? null : data);
-      } catch {
-        logger.warn({ symbol, stderr: stderr.slice(0, 200) }, "live price parse failed");
-        resolve(null);
+let alpacaSocket: WebSocket | null = null;
+let alpacaAuthed = false;
+const alpacaSubscribed = new Set<string>();
+
+function alpacaConnect() {
+  if (alpacaSocket && (alpacaSocket.readyState === WebSocket.OPEN || alpacaSocket.readyState === WebSocket.CONNECTING)) return;
+
+  logger.info("Connecting to Alpaca market-data WebSocket…");
+  const ws = new WebSocket(ALPACA_WS_URL);
+  alpacaSocket = ws;
+
+  ws.on("open", () => {
+    ws.send(JSON.stringify({
+      action: "auth",
+      key:    process.env.ALPACA_API_KEY    ?? "",
+      secret: process.env.ALPACA_SECRET_KEY ?? "",
+    }));
+  });
+
+  ws.on("message", (raw: Buffer) => {
+    try {
+      const msgs = JSON.parse(raw.toString()) as Array<Record<string, unknown>>;
+      for (const msg of msgs) {
+        if (msg.T === "success" && msg.msg === "authenticated") {
+          alpacaAuthed = true;
+          logger.info("Alpaca WS authenticated");
+          // Subscribe to all currently-active symbols
+          alpacaSubscribeNew([...getActiveSymbols()]);
+
+        } else if (msg.T === "b" && typeof msg.S === "string") {
+          // Completed bar — broadcast bar.final to subscribed clients
+          const sym = msg.S as string;
+          broadcast(sym, {
+            type:   "bar.final",
+            symbol: sym,
+            time:   Math.floor(new Date(msg.t as string).getTime() / 1000),
+            open:   msg.o,
+            high:   msg.h,
+            low:    msg.l,
+            close:  msg.c,
+            volume: msg.v,
+          });
+        }
+        // Ignore subscription confirmations and other messages
       }
-    });
-    proc.on("error", (err) => { logger.warn({ err, symbol }, "python spawn error"); resolve(null); });
-    // Hard timeout: if yfinance hangs, don't block the interval
-    setTimeout(() => { try { proc.kill(); } catch {} resolve(null); }, 9_000);
+    } catch { /* malformed — ignore */ }
+  });
+
+  ws.on("close", (code, reason) => {
+    alpacaSocket  = null;
+    alpacaAuthed  = false;
+    alpacaSubscribed.clear();
+    logger.info({ code, reason: reason.toString() }, "Alpaca WS closed — reconnecting in 5 s");
+    setTimeout(alpacaConnect, 5_000);
+  });
+
+  ws.on("error", (err) => {
+    logger.warn({ err: err.message }, "Alpaca WS error");
+    ws.close();
   });
 }
 
-// ── Broadcast real market data to all subscribed clients ─────────────────
-async function broadcastMarketData() {
-  if (clients.size === 0) return;
+function alpacaSubscribeNew(symbols: string[]) {
+  if (!alpacaSocket || !alpacaAuthed) return;
+  const fresh = symbols.filter((s) => !alpacaSubscribed.has(s));
+  if (fresh.length === 0) return;
+  alpacaSocket.send(JSON.stringify({ action: "subscribe", bars: fresh }));
+  fresh.forEach((s) => alpacaSubscribed.add(s));
+  logger.info({ symbols: fresh }, "Alpaca bars subscribed");
+}
 
-  const active = new Set<string>();
-  for (const c of clients) active.add(c.symbol);
+// ── Snapshot polling: partial bars + market-closed status ───────────────────
+// Every 10 seconds we fetch a snapshot for each active symbol.
+//   • Market OPEN  → broadcast bar.partial with real OHLCV
+//   • Market CLOSED → broadcast market.status with last close
+
+interface CurrentBar { time: number; open: number; high: number; low: number; close: number; volume: number; }
+const currentBars = new Map<string, CurrentBar>();
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+async function pollSnapshots() {
+  const active = getActiveSymbols();
+  if (active.size === 0) return;
+
+  const marketOpen = isNyseOpen();
+  const now = Date.now() / 1000;
 
   for (const symbol of active) {
-    const data = await fetchLivePrice(symbol);
-    if (!data) continue;
+    const snap = await fetchAlpacaSnapshot(symbol).catch(() => null);
+    if (!snap) continue;
 
-    if (!data.isMarketOpen) {
-      // Market closed — send status so the chart shows "CLOSED"
+    if (!marketOpen) {
+      // Market closed — freeze the price line, no candle movement
       broadcast(symbol, {
-        type:       "market.status",
+        type:      "market.status",
         symbol,
-        isOpen:     false,
-        price:      data.lastClose || data.price,
-        lastClose:  data.lastClose,
-        timestamp:  data.timestamp,
+        isOpen:    false,
+        price:     snap.prevClose || snap.price,
+        lastClose: snap.prevClose || snap.price,
+        timestamp: Math.floor(now),
       });
-    } else {
-      // Market open — send the real current bar partial
-      if (data.bar) {
-        broadcast(symbol, {
-          type:   "bar.partial",
-          symbol,
-          ...data.bar,
-        });
-      }
+      continue;
     }
+
+    // Market open — build / update the current partial 5-minute bar
+    const barTs = Math.floor(now / 300) * 300; // floor to 5-minute boundary
+    const prev  = currentBars.get(symbol);
+
+    const updatedBar: CurrentBar = {
+      time:   barTs,
+      open:   prev?.time === barTs ? prev.open : snap.open,      // keep open from start of 5m bar
+      high:   Math.max(snap.price, prev?.time === barTs ? prev.high : snap.price),
+      low:    Math.min(snap.price, prev?.time === barTs ? prev.low  : snap.price),
+      close:  snap.price,
+      volume: snap.volume,
+    };
+    currentBars.set(symbol, updatedBar);
+
+    broadcast(symbol, { type: "bar.partial", symbol, ...updatedBar });
   }
 }
 
-let pollInterval: ReturnType<typeof setInterval> | null = null;
-
 function startPolling() {
-  if (pollInterval) return;
-  // Poll every 15 seconds — matches yfinance refresh cadence
-  pollInterval = setInterval(() => { broadcastMarketData().catch(() => {}); }, 15_000);
-  // Immediate first broadcast when polling starts
-  broadcastMarketData().catch(() => {});
+  if (pollTimer) return;
+  pollTimer = setInterval(() => { pollSnapshots().catch(() => {}); }, 10_000);
+  // Immediate first poll
+  pollSnapshots().catch(() => {});
 }
+
+// ── Public API: attach to HTTP server ─────────────────────────────────────────
 
 export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
   wss.on("connection", (ws, req) => {
-    const url    = new URL(req.url ?? "/ws", "http://localhost");
-    const symbol = url.searchParams.get("symbol") ?? "NVDA";
+    const urlObj  = new URL(req.url ?? "/ws", "http://localhost");
+    const symbol  = urlObj.searchParams.get("symbol")?.toUpperCase() ?? "NVDA";
     const client: WsClient = { ws, symbol };
     clients.add(client);
     logger.info({ symbol }, "WebSocket client connected");
 
-    // Send current market status immediately on connect
-    fetchLivePrice(symbol).then((data) => {
-      if (!data || ws.readyState !== WebSocket.OPEN) return;
-      if (!data.isMarketOpen) {
-        ws.send(JSON.stringify({ type: "market.status", symbol, isOpen: false, price: data.lastClose || data.price, lastClose: data.lastClose }));
-      } else if (data.bar) {
-        ws.send(JSON.stringify({ type: "bar.partial", symbol, ...data.bar }));
+    // Send immediate snapshot on connect
+    fetchAlpacaSnapshot(symbol).then((snap) => {
+      if (!snap || ws.readyState !== WebSocket.OPEN) return;
+      if (!isNyseOpen()) {
+        ws.send(JSON.stringify({
+          type:      "market.status",
+          symbol,
+          isOpen:    false,
+          price:     snap.prevClose || snap.price,
+          lastClose: snap.prevClose || snap.price,
+        }));
+      } else {
+        const now   = Date.now() / 1000;
+        const barTs = Math.floor(now / 300) * 300;
+        ws.send(JSON.stringify({
+          type: "bar.partial", symbol,
+          time: barTs, open: snap.open, high: snap.high, low: snap.low, close: snap.price, volume: snap.volume,
+        }));
       }
     }).catch(() => {});
 
-    ws.send(JSON.stringify({ type: "subscribed", symbol, tf: "5m" }));
+    ws.send(JSON.stringify({ type: "subscribed", symbol }));
 
     ws.on("message", (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
         if (msg.op === "subscribe" && msg.symbol) {
           client.symbol = String(msg.symbol).toUpperCase();
-          ws.send(JSON.stringify({ type: "subscribed", symbol: client.symbol, tf: msg.tf ?? "5m" }));
-          // Send immediate status for the new symbol
-          fetchLivePrice(client.symbol).then((data) => {
-            if (!data || ws.readyState !== WebSocket.OPEN) return;
-            if (!data.isMarketOpen) {
-              ws.send(JSON.stringify({ type: "market.status", symbol: client.symbol, isOpen: false, price: data.lastClose || data.price, lastClose: data.lastClose }));
-            } else if (data.bar) {
-              ws.send(JSON.stringify({ type: "bar.partial", symbol: client.symbol, ...data.bar }));
-            }
-          }).catch(() => {});
+          alpacaSubscribeNew([client.symbol]);
+          ws.send(JSON.stringify({ type: "subscribed", symbol: client.symbol }));
         }
-      } catch { /* ignore malformed */ }
+      } catch { /* ignore */ }
     });
 
-    ws.on("close", () => { clients.delete(client); logger.info({ symbol: client.symbol }, "WebSocket disconnected"); });
-    ws.on("error", ()  => { clients.delete(client); });
+    ws.on("close", () => { clients.delete(client); logger.info({ symbol: client.symbol }, "WS disconnected"); });
+    ws.on("error", () => { clients.delete(client); });
 
+    // Ensure Alpaca stream is up and this symbol is subscribed
+    alpacaConnect();
+    alpacaSubscribeNew([symbol]);
     startPolling();
   });
 
+  // Pre-warm Alpaca connection so it's ready before the first client arrives
+  alpacaConnect();
   logger.info("WebSocket server attached at /ws");
   return wss;
 }
