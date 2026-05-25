@@ -1,0 +1,402 @@
+IMPORTANT:
+We are now moving from a simple chart application into a full institutional-grade market analysis engine.
+
+DO NOT create a basic indicator.
+
+I want a PROFESSIONAL market intelligence system that deeply understands charts internally and produces clean high-quality entry/exit signals.
+
+====================================================
+MAIN GOAL
+=========
+
+Build a complete:
+
+* Signal Analysis Engine
+* Market Intelligence Engine
+* Candlestick Analysis Engine
+* Price Action Engine
+* Market Structure Engine
+* Volume Analysis Engine
+* AI-Adaptive Decision Engine
+
+The system must analyze the market deeply in the background and only display clean professional signals on the chart.
+
+====================================================
+VERY IMPORTANT
+==============
+
+The chart itself must remain CLEAN.
+
+DO NOT visually draw:
+
+* EMA lines
+* RSI
+* MACD
+* VWAP
+* ATR bands
+* support/resistance lines
+* pattern drawings
+* debug labels
+* market structure labels
+* liquidity drawings
+
+The system should analyze all of these internally only.
+
+====================================================
+ONLY DISPLAY
+============
+
+1. LONG ENTRY
+
+* LuxAlgo-style green arrow below candle
+
+2. SHORT ENTRY
+
+* LuxAlgo-style red arrow above candle
+
+3. EXIT
+
+* elegant "$" icon
+
+4. STOP LOSS
+
+* one thin clean dashed line
+
+NOTHING ELSE.
+
+====================================================
+CANDLESTICK ANALYSIS ENGINE
+===========================
+
+Build a COMPLETE Japanese candlestick recognition engine.
+
+The system must recognize and analyze ALL major candlestick patterns professionally.
+
+====================================================
+BULLISH PATTERNS
+================
+
+Detect:
+
+* Bullish Engulfing
+* Hammer
+* Inverted Hammer
+* Morning Star
+* Three White Soldiers
+* Piercing Pattern
+* Bullish Harami
+* Tweezer Bottom
+* Rising Three Methods
+* Marubozu Bullish
+* Dragonfly Doji
+* Bullish Belt Hold
+* Kicker Bullish
+* Abandoned Baby Bullish
+* Matching Low
+* Concealing Baby Swallow
+
+====================================================
+BEARISH PATTERNS
+================
+
+Detect:
+
+* Bearish Engulfing
+* Shooting Star
+* Hanging Man
+* Evening Star
+* Three Black Crows
+* Dark Cloud Cover
+* Bearish Harami
+* Tweezer Top
+* Falling Three Methods
+* Bearish Marubozu
+* Gravestone Doji
+* Bearish Belt Hold
+* Bearish Kicker
+* Abandoned Baby Bearish
+* Deliberation Pattern
+
+====================================================
+NEUTRAL / INDECISION PATTERNS
+=============================
+
+Detect:
+
+* Doji
+* Long-Legged Doji
+* Spinning Top
+* High Wave Candle
+* Rickshaw Man
+
+====================================================
+MOMENTUM CANDLE ANALYSIS
+========================
+
+Analyze:
+
+* strong momentum candles
+* breakout candles
+* exhaustion candles
+* climax candles
+* rejection candles
+* continuation candles
+* imbalance candles
+* volatility expansion candles
+
+====================================================
+PRICE ACTION ENGINE
+===================
+
+The system must deeply analyze price action.
+
+Detect:
+
+* breakout
+* retest
+* fake breakout
+* liquidity sweep
+* support bounce
+* resistance rejection
+* trend continuation
+* trend exhaustion
+* mean reversion
+* consolidation
+* expansion
+* compression
+* volatility contraction
+* volatility expansion
+
+====================================================
+MARKET STRUCTURE ENGINE
+=======================
+
+Analyze:
+
+* Higher High
+* Higher Low
+* Lower High
+* Lower Low
+* BOS (Break of Structure)
+* CHOCH (Change of Character)
+* Trend Shift
+* Internal Structure
+* Swing Structure
+* External Structure
+* Market Regime
+
+====================================================
+CHART PATTERN ENGINE
+====================
+
+Build COMPLETE chart pattern recognition.
+
+Detect:
+
+* Bull Flag
+* Bear Flag
+* Ascending Triangle
+* Descending Triangle
+* Symmetrical Triangle
+* Wedge
+* Rising Wedge
+* Falling Wedge
+* Pennant
+* Rectangle
+* Channel
+* Double Top
+* Double Bottom
+* Triple Top
+* Triple Bottom
+* Head and Shoulders
+* Inverse Head and Shoulders
+* Cup and Handle
+* Rounded Bottom
+* Rounded Top
+* Diamond Pattern
+* Broadening Formation
+
+====================================================
+VOLUME ANALYSIS ENGINE
+======================
+
+Analyze:
+
+* Relative Volume (RVOL)
+* Volume spikes
+* Breakout volume
+* Absorption
+* Exhaustion volume
+* Accumulation
+* Distribution
+* Volume divergence
+* Momentum volume
+* Climax volume
+
+====================================================
+TREND ENGINE
+============
+
+Analyze:
+
+* EMA trend alignment
+* Momentum direction
+* Trend strength
+* Trend continuation probability
+* Pullback quality
+* Trend exhaustion
+* Multi-timeframe alignment
+
+====================================================
+MOMENTUM ENGINE
+===============
+
+Analyze internally:
+
+* RSI
+* MACD
+* Momentum acceleration
+* Momentum divergence
+* Hidden divergence
+* Strength continuation
+
+DO NOT visually display these indicators.
+
+====================================================
+VOLATILITY ENGINE
+=================
+
+Analyze:
+
+* ATR
+* Volatility expansion
+* Volatility contraction
+* Compression zones
+* Breakout probability
+
+====================================================
+AI-ADAPTIVE ENGINE
+==================
+
+Implement adaptive AI-like behavior.
+
+Use:
+
+* dynamic confidence scoring
+* adaptive thresholds
+* anti-chop filtering
+* volatility adaptation
+* market regime adaptation
+* dynamic weighting
+* signal quality scoring
+* historical signal tracking
+
+The system should become smarter depending on:
+
+* market conditions
+* trend strength
+* volatility
+* volume
+* historical signal performance
+
+====================================================
+SIGNAL ENGINE
+=============
+
+Combine ALL engines together into one decision engine.
+
+Generate signals ONLY when:
+
+* trend aligns
+* momentum confirms
+* candle confirms
+* structure confirms
+* volume confirms
+* volatility conditions are valid
+* confidence score is high
+
+====================================================
+SIGNAL QUALITY
+==============
+
+Classify:
+
+* A+
+* A
+* B
+* Weak
+
+ONLY DISPLAY:
+
+* A+
+* A
+
+Hide weak signals internally.
+
+====================================================
+RISK ENGINE
+===========
+
+Calculate:
+
+* risk score
+* probability score
+* SL distance
+* volatility risk
+* trend quality
+* confidence level
+
+Classify:
+
+* Safe
+* Medium
+* Dangerous
+
+====================================================
+LIVE MARKET BEHAVIOR
+====================
+
+The system must:
+
+* work during live trading
+* update in real time
+* generate signals after candle close confirmation
+* remain non-repainting
+* stay attached correctly to candles
+
+====================================================
+PERFORMANCE REQUIREMENTS
+========================
+
+Optimize:
+
+* rendering
+* CPU usage
+* signal generation
+* historical analysis
+* object count
+
+Prevent:
+
+* lag
+* chart clutter
+* duplicate signals
+* overlapping objects
+
+====================================================
+FINAL GOAL
+==========
+
+The final system should behave like:
+
+* an institutional AI trading assistant
+* a professional market intelligence engine
+* a premium LuxAlgo-level platform
+
+The chart should remain:
+
+* clean
+* minimalist
+* professional
+
+The system should think deeply in the background and only display the final high-quality trading decisions.

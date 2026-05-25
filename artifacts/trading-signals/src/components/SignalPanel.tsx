@@ -136,6 +136,14 @@ export function SignalPanel({ symbol, newSignals }: Props) {
                   <div className="flex items-center gap-1">
                     {stateIcon(sig.state)}
                     {riskTagIcon(sig.riskTag)}
+                    {(() => {
+                      const s = sig as unknown as { grade?: string };
+                      return s.grade ? (
+                        <span className={`text-[10px] font-bold px-1 rounded ${s.grade === "A+" ? "bg-green-500/20 text-green-400" : "bg-amber-500/20 text-amber-400"}`}>
+                          {s.grade}
+                        </span>
+                      ) : null;
+                    })()}
                     <span className={`text-xs font-mono font-semibold ${confidenceColor(sig.confidence)}`}>
                       {sig.confidence}%
                     </span>

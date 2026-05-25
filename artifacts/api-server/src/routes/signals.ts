@@ -7,6 +7,8 @@ import {
   GetSignalStatsQueryParams,
   GetSignalStatsResponse,
 } from "@workspace/api-zod";
+import { generateSignals } from "../lib/analyzer/signals";
+import { fetchHistory } from "./history";
 
 const router: IRouter = Router();
 
@@ -18,6 +20,44 @@ router.get("/signals", async (req, res): Promise<void> => {
   }
 
   const { symbol, limit } = query.data;
+
+  // On-demand: run the real analysis engine to generate fresh signals
+  if (symbol) {
+    try {
+      const rawBars = await fetchHistory(symbol, "1d");
+      const bars = rawBars as import("../lib/analyzer/types").OhlcvBar[];
+      if (bars.length >= 50) {
+        const { signals } = generateSignals(bars, symbol, "1d");
+        // Persist only A+/A grade signals that don't already exist
+        for (const sig of signals) {
+          try {
+            await db.insert(signalsTable).values({
+              signalId: sig.id,
+              symbol: sig.symbol,
+              timeframe: sig.timeframe,
+              barTime: new Date(sig.barTime * 1000),
+              side: sig.side,
+              entryPrice: sig.entryPrice,
+              slPrice: sig.slPrice,
+              tpPrice: sig.tpPrice,
+              currentSlPrice: sig.slPrice,
+              confidence: sig.confidence,
+              riskTag: sig.riskLevel,
+              state: "active",
+              rrRatio: Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / Math.abs(sig.entryPrice - sig.slPrice || 0.001) * 100) / 100,
+              pattern: sig.patterns[0] ?? "analysis_engine",
+              regime: "trend_up",
+            });
+          } catch {
+            // Duplicate key — ignore
+          }
+        }
+      }
+    } catch {
+      // History unavailable — fall back to DB only
+    }
+  }
+
   let q = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
   if (symbol) {
     q = q.where(eq(signalsTable.symbol, symbol)) as typeof q;

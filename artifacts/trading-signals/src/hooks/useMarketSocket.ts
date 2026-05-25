@@ -22,6 +22,8 @@ export interface SignalNew {
   confidence: number;
   riskTag: string;
   barTime: string;
+  grade?: "A+" | "A" | "B" | "Weak";
+  patterns?: string[];
 }
 
 export interface SlUpdate {

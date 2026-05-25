@@ -23,6 +23,13 @@ const INTERVAL_CONFIG: Record<string, { yf: string; period: string; cacheTtl: nu
 // In-memory response cache
 const cache = new Map<string, { data: unknown[]; expiresAt: number }>();
 
+// Exported for on-demand analysis engine use
+export function fetchHistory(symbol: string, interval: string): Promise<unknown[]> {
+  const config = INTERVAL_CONFIG[interval];
+  if (!config) return Promise.resolve([]);
+  return runPython(symbol, config.yf, config.period);
+}
+
 function runPython(symbol: string, yf_interval: string, period: string): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
     const proc = spawn("python3", [PYTHON_SCRIPT, symbol, yf_interval, period]);

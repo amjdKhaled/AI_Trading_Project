@@ -1,8 +1,10 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
-import { db, signalsTable, symbolsTable } from "@workspace/db";
+import { db, signalsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { generateSignals } from "./analyzer/signals";
+import type { OhlcvBar } from "./analyzer/types";
 
 interface WsClient {
   ws: WebSocket;
@@ -10,6 +12,7 @@ interface WsClient {
 }
 
 const clients: Set<WsClient> = new Set();
+const SIM_BARS: Map<string, OhlcvBar[]> = new Map(); // symbol → recent simulated bars
 
 function broadcast(symbol: string, message: object) {
   const data = JSON.stringify(message);
@@ -20,13 +23,18 @@ function broadcast(symbol: string, message: object) {
   }
 }
 
-function generateSimulatedBar(symbol: string) {
-  const basePrice: Record<string, number> = {
+function basePrice(symbol: string): number {
+  const map: Record<string, number> = {
     NVDA: 1048, AAPL: 195, AMD: 168, MSFT: 430,
     TSLA: 285, AMZN: 196, META: 590, QQQ: 488,
   };
+  if (map[symbol]) return map[symbol];
   const seed = symbol.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const base = basePrice[symbol] ?? 100 + (seed % 400);
+  return 100 + (seed % 400);
+}
+
+function generateSimulatedBar(symbol: string): OhlcvBar {
+  const base = basePrice(symbol);
   const move = (Math.random() - 0.485) * base * 0.006;
   const open = base;
   const close = Math.max(open + move, open * 0.97);
@@ -39,60 +47,53 @@ function generateSimulatedBar(symbol: string) {
     high: Math.round(high * 100) / 100,
     low: Math.round(low * 100) / 100,
     close: Math.round(close * 100) / 100,
-    volume: Math.floor(100000 + Math.random() * 900000),
+    volume: Math.floor(500000 + Math.random() * 4500000),
   };
 }
 
-const PATTERNS = ["orb_retest_reclaim", "trend_continuation", "mean_reversion_reclaim", "vwap_bounce", "hl_breakout"];
-const REGIMES = ["trend_up", "trend_down", "range", "volatile"];
-const RISK_TAGS = ["Safe", "Medium", "Danger"] as const;
+// Run the full analysis engine and emit real signals
+async function analyzeAndEmit(symbol: string, bars: OhlcvBar[]) {
+  if (bars.length < 50) return;
+  const { signals } = generateSignals(bars, symbol, "5m");
+  for (const signal of signals) {
+    // Persist
+    try {
+      await db.insert(signalsTable).values({
+        signalId: signal.id,
+        symbol: signal.symbol,
+        timeframe: signal.timeframe,
+        barTime: new Date(signal.barTime * 1000),
+        side: signal.side,
+        entryPrice: signal.entryPrice,
+        slPrice: signal.slPrice,
+        tpPrice: signal.tpPrice,
+        currentSlPrice: signal.slPrice,
+        confidence: signal.confidence,
+        riskTag: signal.riskLevel,
+        state: "active",
+        rrRatio: Math.round(Math.abs(signal.tpPrice - signal.entryPrice) / Math.abs(signal.entryPrice - signal.slPrice) * 100) / 100,
+        pattern: signal.patterns[0] ?? "analysis_engine",
+        regime: "volatile",
+      });
+    } catch (err) {
+      // dedup / race — ignore duplicates
+    }
 
-async function maybeEmitSignal(symbol: string) {
-  if (Math.random() > 0.15) return; // ~15% chance per bar
-  const bar = generateSimulatedBar(symbol);
-  const side = Math.random() > 0.5 ? "long" : "short";
-  const atr = bar.close * 0.002;
-  const sl = side === "long" ? bar.close - atr * 1.5 : bar.close + atr * 1.5;
-  const tp = side === "long" ? bar.close + atr * 3 : bar.close - atr * 3;
-  const confidence = Math.floor(60 + Math.random() * 35);
-  const riskTag = confidence >= 80 ? "Safe" : confidence >= 70 ? "Medium" : "Danger";
-  const rr = Math.round((Math.abs(tp - bar.close) / Math.abs(bar.close - sl)) * 100) / 100;
-
-  const signalId = `SIG-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-
-  try {
-    await db.insert(signalsTable).values({
-      signalId,
-      symbol,
-      timeframe: "5m",
-      barTime: new Date(bar.time * 1000),
-      side,
-      entryPrice: bar.close,
-      slPrice: Math.round(sl * 100) / 100,
-      tpPrice: Math.round(tp * 100) / 100,
-      currentSlPrice: Math.round(sl * 100) / 100,
-      confidence,
-      riskTag,
-      state: "active",
-      rrRatio: rr,
-      pattern: PATTERNS[Math.floor(Math.random() * PATTERNS.length)],
-      regime: REGIMES[Math.floor(Math.random() * REGIMES.length)],
-    });
-
+    // Broadcast
     broadcast(symbol, {
       type: "signal.new",
-      signalId,
-      symbol,
-      side,
-      entryPrice: bar.close,
-      slPrice: Math.round(sl * 100) / 100,
-      tpPrice: Math.round(tp * 100) / 100,
-      confidence,
-      riskTag,
-      barTime: new Date(bar.time * 1000).toISOString(),
+      signalId: signal.id,
+      symbol: signal.symbol,
+      side: signal.side,
+      entryPrice: signal.entryPrice,
+      slPrice: signal.slPrice,
+      tpPrice: signal.tpPrice,
+      confidence: signal.confidence,
+      riskTag: signal.riskLevel,
+      grade: signal.grade,
+      patterns: signal.patterns,
+      barTime: new Date(signal.barTime * 1000).toISOString(),
     });
-  } catch (err) {
-    logger.warn({ err }, "Failed to insert simulated signal");
   }
 }
 
@@ -107,12 +108,17 @@ function startSimulation() {
 
     for (const symbol of activeSymbols) {
       const bar = generateSimulatedBar(symbol);
+      let bars = SIM_BARS.get(symbol) ?? [];
+      bars.push(bar);
+      if (bars.length > 200) bars = bars.slice(-200);
+      SIM_BARS.set(symbol, bars);
+
       broadcast(symbol, { type: "bar.partial", symbol, ...bar });
 
-      // Every ~5 ticks emit a final bar
+      // Every ~5 ticks emit a final bar and run analysis
       if (Math.random() > 0.8) {
         broadcast(symbol, { type: "bar.final", symbol, ...bar });
-        await maybeEmitSignal(symbol);
+        await analyzeAndEmit(symbol, bars);
       }
     }
   }, 3000);

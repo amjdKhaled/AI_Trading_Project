@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { WatchlistPanel } from "@/components/WatchlistPanel";
 import { TradingChart } from "@/components/TradingChart";
 import { SignalPanel } from "@/components/SignalPanel";
-import { useMarketSocket } from "@/hooks/useMarketSocket";
+import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 
 const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
@@ -75,11 +75,41 @@ function useHistoryBars(symbol: string | null, interval: Timeframe) {
 export default function ChartPage() {
   const [activeSymbol, setActiveSymbol] = useState<string | null>("NVDA");
   const [timeframe, setTimeframe] = useState<Timeframe>("1d");
+  const [restSignals, setRestSignals] = useState<SignalNew[]>([]);
 
   const { bars, loading, error } = useHistoryBars(activeSymbol, timeframe);
-  const { connected, lastBar, newSignals } = useMarketSocket(
+  const { connected, lastBar, newSignals: wsSignals } = useMarketSocket(
     timeframe === "1m" || timeframe === "5m" ? activeSymbol : null
   );
+
+  // Direct fetch signals to bypass any React Query stale cache issues
+  useEffect(() => {
+    if (!activeSymbol) { setRestSignals([]); return; }
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    fetch(`${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&limit=20`)
+      .then((r) => r.json())
+      .then((data) => {
+        console.log("[ChartPage] signals fetch result", Array.isArray(data) ? data.length : "not-array", data?.[0]?.signalId);
+        if (!Array.isArray(data)) { setRestSignals([]); return; }
+        const mapped: SignalNew[] = data.map((s: Record<string, unknown>) => ({
+          type: "signal.new" as const,
+          signalId: String(s.signalId),
+          symbol: String(s.symbol),
+          side: (s.side as string) === "long" ? ("long" as const) : ("short" as const),
+          entryPrice: Number(s.entryPrice),
+          slPrice: Number(s.slPrice),
+          tpPrice: Number(s.tpPrice),
+          confidence: Number(s.confidence),
+          riskTag: String(s.riskTag),
+          barTime: new Date(String(s.barTime)).toISOString(),
+        }));
+        console.log("[ChartPage] mapped signals", mapped.length);
+        setRestSignals(mapped);
+      })
+      .catch((e) => { console.error("[ChartPage] signals fetch error", e); setRestSignals([]); });
+  }, [activeSymbol]);
+
+  const chartSignals: SignalNew[] = [...restSignals, ...wsSignals];
 
   return (
     <div className="flex h-full" data-testid="chart-page">
@@ -128,7 +158,7 @@ export default function ChartPage() {
         ) : activeSymbol ? (
           <TradingChart
             bars={bars}
-            activeSignals={newSignals}
+            activeSignals={chartSignals}
             lastBar={lastBar}
             symbol={activeSymbol}
             timeframe={timeframe}
@@ -143,7 +173,7 @@ export default function ChartPage() {
 
       {/* Signal panel — right */}
       <div className="w-52 flex-shrink-0">
-        <SignalPanel symbol={activeSymbol} newSignals={newSignals} />
+        <SignalPanel symbol={activeSymbol} newSignals={wsSignals} />
       </div>
     </div>
   );
