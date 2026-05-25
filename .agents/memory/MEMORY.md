@@ -1,0 +1,2 @@
+- [Trading signals chart markers](trading-signals-chart-markers.md) — SVG overlay approach for rendering signal arrows on LightweightCharts canvas
+- [Signal DB data hygiene](signal-db-hygiene.md) — riskTag enum values and duplicate-signal prevention rules

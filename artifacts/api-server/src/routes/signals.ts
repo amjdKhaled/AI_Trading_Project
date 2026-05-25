@@ -21,14 +21,20 @@ router.get("/signals", async (req, res): Promise<void> => {
 
   const { symbol, limit } = query.data;
 
-  // On-demand: run the real analysis engine to generate fresh signals
+  // Query the DB directly — the WebSocket background process keeps signals fresh
+  let q = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
   if (symbol) {
+    q = q.where(eq(signalsTable.symbol, symbol)) as typeof q;
+  }
+  const rows = await q.limit(limit ?? 50);
+
+  // If DB is empty for this symbol, seed it once from the analysis engine
+  if (rows.length === 0 && symbol) {
     try {
       const rawBars = await fetchHistory(symbol, "1d");
       const bars = rawBars as import("../lib/analyzer/types").OhlcvBar[];
       if (bars.length >= 50) {
         const { signals } = generateSignals(bars, symbol, "1d");
-        // Persist only A+/A grade signals that don't already exist
         for (const sig of signals) {
           try {
             await db.insert(signalsTable).values({
@@ -48,21 +54,19 @@ router.get("/signals", async (req, res): Promise<void> => {
               pattern: sig.patterns[0] ?? "analysis_engine",
               regime: "trend_up",
             });
-          } catch {
-            // Duplicate key — ignore
-          }
+          } catch { /* duplicate — skip */ }
         }
+        // Re-query after seeding
+        const seeded = await db.select().from(signalsTable)
+          .where(eq(signalsTable.symbol, symbol))
+          .orderBy(desc(signalsTable.createdAt))
+          .limit(limit ?? 50);
+        res.json(ListSignalsResponse.parse(seeded));
+        return;
       }
-    } catch {
-      // History unavailable — fall back to DB only
-    }
+    } catch { /* history unavailable */ }
   }
 
-  let q = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
-  if (symbol) {
-    q = q.where(eq(signalsTable.symbol, symbol)) as typeof q;
-  }
-  const rows = await q.limit(limit ?? 50);
   res.json(ListSignalsResponse.parse(rows));
 });
 

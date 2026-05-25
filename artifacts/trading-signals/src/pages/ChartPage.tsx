@@ -89,7 +89,6 @@ export default function ChartPage() {
     fetch(`${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&limit=20`)
       .then((r) => r.json())
       .then((data) => {
-        console.log("[ChartPage] signals fetch result", Array.isArray(data) ? data.length : "not-array", data?.[0]?.signalId);
         if (!Array.isArray(data)) { setRestSignals([]); return; }
         const mapped: SignalNew[] = data.map((s: Record<string, unknown>) => ({
           type: "signal.new" as const,
@@ -103,7 +102,6 @@ export default function ChartPage() {
           riskTag: String(s.riskTag),
           barTime: new Date(String(s.barTime)).toISOString(),
         }));
-        console.log("[ChartPage] mapped signals", mapped.length);
         setRestSignals(mapped);
       })
       .catch((e) => { console.error("[ChartPage] signals fetch error", e); setRestSignals([]); });

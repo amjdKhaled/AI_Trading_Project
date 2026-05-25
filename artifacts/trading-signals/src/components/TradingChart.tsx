@@ -4,18 +4,24 @@ import {
   CrosshairMode,
   CandlestickSeries,
   HistogramSeries,
-  createSeriesMarkers,
   LineSeries,
   type IChartApi,
   type ISeriesApi,
-  type ISeriesMarkersPluginApi,
   type CandlestickData,
   type HistogramData,
   type Time,
-  type SeriesMarker,
   type LineData,
 } from "lightweight-charts";
 import type { BarUpdate, SignalNew } from "@/hooks/useMarketSocket";
+
+interface MarkerPos {
+  x: number;
+  y: number;
+  isLong: boolean;
+  color: string;
+  text: string;
+  key: string;
+}
 
 interface Props {
   bars: { time: number; open: number; high: number; low: number; close: number; volume: number }[];
@@ -27,36 +33,49 @@ interface Props {
 }
 
 export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, intervalSec }: Props) {
-  // VERSION: 2026-05-25-REV2 — force vite recompile
-  console.log("[TradingChart] RENDER v2", { symbol, sigCount: activeSignals.length });
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const markersPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  // SL lines: signalId -> series ref
   const slLinesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
-  // Track which signals we've rendered to avoid duplicates
   const renderedSignalsRef = useRef<Set<string>>(new Set());
 
   const [barCount, setBarCount] = useState(0);
   const [dateRange, setDateRange] = useState("");
+  const [markerPositions, setMarkerPositions] = useState<MarkerPos[]>([]);
 
-  // Build markers — entries only
-  const buildMarkers = useCallback((signals: SignalNew[]): SeriesMarker<Time>[] => {
-    return signals
-      .filter((s) => s.barTime && (s.grade == null || s.grade === "A+" || s.grade === "A"))
-      .map((s) => ({
-        time: (new Date(s.barTime).getTime() / 1000) as Time,
-        position: s.side === "long" ? ("belowBar" as const) : ("aboveBar" as const),
-        color: s.side === "long" ? "#22c55e" : "#ef4444",
-        shape: s.side === "long" ? ("arrowUp" as const) : ("arrowDown" as const),
-        text: `${s.confidence}%`,
-        size: 3,
-      }));
+  // Recompute pixel positions of signals using chart coordinate transforms
+  const computeMarkers = useCallback((signals: SignalNew[]) => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return;
+
+    const positions: MarkerPos[] = [];
+    for (const sig of signals) {
+      if (!sig.barTime) continue;
+      const t = (new Date(sig.barTime).getTime() / 1000) as Time;
+      const x = chart.timeScale().timeToCoordinate(t);
+      const y = series.priceToCoordinate(sig.entryPrice);
+      if (x === null || y === null) continue;
+
+      const isLong = sig.side === "long";
+      const color = isLong ? "#22c55e" : "#ef4444";
+      positions.push({
+        x,
+        y: isLong ? y + 22 : y - 22,
+        isLong,
+        color,
+        text: `${sig.confidence}%`,
+        key: sig.signalId ?? `${t}`,
+      });
+    }
+    setMarkerPositions(positions);
   }, []);
 
-  // Create chart once
+  const activeSignalsRef = useRef<SignalNew[]>([]);
+  activeSignalsRef.current = activeSignals;
+
+  // Create chart + series once on mount
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -72,15 +91,8 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, 
         horzLines: { color: "#151b26" },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: {
-        borderColor: "#1f2937",
-        textColor: "#9ca3af",
-      },
-      timeScale: {
-        borderColor: "#1f2937",
-        timeVisible: true,
-        secondsVisible: false,
-      },
+      rightPriceScale: { borderColor: "#1f2937", textColor: "#9ca3af" },
+      timeScale: { borderColor: "#1f2937", timeVisible: true, secondsVisible: false },
       width: containerRef.current.offsetWidth,
       height: containerRef.current.offsetHeight || 500,
     });
@@ -102,27 +114,16 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, 
       lastValueVisible: false,
     });
 
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.74, bottom: 0 },
-    });
-    candleSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0, bottom: 0.28 },
-    });
+    volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.74, bottom: 0 } });
+    candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0.28 } });
 
-    const markersPlugin = createSeriesMarkers(candleSeries, [
-      {
-        time: (Date.now() / 1000 - 86400 * 30) as Time,
-        position: "belowBar",
-        color: "#ffff00",
-        shape: "circle",
-        text: "TEST",
-        size: 6,
-      },
-    ]);
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
-    markersPluginRef.current = markersPlugin;
+
+    // Recompute marker pixel positions on pan/zoom
+    const onRangeChange = () => computeMarkers(activeSignalsRef.current);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
 
     const resizeObs = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
@@ -130,33 +131,29 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, 
           width: containerRef.current.offsetWidth,
           height: containerRef.current.offsetHeight || 500,
         });
+        computeMarkers(activeSignalsRef.current);
       }
     });
     resizeObs.observe(containerRef.current);
 
     return () => {
       resizeObs.disconnect();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+      slLinesRef.current.clear();
+      renderedSignalsRef.current.clear();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
-      markersPluginRef.current = null;
-      slLinesRef.current.forEach((s) => { try { chartRef.current?.removeSeries(s); } catch {} });
-      slLinesRef.current.clear();
-      renderedSignalsRef.current.clear();
     };
-  }, []);
+  }, [computeMarkers]);
 
-  // Load bars whenever symbol/timeframe changes
+  // Load bars
   useEffect(() => {
-    if (!candleSeriesRef.current || !bars.length) return;
+    if (!candleSeriesRef.current || !chartRef.current || !bars.length) return;
 
     const candleData: CandlestickData<Time>[] = bars.map((b) => ({
-      time: b.time as Time,
-      open: b.open,
-      high: b.high,
-      low: b.low,
-      close: b.close,
+      time: b.time as Time, open: b.open, high: b.high, low: b.low, close: b.close,
     }));
     candleSeriesRef.current.setData(candleData);
 
@@ -169,76 +166,74 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, 
       volumeSeriesRef.current.setData(volumeData);
     }
 
-    chartRef.current?.timeScale().fitContent();
+    // Zoom to last 200 bars
+    const visible = 200;
+    if (bars.length > visible) {
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: bars.length - visible,
+        to: bars.length + 5,
+      });
+    } else {
+      chartRef.current.timeScale().fitContent();
+    }
+
     setBarCount(bars.length);
     const first = new Date(bars[0].time * 1000).toISOString().slice(0, 10);
     const last = new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10);
     setDateRange(`${first} – ${last}`);
 
-    // Clear old SL lines on bar reload
     slLinesRef.current.forEach((s) => { try { chartRef.current?.removeSeries(s); } catch {} });
     slLinesRef.current.clear();
     renderedSignalsRef.current.clear();
-  }, [bars]);
 
-  // Render entry markers and SL lines for new signals
+    // Recompute after data + range set
+    setTimeout(() => computeMarkers(activeSignalsRef.current), 60);
+  }, [bars, computeMarkers]);
+
+  // Recompute markers + draw SL lines when signals change
   useEffect(() => {
-    console.log("[TradingChart] SIGNAL EFFECT", { hasPlugin: !!markersPluginRef.current, hasChart: !!chartRef.current, sigCount: activeSignals.length });
-    if (!markersPluginRef.current || !chartRef.current) return;
+    computeMarkers(activeSignals);
 
-    const markers = buildMarkers(activeSignals).sort((a, b) => (a.time as number) - (b.time as number));
-    try {
-      markersPluginRef.current.setMarkers(markers);
-    } catch (e) {
-      console.error("[TradingChart] setMarkers error", e);
-    }
-
-    // Add SL lines for new signals only
     for (const sig of activeSignals) {
       if (!sig.signalId || renderedSignalsRef.current.has(sig.signalId)) continue;
       if (!sig.slPrice || !sig.barTime) continue;
+      if (!chartRef.current) continue;
       renderedSignalsRef.current.add(sig.signalId);
 
-      const color = sig.side === "long" ? "#ef444480" : "#22c55e80";
+      const color = sig.side === "long" ? "#ef444460" : "#22c55e60";
       const slSeries = chartRef.current.addSeries(LineSeries, {
-        priceScaleId: candleSeriesRef.current?.options().priceScaleId,
+        priceScaleId: "right",
         color,
-        lineStyle: 2, // dashed
+        lineStyle: 2,
         lineWidth: 1,
         lastValueVisible: false,
         priceLineVisible: false,
         crosshairMarkerVisible: false,
       });
 
+      const sigTime = new Date(sig.barTime).getTime() / 1000;
       const slData: LineData[] = bars
-        .filter((b) => b.time >= new Date(sig.barTime).getTime() / 1000)
+        .filter((b) => b.time >= sigTime)
         .map((b) => ({ time: b.time as Time, value: sig.slPrice }));
 
       if (slData.length > 0) slSeries.setData(slData);
       slLinesRef.current.set(sig.signalId, slSeries);
     }
-  }, [activeSignals, buildMarkers, bars]);
+  }, [activeSignals, bars, computeMarkers]);
 
-  // Live bar tick from WebSocket (only on intraday timeframes)
+  // Live bar tick
   useEffect(() => {
     if (!candleSeriesRef.current || !lastBar || !bars.length) return;
     try {
       const alignedTime = (lastBar.time - (lastBar.time % intervalSec)) as Time;
       candleSeriesRef.current.update({
-        time: alignedTime,
-        open: lastBar.open,
-        high: lastBar.high,
-        low: lastBar.low,
-        close: lastBar.close,
+        time: alignedTime, open: lastBar.open, high: lastBar.high, low: lastBar.low, close: lastBar.close,
       });
-    } catch {
-      // swallow time-ordering errors from stale updates
-    }
+    } catch { /* swallow */ }
   }, [lastBar, bars.length, intervalSec]);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-white/5 flex-shrink-0">
         <span className="font-mono text-sm font-semibold text-foreground">{symbol}</span>
         <span className="text-xs text-muted-foreground font-mono">{timeframe.toUpperCase()}</span>
@@ -252,7 +247,40 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, 
         <span className="text-[10px] text-green-400 font-mono tracking-wider">LIVE</span>
         <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0" />
+
+      {/* Chart canvas + SVG arrow overlay */}
+      <div className="flex-1 min-h-0 relative">
+        <div ref={containerRef} className="absolute inset-0" />
+
+        {/* SVG overlay rendered by React — sits above the canvas */}
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
+          style={{ zIndex: 10 }}
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {markerPositions.map((m) => {
+            const S = 9; // arrow size
+            const pts = m.isLong
+              ? `${m.x},${m.y - S} ${m.x - S * 0.7},${m.y + S * 0.5} ${m.x + S * 0.7},${m.y + S * 0.5}`
+              : `${m.x},${m.y + S} ${m.x - S * 0.7},${m.y - S * 0.5} ${m.x + S * 0.7},${m.y - S * 0.5}`;
+            return (
+              <g key={m.key}>
+                <polygon points={pts} fill={m.color} opacity={0.92} />
+                <text
+                  x={m.x}
+                  y={m.isLong ? m.y + S + 12 : m.y - S - 4}
+                  textAnchor="middle"
+                  fill={m.color}
+                  fontSize={9}
+                  fontFamily="JetBrains Mono, Menlo, monospace"
+                >
+                  {m.text}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
     </div>
   );
 }
