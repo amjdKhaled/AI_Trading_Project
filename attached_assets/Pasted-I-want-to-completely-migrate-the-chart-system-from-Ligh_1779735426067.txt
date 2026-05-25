@@ -1,0 +1,202 @@
+I want to completely migrate the chart system from Lightweight Charts to the official TradingView Advanced Charts Library.
+
+The current Lightweight Charts implementation still has visual and structural differences from real TradingView behavior:
+
+* candle rendering differences
+* doji rendering issues
+* volume differences
+* autoscale differences
+* candle spacing differences
+* zoom/scroll behavior differences
+* session alignment differences
+
+I want the platform to feel like a real professional TradingView terminal.
+
+====================================================
+MAIN GOAL
+=========
+
+Rebuild the chart panel using:
+TradingView Advanced Charts Library
+
+while keeping:
+
+* Polygon market data
+* our AI signal engine
+* our backend
+* realtime updates
+* overlays
+* watchlist system
+
+====================================================
+IMPORTANT
+=========
+
+Do NOT use:
+
+* TradingView widgets
+* iframe embeds
+* unofficial websocket scraping
+* reverse-engineered TradingView sockets
+
+Use the OFFICIAL:
+TradingView Advanced Charts Library
+
+====================================================
+REQUIRED ARCHITECTURE
+=====================
+
+Frontend:
+
+* TradingView Advanced Charts Library
+
+Datafeed:
+
+* Polygon.io
+
+Backend:
+
+* existing backend architecture
+* websocket signal engine
+* AI analysis engine
+
+====================================================
+IMPLEMENT A PROPER DATAFEED ADAPTER
+===================================
+
+Create a proper TradingView-compatible datafeed/UDF adapter for Polygon.
+
+Support:
+
+* historical bars
+* realtime updates
+* symbol resolution
+* timeframe switching
+* subscriptions
+* live streaming
+* proper session handling
+
+====================================================
+FOCUS ONLY ON
+=============
+
+* 5 minute timeframe
+* 15 minute timeframe
+
+This platform is optimized for:
+
+* scalping
+* intraday trading
+* options trading
+
+====================================================
+SESSION/TIMEZONE REQUIREMENTS
+=============================
+
+Use:
+America/New_York timezone
+
+Match TradingView behavior for:
+
+* Regular Trading Hours (RTH)
+* Extended Hours (ETH)
+* market open/close
+* DST handling
+
+====================================================
+CANDLE REQUIREMENTS
+===================
+
+Candles should now visually behave like real TradingView candles:
+
+* proper body rendering
+* proper doji rendering
+* proper wick rendering
+* proper autoscaling
+* proper spacing
+* proper scrolling
+* proper zoom behavior
+
+====================================================
+REMOVE OLD LIGHTWEIGHT CHARTS LOGIC
+===================================
+
+Delete:
+
+* old lightweight-charts rendering logic
+* custom candle rendering hacks
+* autoscale hacks
+* custom body-height patches
+* old websocket candle mutation logic
+
+The TradingView library should now handle rendering professionally.
+
+====================================================
+AI SIGNAL OVERLAYS
+==================
+
+Keep and rebuild overlays on top of the new chart:
+
+* LONG entry markers
+* SHORT entry markers
+* EXIT markers
+* Stop Loss lines
+* Take Profit lines
+
+The overlays should feel native to TradingView.
+
+====================================================
+SIGNAL ENGINE
+=============
+
+Keep the existing AI signal engine but synchronize it properly with:
+
+* TradingView chart intervals
+* Polygon datafeed
+* proper candle timing
+
+====================================================
+REALTIME ENGINE
+===============
+
+Implement proper realtime updates:
+
+* websocket subscriptions
+* live candle updates
+* proper interval alignment
+* stable realtime rendering
+
+====================================================
+TRADINGVIEW-LIKE EXPERIENCE
+===========================
+
+I want:
+
+* smooth scrolling
+* smooth zooming
+* professional crosshair
+* professional chart interactions
+* proper timeframe switching
+* professional performance
+
+The platform should feel close to:
+TradingView / ThinkOrSwim / Webull.
+
+====================================================
+VERIFY
+======
+
+Before finishing verify:
+
+* candles visually match TradingView closely
+* no malformed candles exist
+* no dash candles exist
+* no rendering corruption exists
+* realtime updates work correctly
+* Polygon datafeed works correctly
+* 5m works correctly
+* 15m works correctly
+* overlays work correctly
+* watchlist works correctly
+* no TypeScript errors exist
+* no synchronization bugs exist
