@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-export interface BarUpdate {
-  type: "bar.partial" | "bar.final";
+// ── Server message types ───────────────────────────────────────────────────────
+//
+// The server is a pure price relay — it sends raw trade prices, NOT synthetic OHLC.
+// Clients build candles themselves from the price stream.
+
+export interface PriceUpdate {
+  type: "price.update";
   symbol: string;
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
+  price: number;
+  timestamp: number; // Unix seconds
 }
 
 export interface MarketStatus {
@@ -49,11 +50,16 @@ export interface SignalExit {
   barTime: string;
 }
 
-export type MarketEvent = BarUpdate | MarketStatus | SignalNew | SlUpdate | SignalExit;
+export type MarketEvent =
+  | PriceUpdate
+  | MarketStatus
+  | SignalNew
+  | SlUpdate
+  | SignalExit;
 
 interface UseMarketSocketResult {
   connected: boolean;
-  lastBar: BarUpdate | null;
+  lastPrice: PriceUpdate | null;
   isMarketOpen: boolean;
   marketPrice: number | null;
   newSignals: SignalNew[];
@@ -63,7 +69,7 @@ interface UseMarketSocketResult {
 
 export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
   const [connected,    setConnected]    = useState(false);
-  const [lastBar,      setLastBar]      = useState<BarUpdate | null>(null);
+  const [lastPrice,    setLastPrice]    = useState<PriceUpdate | null>(null);
   const [isMarketOpen, setIsMarketOpen] = useState<boolean>(false);
   const [marketPrice,  setMarketPrice]  = useState<number | null>(null);
   const [newSignals,   setNewSignals]   = useState<SignalNew[]>([]);
@@ -91,16 +97,20 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
       try {
         const msg = JSON.parse(ev.data) as MarketEvent;
         switch (msg.type) {
-          case "bar.partial":
-          case "bar.final":
-            setLastBar(msg as BarUpdate);
-            setIsMarketOpen(true);
-            setMarketPrice((msg as BarUpdate).close);
+          case "price.update": {
+            const p = msg as PriceUpdate;
+            if (p.price > 0) {
+              setLastPrice(p);
+              setIsMarketOpen(true);
+              setMarketPrice(p.price);
+            }
             break;
+          }
           case "market.status": {
             const s = msg as MarketStatus;
             setIsMarketOpen(s.isOpen);
-            setMarketPrice(s.price);
+            // Only update displayed price if the server has a real value
+            if (s.price > 0) setMarketPrice(s.price);
             break;
           }
           case "signal.new":
@@ -132,5 +142,13 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
     };
   }, [connect]);
 
-  return { connected, lastBar, isMarketOpen, marketPrice, newSignals, slUpdates, signalExits };
+  return {
+    connected,
+    lastPrice,
+    isMarketOpen,
+    marketPrice,
+    newSignals,
+    slUpdates,
+    signalExits,
+  };
 }

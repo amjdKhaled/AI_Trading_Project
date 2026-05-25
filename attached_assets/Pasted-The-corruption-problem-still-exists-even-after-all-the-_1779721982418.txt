@@ -1,0 +1,272 @@
+The corruption problem still exists even after all the live-bar merge fixes.
+
+At this point the issue is no longer just validation or merge logic.
+
+The entire intraday API architecture needs to be rebuilt correctly.
+
+====================================================
+IMPORTANT
+CURRENT ARCHITECTURE IS STILL WRONG
+===================================
+
+Even after:
+
+* removing bar.final
+* using one merge path
+* locking open price
+* using a single live accumulator
+* preventing stale historical overwrites
+
+the malformed giant candles STILL appear.
+
+This means the underlying API/update architecture is fundamentally unstable.
+
+====================================================
+THE ROOT PROBLEM
+================
+
+The system is still treating:
+
+* websocket ticks
+* snapshot polling
+* historical data
+  as interchangeable candle sources.
+
+They are NOT equivalent.
+
+This architecture creates:
+
+* timing drift
+* interval desync
+* stale state reuse
+* duplicated interval ownership
+* malformed candle mutation
+
+====================================================
+REBUILD THE INTRADAY API SYSTEM COMPLETELY
+==========================================
+
+I want a PROFESSIONAL intraday market-data architecture similar to institutional trading systems.
+
+====================================================
+NEW REQUIRED ARCHITECTURE
+=========================
+
+Historical data:
+
+* ONE responsibility only
+* load immutable historical bars
+
+Live engine:
+
+* ONE responsibility only
+* build current live candle from live trades/prices
+
+DO NOT let:
+
+* polling
+* snapshots
+* historical loaders
+  mutate finalized bars.
+
+====================================================
+REMOVE SNAPSHOT POLLING ENTIRELY
+================================
+
+At this point snapshot polling is likely still causing hidden state corruption.
+
+REMOVE:
+
+* pollSnapshots()
+  completely from intraday candle construction.
+
+Do NOT use:
+
+* snapshot.open
+* snapshot.high
+* snapshot.low
+* snapshot.close
+
+for intraday bars anymore.
+
+====================================================
+ONLY USE WEBSOCKET STREAMS
+==========================
+
+Build intraday candles ONLY from:
+
+* real-time websocket updates
+
+The websocket should become the SINGLE source of live truth.
+
+====================================================
+IMPORTANT:
+BUILD CANDLES FROM PRICE STREAMS
+================================
+
+Do NOT trust server-generated OHLC partials.
+
+Instead:
+
+* receive live prices/trades
+* locally construct candles client-side
+
+This is how professional chart engines work.
+
+====================================================
+NEW LIVE CANDLE ENGINE
+======================
+
+For each interval:
+
+* create fresh candle
+* seed:
+  open = current price
+  high = current price
+  low = current price
+  close = current price
+
+Then for every incoming trade/price:
+
+* high = max(high, price)
+* low = min(low, price)
+* close = latest price
+
+When interval closes:
+
+* freeze candle
+* append immutable finalized bar
+* create new candle
+
+====================================================
+IMPORTANT:
+NO SERVER OHLC FOR LIVE BARS
+============================
+
+The server should NOT send:
+
+* partial OHLC bars
+* synthetic intraday bars
+* merged snapshot bars
+
+The server should ONLY stream:
+
+* real prices
+* trades
+* timestamps
+
+The CLIENT should build candles.
+
+====================================================
+FINALIZED BARS MUST BE IMMUTABLE
+================================
+
+Historical bars:
+
+* immutable
+* frozen
+* never touched again
+
+Only current interval candle may mutate.
+
+====================================================
+STRICT INTERVAL STATE MACHINE
+=============================
+
+Implement:
+
+* currentIntervalStart
+* currentLiveCandle
+* finalizedBars
+
+Rules:
+
+* only one active interval
+* no duplicate timestamps
+* no overlapping ownership
+* no stale interval mutation
+
+====================================================
+IMPORTANT:
+NEVER REUSE LIVE OBJECTS
+========================
+
+Every interval:
+
+* destroy previous live candle
+* create fresh object
+
+Prevent:
+
+* stale state inheritance
+* hidden reference mutation
+* OHLC carryover corruption
+
+====================================================
+BUILD TRUE PROFESSIONAL INTRADAY ENGINE
+=======================================
+
+The chart engine should now behave like:
+
+* TradingView
+* ThinkOrSwim
+* professional terminals
+
+Meaning:
+
+* candles are constructed from live price flow
+* not from snapshot mutation hacks
+
+====================================================
+HISTORICAL + LIVE MERGE
+=======================
+
+Flow should be:
+
+1. load immutable historical bars
+2. determine latest finalized timestamp
+3. websocket starts AFTER latest finalized timestamp
+4. websocket only builds NEW live candles
+5. finalized candles appended immutably
+
+====================================================
+IMPORTANT:
+NO HISTORICAL BAR MAY EVER MUTATE
+=================================
+
+After insertion:
+historical bars are permanently locked.
+
+====================================================
+REMOVE ALL LEGACY UPDATE PATHS
+==============================
+
+Delete:
+
+* old partial-bar logic
+* old polling merge logic
+* snapshot-based OHLC construction
+* bar.final legacy handling
+* any fallback overwrite path
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* snapshot polling is fully removed
+* websocket is sole live source
+* candles are built locally from price flow
+* no malformed giant candles appear
+* no stale state inheritance exists
+* no timestamp collisions exist
+* finalized bars are immutable
+* live candles are isolated
+* no synthetic OHLC corruption exists
+* 5m works correctly
+* 15m works correctly
+* chart visually matches TradingView
+* no rendering corruption remains
+* no synchronization bugs remain
+* no TypeScript errors exist

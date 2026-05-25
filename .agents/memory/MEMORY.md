@@ -1,8 +1,1 @@
-- [Live bar corruption root causes](live-bar-corruption.md) — snap.open/high/low are DAILY values; pollSnapshots() and on-connect seed must use snap.price only
-- [Trading signals chart markers](trading-signals-chart-markers.md) — SVG overlay approach for rendering signal arrows on LightweightCharts canvas
-- [Signal DB data hygiene](signal-db-hygiene.md) — riskTag enum values and duplicate-signal prevention rules
-- [Signal engine per-bar analysis](signal-per-bar.md) — critical: use ema20[i]/rsiValues[i] per loop iteration, never last-bar global values
-- [Signal engine design](signal-engine-design.md) — regime filter + pullback bonus + 3-confirm gate; use conditional blocks not `continue` (skips both sides)
-- [Structure engine bug fix](structure-engine-bug.md) — alternating filter makes prev.type===curr.type always false; track lastSwingHigh/lastSwingLow separately
-- [History blending rule](history-blending.md) — NEVER mix daily (1999–) bars with intraday; breaks price axis scaling; 5m/15m use intraday-only fetch
-- [DB signal pattern column](db-signal-schema.md) — `pattern` is single text col; route maps sig.patterns[0] ?? descriptive fallback; no patterns[] array in DB
+- [Live candle architecture](live-candle-architecture.md) — server is pure price relay; client builds OHLC; giant-candle root causes documented.

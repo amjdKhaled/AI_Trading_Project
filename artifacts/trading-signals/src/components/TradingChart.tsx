@@ -4,7 +4,7 @@ import {
   type IChartApi, type ISeriesApi, type CandlestickData,
   type HistogramData, type Time, type LineData,
 } from "lightweight-charts";
-import type { BarUpdate, SignalNew } from "@/hooks/useMarketSocket";
+import type { PriceUpdate, SignalNew } from "@/hooks/useMarketSocket";
 import type { ActiveTrade, TradeResult } from "@/pages/ChartPage";
 
 interface Bar { time: number; open: number; high: number; low: number; close: number; volume: number; }
@@ -20,7 +20,7 @@ interface Props {
   signals: SignalNew[];
   activeTrade: ActiveTrade | null;
   tradeResult: TradeResult | null;
-  lastBar: BarUpdate | null;
+  lastPrice: PriceUpdate | null;
   symbol: string;
   timeframe: string;
   intervalSec: number;
@@ -50,7 +50,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar, symbol, timeframe, intervalSec, isMarketOpen }: Props) {
+export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -325,90 +325,81 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
 
   // ── Live bar state machine ────────────────────────────────────────────────
   //
-  // Architecture: WebSocket tick → validation pipeline → merge into liveBarRef
-  //               → candleSeries.update(liveBarRef)
+  // Architecture:  price.update → validation pipeline → merge into liveBarRef
+  //                → candleSeries.update(liveBarRef)   ← SINGLE WRITER
   //
-  // Single writer rule: ONLY this effect calls candleSeries.update().
-  // The server sends two types of messages, but both are treated identically here:
+  // The server sends ONE message type for live data: { type:"price.update", price, timestamp }
+  // It is a raw trade price — no OHLC, no synthetic partials, no polling.
+  // This component builds all four OHLC fields itself from the price stream.
   //
-  //   bar.partial  — snapshot poll every 10 s (and immediately when a 1m Alpaca bar closes)
-  //   bar.final    — no longer emitted by the server for intraday data; treated as partial
-  //                  if somehow received (same merge path, no special-casing)
-  //
-  // Why no special bar.final path: Alpaca streams 1-MINUTE bars via WebSocket.  If we
-  // used their OHLC as the authoritative final state for a 5m or 15m bar, we'd overwrite
-  // the accumulated 5m/15m OHLC with just one minute of data — producing giant candles.
-  // The server was fixed to broadcast bar.partial instead; the client ignores the type field.
-  //
-  // Validation pipeline (all guards must pass in order):
+  // Validation pipeline:
   //   G1  Symbol match          — discard ticks from a different symbol
   //   G2  Market open           — discard all ticks when exchange is closed
-  //   G3  Incoming OHLC valid   — reject impossible H/L/O/C values or NaN/Infinity
-  //   G4  ATR spike filter      — reject ticks whose H-L > 5× rolling avg bar range
-  //   G5  Historical boundary   — aligned t must be STRICTLY AFTER last historical bar
+  //   G3  Price sanity          — price must be finite, positive
+  //   G4  ATR spike filter      — price must be within 5× rolling avg bar range of last close
+  //   G5  Historical boundary   — aligned timestamp must be STRICTLY AFTER last historical bar
   //
-  // State machine (keyed on aligned bar timestamp t):
-  //   liveBarRef === null        → first tick: seed new bar (all OHLC = current price)
-  //   t > liveBarRef.time        → new interval: seed fresh bar (all OHLC = current price)
-  //   t === liveBarRef.time      → same interval: merge (keep open, expand H/L, update close)
-  //   t < liveBarRef.time        → stale tick: discard
+  // State machine (keyed on interval-aligned timestamp t):
+  //   liveBarRef === null     → first tick after load: create bar, seed all OHLC = price
+  //   t > liveBarRef.time     → new interval started:  create bar, seed all OHLC = price
+  //   t === liveBarRef.time   → same interval:          keep open, expand H/L, update close
+  //   t < liveBarRef.time     → stale/reordered tick:  discard
   useEffect(() => {
-    if (!candleRef.current || !lastBar || !bars.length) return;
+    if (!candleRef.current || !lastPrice || !bars.length) return;
 
     // G1 — symbol match
-    if (lastBar.symbol !== symbol) return;
+    if (lastPrice.symbol !== symbol) return;
 
     // G2 — market open
     if (!isMarketOpen) return;
 
-    const { open: rO, high: rH, low: rL, close: rC } = lastBar;
-
-    // G3 — incoming OHLC integrity
-    if (!isValidOhlc(rO, rH, rL, rC)) return;
+    // G3 — price sanity
+    const price = lastPrice.price;
+    if (!isFinite(price) || isNaN(price) || price <= 0) return;
 
     // G4 — ATR spike filter
-    // Rolling average H-L range over the last 50 historical bars is the baseline ATR.
-    // Reject any tick whose range exceeds 5× ATR (or 2% of price, whichever is larger).
-    const atr = avgBarRange(barsRef.current, 50);
-    const px  = rC || 1;
-    const maxRange = atr > 0 ? Math.max(atr * 5, px * 0.02) : px * 0.05;
-    if ((rH - rL) > maxRange) return;
+    // A single price tick should not deviate by more than 5× the rolling average bar range
+    // (or 2% of price, whichever is larger) from the live bar's accumulated close.
+    // This rejects erroneous trade prints that survived exchange filtering.
+    const atr      = avgBarRange(barsRef.current, 50);
+    const refPrice = liveBarRef.current?.close
+      ?? barsRef.current[barsRef.current.length - 1]?.close
+      ?? price;
+    const maxDelta = atr > 0 ? Math.max(atr * 5, refPrice * 0.02) : refPrice * 0.05;
+    if (Math.abs(price - refPrice) > maxDelta) return;
 
-    // G5 — historical boundary (strict ≤: t must be STRICTLY AFTER the last historical bar).
-    // Alpaca historical REST only returns completed bars so the live bar is always newer.
-    // The ≤ guard closes the edge case where a redundant tick arrives for the exact
-    // last-history timestamp (same value, not less-than, so < would let it through).
-    const t = lastBar.time - (lastBar.time % intervalSec);
+    // G5 — historical boundary
+    // Align the incoming timestamp to the current interval boundary.
+    // The live bar must live STRICTLY AFTER the last bar in the historical dataset.
+    const t = lastPrice.timestamp - (lastPrice.timestamp % intervalSec);
     if (t <= lastHistTimeRef.current) return;
 
-    // ── Merge into client-owned live bar ─────────────────────────────────────
-    // All ticks — regardless of type — go through the same merge path.
-    // This is the single writer for candleSeries.update().
+    // ── Build OHLC from the raw price stream ──────────────────────────────────
     const live = liveBarRef.current;
     let next: LiveBar;
 
     if (live === null || t > live.time) {
-      // New 5m period (or first tick after a dataset load).
-      // Seed ALL four OHLC at the current close price.  Never inherit stale OHLC from a
-      // previous period — that is the direct cause of giant-candle corruption.
-      next = { time: t, open: rC, high: rC, low: rC, close: rC };
+      // New interval (or first tick after a dataset load).
+      // Seed a brand-new bar object.  ALL FOUR fields start at the current price.
+      // No state is inherited from any previous bar.
+      next = { time: t, open: price, high: price, low: price, close: price };
 
     } else if (t === live.time) {
-      // Same period: merge this tick into the accumulated live bar.
-      // Keep the OPEN from when the bar started; expand H/L; update close.
+      // Same interval: accumulate.
+      // Lock the open (price at bar creation), expand H/L, update close.
       next = {
         time:  t,
-        open:  live.open,
-        high:  Math.max(live.high, rH),
-        low:   Math.min(live.low,  rL),
-        close: rC,
+        open:  live.open,                    // immutable for this interval
+        high:  Math.max(live.high, price),
+        low:   Math.min(live.low,  price),
+        close: price,
       };
 
     } else {
-      return; // stale tick for a period we already closed — discard
+      return; // t < live.time → stale tick, discard
     }
 
-    // Final validation of the merged bar before it touches the chart
+    // Paranoia check: the accumulated bar must still be internally valid
     if (!isValidOhlc(next.open, next.high, next.low, next.close)) return;
 
     liveBarRef.current = next;
@@ -421,7 +412,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
         close: next.close,
       });
     } catch { /* chart may not be ready */ }
-  }, [lastBar, bars.length, intervalSec, isMarketOpen, symbol]);
+  }, [lastPrice, bars.length, intervalSec, isMarketOpen, symbol]);
 
   return (
     <div className="flex flex-col h-full">

@@ -65,7 +65,7 @@ export default function ChartPage() {
   const [tradeResult, setTradeResult]   = useState<TradeResult | null>(null);
 
   const { bars, loading, error } = useHistoryBars(activeSymbol, timeframe);
-  const { connected, lastBar, isMarketOpen, newSignals: wsSignals } = useMarketSocket(activeSymbol);
+  const { connected, lastPrice, isMarketOpen, newSignals: wsSignals } = useMarketSocket(activeSymbol);
 
   // Fetch historical signals
   useEffect(() => {
@@ -100,20 +100,24 @@ export default function ChartPage() {
     setTradeResult(null);
   }, [activeSymbol, timeframe]);
 
-  // Auto-exit: watch live bar for SL/TP hits
+  // Auto-exit: watch live price stream for SL/TP hits
   const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!activeTrade || !lastBar) return;
-    if (lastBar.symbol !== activeTrade.symbol) return;
+    if (!activeTrade || !lastPrice) return;
+    if (lastPrice.symbol !== activeTrade.symbol) return;
 
     const { side, slPrice, tpPrice } = activeTrade;
-    const tpHit = side === "long" ? lastBar.high >= tpPrice : lastBar.low  <= tpPrice;
-    const slHit = side === "long" ? lastBar.low  <= slPrice : lastBar.high >= slPrice;
+    const price = lastPrice.price;
+    // Check whether the latest trade price crosses the SL or TP level.
+    // Using the raw trade price (not inferred H/L) is correct and simpler —
+    // the level is hit the moment an actual transaction occurs at that price.
+    const tpHit = side === "long" ? price >= tpPrice : price <= tpPrice;
+    const slHit = side === "long" ? price <= slPrice : price >= slPrice;
     if (!tpHit && !slHit) return;
 
     const outcome   = tpHit ? "tp_hit" : "sl_hit";
     const exitPrice = tpHit ? tpPrice  : slPrice;
-    setTradeResult({ outcome, exitPrice, exitTime: lastBar.time });
+    setTradeResult({ outcome, exitPrice, exitTime: lastPrice.timestamp });
     setActiveTrade(null);
 
     // Persist to DB
@@ -126,7 +130,7 @@ export default function ChartPage() {
 
     if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
     resultTimerRef.current = setTimeout(() => setTradeResult(null), 6000);
-  }, [lastBar, activeTrade]);
+  }, [lastPrice, activeTrade]);
 
   const handleActivateTrade = useCallback((trade: ActiveTrade) => {
     if (activeTrade) return; // one trade at a time
@@ -223,7 +227,7 @@ export default function ChartPage() {
             signals={allSignals}
             activeTrade={activeTrade}
             tradeResult={tradeResult}
-            lastBar={lastBar}
+            lastPrice={lastPrice}
             symbol={activeSymbol}
             timeframe={timeframe}
             intervalSec={TF_SECONDS[timeframe]}

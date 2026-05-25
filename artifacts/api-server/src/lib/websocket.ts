@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { fetchAlpacaSnapshot, isNyseOpen } from "./alpaca";
 import { logger } from "./logger";
 
-// ── Client registry ──────────────────────────────────────────────────────────
+// ── Client registry ───────────────────────────────────────────────────────────
 
 interface WsClient { ws: WebSocket; symbol: string; }
 const clients: Set<WsClient> = new Set();
@@ -21,17 +21,35 @@ function getActiveSymbols(): Set<string> {
   return s;
 }
 
-// ── Alpaca WebSocket streaming ────────────────────────────────────────────────
-// Receives completed bars in real time during market hours.
+// ── Alpaca WebSocket streaming ─────────────────────────────────────────────────
+//
+// This server is a PURE PRICE RELAY.  It does NOT construct OHLC bars.
+// It does NOT poll snapshots.  The ONLY live data it sends to clients is:
+//
+//   { type: "price.update", symbol, price, timestamp }  — raw trade price
+//   { type: "market.status", symbol, isOpen, price, lastClose } — open/closed
+//
+// Clients build OHLC candles themselves from the price stream.
+//
+// Two Alpaca WS message types are consumed:
+//   T === "t"  (trade)  → throttled to TRADE_THROTTLE_MS per symbol
+//   T === "b"  (1m bar) → immediate broadcast on bar close (1 msg/minute)
 
-const ALPACA_WS_URL = "wss://stream.data.alpaca.markets/v2/iex";
+const ALPACA_WS_URL    = "wss://stream.data.alpaca.markets/v2/iex";
+const TRADE_THROTTLE_MS = 1_000; // max 1 price.update per symbol per second from trades
 
 let alpacaSocket: WebSocket | null = null;
 let alpacaAuthed = false;
-const alpacaSubscribed = new Set<string>();
+const alpacaSubscribed  = new Set<string>();
+const lastBroadcastMs   = new Map<string, number>(); // per-symbol throttle clock
+const lastKnownPrices   = new Map<string, number>(); // for market-status heartbeats
 
 function alpacaConnect() {
-  if (alpacaSocket && (alpacaSocket.readyState === WebSocket.OPEN || alpacaSocket.readyState === WebSocket.CONNECTING)) return;
+  if (
+    alpacaSocket &&
+    (alpacaSocket.readyState === WebSocket.OPEN ||
+     alpacaSocket.readyState === WebSocket.CONNECTING)
+  ) return;
 
   logger.info("Connecting to Alpaca market-data WebSocket…");
   const ws = new WebSocket(ALPACA_WS_URL);
@@ -49,44 +67,52 @@ function alpacaConnect() {
     try {
       const msgs = JSON.parse(raw.toString()) as Array<Record<string, unknown>>;
       for (const msg of msgs) {
+
         if (msg.T === "success" && msg.msg === "authenticated") {
           alpacaAuthed = true;
           logger.info("Alpaca WS authenticated");
-          // Subscribe to all currently-active symbols
           alpacaSubscribeNew([...getActiveSymbols()]);
 
+        } else if (msg.T === "t" && typeof msg.S === "string") {
+          // Individual trade — relay the transaction price, throttled.
+          // We subscribe to trades because they are the ground-truth price feed.
+          // 1-minute bars are only ~60 updates/hour; trades give us ~1/sec granularity.
+          const sym   = msg.S as string;
+          const price = typeof msg.p === "number" ? msg.p : 0;
+          const ts    = typeof msg.t === "string"
+            ? Math.floor(new Date(msg.t as string).getTime() / 1000)
+            : Math.floor(Date.now() / 1000);
+
+          if (price <= 0) continue;
+
+          const now    = Date.now();
+          const lastMs = lastBroadcastMs.get(sym) ?? 0;
+          if (now - lastMs >= TRADE_THROTTLE_MS) {
+            lastBroadcastMs.set(sym, now);
+            lastKnownPrices.set(sym, price);
+            broadcast(sym, { type: "price.update", symbol: sym, price, timestamp: ts });
+          }
+
         } else if (msg.T === "b" && typeof msg.S === "string") {
-          // 1-minute bar completed from Alpaca WS.
-          //
-          // IMPORTANT: We do NOT broadcast bar.final here.  Alpaca only streams
-          // 1-minute bars, but clients may be viewing 5m or 15m charts.  Sending
-          // bar.final with 1-minute OHLC would overwrite the client's accumulated
-          // 5m/15m state every minute, producing giant candles.
-          //
-          // Instead: use the accurate 1-minute close to update currentBars, then
-          // immediately broadcast bar.partial so clients get a more timely update
-          // than waiting for the next 10-second poll cycle.
-          const sym  = msg.S as string;
-          const now  = Date.now() / 1000;
-          const barTs = Math.floor(now / 300) * 300;
-          const prev  = currentBars.get(sym);
-          const isNewBar = prev?.time !== barTs;
-          const close = typeof msg.c === "number" ? msg.c : (prev?.close ?? 0);
-          if (close <= 0) continue; // ignore malformed bar
-          const updatedBar: CurrentBar = {
-            time:   barTs,
-            open:   isNewBar ? close : (prev?.open ?? close),
-            high:   isNewBar ? close : Math.max(close, prev?.high ?? close),
-            low:    isNewBar ? close : Math.min(close, prev?.low  ?? close),
-            close,
-            volume: (prev?.volume ?? 0) + (typeof msg.v === "number" ? msg.v : 0),
-          };
-          currentBars.set(sym, updatedBar);
-          broadcast(sym, { type: "bar.partial", symbol: sym, ...updatedBar });
+          // 1-minute bar completed.
+          // Broadcast the bar's close price immediately — this is the definitive
+          // end-of-minute price and is more accurate than any throttled trade tick.
+          // Use the bar's START timestamp + 59s to represent the bar's close moment.
+          const sym   = msg.S as string;
+          const price = typeof msg.c === "number" ? msg.c : 0;
+          const ts    = typeof msg.t === "string"
+            ? Math.floor(new Date(msg.t as string).getTime() / 1000) + 59
+            : Math.floor(Date.now() / 1000);
+
+          if (price <= 0) continue;
+
+          lastBroadcastMs.set(sym, Date.now()); // reset throttle (bar close supersedes trades)
+          lastKnownPrices.set(sym, price);
+          broadcast(sym, { type: "price.update", symbol: sym, price, timestamp: ts });
         }
-        // Ignore subscription confirmations and other messages
+        // All other message types (subscription acks, errors) are silently ignored
       }
-    } catch { /* malformed — ignore */ }
+    } catch { /* malformed frame — ignore */ }
   });
 
   ws.on("close", (code, reason) => {
@@ -107,72 +133,35 @@ function alpacaSubscribeNew(symbols: string[]) {
   if (!alpacaSocket || !alpacaAuthed) return;
   const fresh = symbols.filter((s) => !alpacaSubscribed.has(s));
   if (fresh.length === 0) return;
-  alpacaSocket.send(JSON.stringify({ action: "subscribe", bars: fresh }));
+  // Subscribe to both trades (real-time price) and bars (end-of-minute accuracy)
+  alpacaSocket.send(JSON.stringify({ action: "subscribe", trades: fresh, bars: fresh }));
   fresh.forEach((s) => alpacaSubscribed.add(s));
-  logger.info({ symbols: fresh }, "Alpaca bars subscribed");
+  logger.info({ symbols: fresh }, "Alpaca trades + bars subscribed");
 }
 
-// ── Snapshot polling: partial bars + market-closed status ───────────────────
-// Every 10 seconds we fetch a snapshot for each active symbol.
-//   • Market OPEN  → broadcast bar.partial with real OHLCV
-//   • Market CLOSED → broadcast market.status with last close
+// ── Market status heartbeat ───────────────────────────────────────────────────
+// Broadcasts open/closed status to all active clients every 60 seconds.
+// Includes the last known price so the client can display it when the market
+// is closed and no price.updates are flowing.
 
-interface CurrentBar { time: number; open: number; high: number; low: number; close: number; volume: number; }
-const currentBars = new Map<string, CurrentBar>();
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-async function pollSnapshots() {
-  const active = getActiveSymbols();
-  if (active.size === 0) return;
-
-  const marketOpen = isNyseOpen();
-  const now = Date.now() / 1000;
-
-  for (const symbol of active) {
-    const snap = await fetchAlpacaSnapshot(symbol).catch(() => null);
-    if (!snap) continue;
-
-    if (!marketOpen) {
-      // Market closed — freeze the price line, no candle movement
-      broadcast(symbol, {
-        type:      "market.status",
-        symbol,
-        isOpen:    false,
-        price:     snap.prevClose || snap.price,
-        lastClose: snap.prevClose || snap.price,
-        timestamp: Math.floor(now),
-      });
-      continue;
-    }
-
-    // Market open — build / update the current partial 5-minute bar
-    const barTs = Math.floor(now / 300) * 300; // floor to 5-minute boundary
-    const prev  = currentBars.get(symbol);
-    const isNewBar = prev?.time !== barTs;
-
-    // CRITICAL: snap.open is the DAILY market-open price (e.g. $218.50 at 9:30 AM),
-    // NOT the price at the start of this 5m bar. Using snap.open as the bar open
-    // creates a synthetic giant candle spanning from the day's open to the current price.
-    // Always use snap.price as the open for the first tick of a new 5m bar.
-    const updatedBar: CurrentBar = {
-      time:   barTs,
-      open:   isNewBar ? snap.price : prev!.open,
-      high:   isNewBar ? snap.price : Math.max(snap.price, prev!.high),
-      low:    isNewBar ? snap.price : Math.min(snap.price, prev!.low),
-      close:  snap.price,
-      volume: snap.volume,
-    };
-    currentBars.set(symbol, updatedBar);
-
-    broadcast(symbol, { type: "bar.partial", symbol, ...updatedBar });
+function broadcastMarketStatus() {
+  const isOpen = isNyseOpen();
+  for (const sym of getActiveSymbols()) {
+    const price = lastKnownPrices.get(sym) ?? 0;
+    broadcast(sym, {
+      type:      "market.status",
+      symbol:    sym,
+      isOpen,
+      price,
+      lastClose: price,
+    });
   }
 }
 
-function startPolling() {
-  if (pollTimer) return;
-  pollTimer = setInterval(() => { pollSnapshots().catch(() => {}); }, 10_000);
-  // Immediate first poll
-  pollSnapshots().catch(() => {});
+let marketStatusTimer: ReturnType<typeof setInterval> | null = null;
+function startMarketStatusHeartbeat() {
+  if (marketStatusTimer) return;
+  marketStatusTimer = setInterval(broadcastMarketStatus, 60_000);
 }
 
 // ── Public API: attach to HTTP server ─────────────────────────────────────────
@@ -181,38 +170,38 @@ export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
   wss.on("connection", (ws, req) => {
-    const urlObj  = new URL(req.url ?? "/ws", "http://localhost");
-    const symbol  = urlObj.searchParams.get("symbol")?.toUpperCase() ?? "NVDA";
+    const urlObj = new URL(req.url ?? "/ws", "http://localhost");
+    const symbol = urlObj.searchParams.get("symbol")?.toUpperCase() ?? "NVDA";
     const client: WsClient = { ws, symbol };
     clients.add(client);
     logger.info({ symbol }, "WebSocket client connected");
 
-    // Send immediate snapshot on connect
+    // On-connect: one snapshot fetch to establish market status and seed the price.
+    // This is the ONLY HTTP snapshot call — it does NOT recur.
     fetchAlpacaSnapshot(symbol).then((snap) => {
       if (!snap || ws.readyState !== WebSocket.OPEN) return;
-      if (!isNyseOpen()) {
+      const isOpen = isNyseOpen();
+      const price  = snap.price;
+
+      if (price > 0) lastKnownPrices.set(symbol, price);
+
+      // Always send market status first so the client knows open/closed state
+      ws.send(JSON.stringify({
+        type:      "market.status",
+        symbol,
+        isOpen,
+        price,
+        lastClose: snap.prevClose || price,
+      }));
+
+      // If market is open, also seed the live price so the chart can start
+      // building its first bar immediately (before the first Alpaca trade arrives)
+      if (isOpen && price > 0) {
         ws.send(JSON.stringify({
-          type:      "market.status",
+          type:      "price.update",
           symbol,
-          isOpen:    false,
-          price:     snap.prevClose || snap.price,
-          lastClose: snap.prevClose || snap.price,
-        }));
-      } else {
-        const now   = Date.now() / 1000;
-        const barTs = Math.floor(now / 300) * 300;
-        // IMPORTANT: snap.open/high/low are the DAILY bar values, not the current 5m bar.
-        // Using them here would inject a giant day-range candle into the intraday chart.
-        // Instead, seed the partial bar at the current price — the polling loop will
-        // build up the real 5m O/H/L/C from repeated snap.price samples.
-        ws.send(JSON.stringify({
-          type: "bar.partial", symbol,
-          time: barTs,
-          open:   snap.price,
-          high:   snap.price,
-          low:    snap.price,
-          close:  snap.price,
-          volume: snap.volume,
+          price,
+          timestamp: Math.floor(Date.now() / 1000),
         }));
       }
     }).catch(() => {});
@@ -230,16 +219,18 @@ export function setupWebSocket(server: Server) {
       } catch { /* ignore */ }
     });
 
-    ws.on("close", () => { clients.delete(client); logger.info({ symbol: client.symbol }, "WS disconnected"); });
+    ws.on("close", () => {
+      clients.delete(client);
+      logger.info({ symbol: client.symbol }, "WS disconnected");
+    });
     ws.on("error", () => { clients.delete(client); });
 
-    // Ensure Alpaca stream is up and this symbol is subscribed
     alpacaConnect();
     alpacaSubscribeNew([symbol]);
-    startPolling();
+    startMarketStatusHeartbeat();
   });
 
-  // Pre-warm Alpaca connection so it's ready before the first client arrives
+  // Pre-warm connection so it is ready before the first client arrives
   alpacaConnect();
   logger.info("WebSocket server attached at /ws");
   return wss;
