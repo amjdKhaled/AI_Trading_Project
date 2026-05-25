@@ -48,37 +48,6 @@ function runPython(symbol: string, yf_interval: string, period: string, timeoutM
   });
 }
 
-// ── Blended history: yfinance daily + Alpaca intraday ───────────────────────
-
-interface Bar { time: number; [k: string]: unknown }
-
-/**
- * For 5m / 15m charts:
- *   1. Fetch daily candles from yfinance (max history — back to IPO date)
- *   2. Fetch intraday candles from Alpaca (last 90 days — accurate OHLCV)
- *   3. Cut daily bars that fall within the intraday window (2-day buffer)
- *   4. Return [...dailyBars, ...intradayBars] — chart scrolls from ~1990 to now
- */
-async function fetchBlendedAlpaca(symbol: string, interval: string): Promise<unknown[]> {
-  const [dailyRaw, intradayRaw] = await Promise.all([
-    runPython(symbol, "1d", "max", 60_000),
-    fetchAlpacaBars(symbol, interval, 90).catch(() => [] as Bar[]),
-  ]);
-
-  const daily    = dailyRaw    as Bar[];
-  const intraday = intradayRaw as Bar[];
-
-  if (intraday.length === 0) return daily;
-  if (daily.length    === 0) return intraday;
-
-  // Remove daily bars that overlap with the Alpaca intraday window (keep 2-day buffer)
-  const firstIntradayTime = intraday[0].time;
-  const cutoff = firstIntradayTime - 86_400 * 2;
-  const filteredDaily = daily.filter((b) => b.time < cutoff);
-
-  return [...filteredDaily, ...intraday];
-}
-
 // ── fetchHistory — exported for signal seeding ────────────────────────────
 // Signals use real Alpaca intraday data for accurate analysis.
 export async function fetchHistory(symbol: string, interval: string): Promise<unknown[]> {
@@ -123,7 +92,9 @@ router.get("/history", async (req, res): Promise<void> => {
 
   try {
     const bars = isIntraday
-      ? await fetchBlendedAlpaca(rawSymbol, rawInterval)
+      // Pure Alpaca intraday — no blending with daily candles.
+      // "2020-01-01" reaches Alpaca IEX's earliest available intraday data.
+      ? await fetchAlpacaBars(rawSymbol, rawInterval, 90, "2020-01-01")
       : await runPython(rawSymbol, dailyConf!.yf, dailyConf!.period);
 
     cache.set(cacheKey, { data: bars, expiresAt: Date.now() + cacheTtl });

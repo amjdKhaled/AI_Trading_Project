@@ -63,14 +63,15 @@ interface AlpacaBarsResp { bars?: AlpacaBarRaw[]; next_page_token?: string; }
 /**
  * Fetch OHLCV bars from Alpaca for the given symbol and interval.
  * `days` controls how many calendar days back to fetch (default 90).
+ * Pass `startDate` as "YYYY-MM-DD" to override the rolling window with a fixed origin.
  * Handles pagination transparently.
  */
-export async function fetchAlpacaBars(symbol: string, interval: string, days = 90): Promise<Bar[]> {
+export async function fetchAlpacaBars(symbol: string, interval: string, days = 90, startDate?: string): Promise<Bar[]> {
   const tf = TIMEFRAME_MAP[interval];
   if (!tf) throw new Error(`Unsupported Alpaca interval: ${interval}`);
 
   const end   = new Date();
-  const start = new Date(end.getTime() - days * 86_400_000);
+  const start = startDate ? new Date(`${startDate}T00:00:00Z`) : new Date(end.getTime() - days * 86_400_000);
 
   const bars: Bar[] = [];
   let pageToken: string | undefined;

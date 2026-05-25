@@ -156,8 +156,11 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
       priceScaleId: "volume", priceFormat: { type: "volume" },
       priceLineVisible: false, lastValueVisible: false,
     });
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.74, bottom: 0 } });
-    candle.priceScale().applyOptions({ scaleMargins: { top: 0.02, bottom: 0.28 } });
+    // Volume pane: bottom 22% of chart height
+    // Candle pane: top 78%, with 8% breathing room above highest visible price
+    // This mirrors TradingView's default intraday proportions
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+    candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
 
     chartRef.current  = chart;
     candleRef.current = candle;
@@ -193,8 +196,10 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
       color: b.close >= b.open ? "#26a69a28" : "#ef535028",
     })));
 
-    if (bars.length > 150) {
-      chartRef.current.timeScale().setVisibleLogicalRange({ from: bars.length - 150, to: bars.length + 5 });
+    // Show last 100 bars on load: for 5m that's ~8 hours (one full session).
+    // Keeps candles wide and readable; user can zoom out to see full history.
+    if (bars.length > 100) {
+      chartRef.current.timeScale().setVisibleLogicalRange({ from: bars.length - 100, to: bars.length + 3 });
     } else {
       chartRef.current.timeScale().fitContent();
     }

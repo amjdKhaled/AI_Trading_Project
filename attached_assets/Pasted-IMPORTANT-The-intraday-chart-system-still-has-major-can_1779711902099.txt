@@ -1,0 +1,272 @@
+IMPORTANT:
+The intraday chart system still has major candle architecture problems.
+
+The current implementation is incorrectly converting intraday candles into daily-style candles after a certain historical point.
+
+This is WRONG.
+
+====================================================
+CRITICAL PROBLEM #1
+INTRADAY TIMEFRAME CORRUPTION
+=============================
+
+On:
+
+* 5 minute timeframe
+* 15 minute timeframe
+
+the chart eventually stops showing REAL intraday candles.
+
+Instead:
+
+* candles become stretched
+* candles behave like daily candles
+* candle spacing becomes incorrect
+* chart scaling breaks
+* intraday structure disappears
+
+I DO NOT want timeframe blending.
+
+====================================================
+REQUIRED BEHAVIOR
+=================
+
+If user selects:
+
+* 5m
+
+THEN:
+ALL candles shown MUST remain true 5-minute candles ONLY.
+
+If user selects:
+
+* 15m
+
+THEN:
+ALL candles shown MUST remain true 15-minute candles ONLY.
+
+DO NOT:
+
+* fallback visually to daily candles
+* convert daily candles into fake intraday candles
+* stretch daily candles across intraday spacing
+* merge daily candles into intraday timeline
+
+====================================================
+IMPORTANT
+=========
+
+If the API historical intraday limit is reached:
+
+* STOP loading further candles
+* preserve real intraday structure
+* keep timeframe integrity
+
+DO NOT fake missing intraday data.
+
+====================================================
+MAXIMUM REAL INTRADAY HISTORY
+=============================
+
+Use the MAXIMUM available historical intraday data from Alpaca.
+
+For:
+
+* 5m
+* 15m
+
+Load:
+
+* every available real intraday candle
+* from the earliest available intraday date
+* with no fake interpolation
+
+====================================================
+IMPORTANT:
+NO FAKE CANDLES
+===============
+
+DO NOT:
+
+* synthesize candles
+* create artificial bars
+* stretch higher timeframe candles
+* transform daily candles into intraday candles
+
+Only display REAL candles from the API.
+
+====================================================
+CRITICAL PROBLEM #2
+CANDLE SHAPE / VOLUME MISMATCH
+==============================
+
+The candle rendering is currently WRONG.
+
+I can clearly see:
+
+* candles are too short
+* volatility is visually incorrect
+* candle size does not match movement
+* large volume candles appear visually weak
+* wick scaling is incorrect
+
+The OHLC rendering is distorted.
+
+====================================================
+FIX THE CANDLE ENGINE
+=====================
+
+Ensure:
+
+* open/high/low/close values are correct
+* high-low range renders correctly
+* candle body size is correct
+* wick length is correct
+* volatility appears naturally
+* strong momentum candles render properly
+
+====================================================
+IMPORTANT:
+FIX PRICE SCALE NORMALIZATION
+=============================
+
+Current chart likely has:
+
+* broken autoscaling
+* incorrect price range normalization
+* compressed volatility
+* incorrect visible range calculations
+
+Rebuild the price scaling logic properly.
+
+====================================================
+VISIBLE RANGE ENGINE
+====================
+
+Implement proper:
+
+* dynamic autoscale
+* visible range calculation
+* volatility-aware scaling
+* intraday scaling
+* price padding
+
+Prevent:
+
+* compressed candles
+* flattened volatility
+* unrealistic visual movement
+
+====================================================
+CHART SHOULD LOOK LIKE REAL TRADINGVIEW
+=======================================
+
+The chart must visually behave like:
+
+* TradingView
+* ThinkOrSwim
+* professional intraday terminals
+
+Candles must:
+
+* look natural
+* scale naturally
+* expand during volatility
+* compress during consolidation
+
+====================================================
+ALPACA INTRADAY REQUIREMENTS
+============================
+
+Use ONLY:
+
+* REAL Alpaca intraday bars
+  for:
+* 5m
+* 15m
+
+Use:
+
+* correct timestamp ordering
+* correct OHLC ordering
+* correct timezone handling
+* correct session handling
+
+====================================================
+IMPORTANT:
+DO NOT BLEND TIMEFRAMES
+=======================
+
+Current issue:
+the engine appears to blend:
+
+* intraday candles
+  with
+* higher timeframe candles
+
+This MUST STOP completely.
+
+Each timeframe must remain PURE.
+
+====================================================
+REAL SESSION LOGIC
+==================
+
+Respect:
+
+* market open
+* market close
+* premarket
+* after-hours handling
+
+Prevent:
+
+* giant invalid gaps
+* broken spacing
+* malformed candles
+
+====================================================
+SIGNAL ENGINE SYNCHRONIZATION
+=============================
+
+Ensure signals now synchronize with:
+
+* TRUE intraday candles
+* TRUE volatility
+* TRUE momentum
+* TRUE volume
+
+====================================================
+PERFORMANCE
+===========
+
+Optimize:
+
+* large intraday datasets
+* rendering
+* scrolling
+* zooming
+* autoscaling
+* live updates
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* 5m remains true 5m candles only
+* 15m remains true 15m candles only
+* no daily candle blending exists
+* no fake candles exist
+* no candle stretching exists
+* OHLC rendering is correct
+* candle volatility is visually correct
+* wick rendering is correct
+* autoscaling works correctly
+* chart visually behaves like TradingView
+* Alpaca intraday history loads correctly
+* no corrupted candles exist
+* no malformed scaling exists
+* no TypeScript errors exist
+* no rendering bugs exist
