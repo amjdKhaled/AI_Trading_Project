@@ -1,0 +1,263 @@
+Fix the trading platform UI, signal rendering, chart data behavior, and timeframe logic.
+
+IMPORTANT:
+The current implementation has multiple critical problems.
+
+====================================================
+MAIN ISSUES TO FIX
+==================
+
+1. PRICE DATA IS NOT REALISTIC
+   The current prices look fake or incorrect.
+
+I want:
+
+* proper historical market prices
+* proper OHLC values
+* correct scaling
+* realistic candle behavior
+* correct market structure
+
+====================================================
+2. LONG/SHORT SIGNALS RENDER OUTSIDE THE CHART
+==============================================
+
+The current LONG/SHORT markers are broken.
+
+Problems:
+
+* signals appear outside chart bounds
+* signals overlap UI
+* signals render on sidebar/watchlist area
+* signals are not anchored correctly to candles
+
+FIX THIS COMPLETELY.
+
+Signals MUST:
+
+* stay inside chart area only
+* stay attached to candles only
+* scale correctly with zoom
+* never render outside chart boundaries
+
+====================================================
+3. FOCUS ONLY ON 5M AND 15M
+===========================
+
+IMPORTANT:
+The platform should now focus ONLY on:
+
+* 5 minute
+* 15 minute
+
+Remove support and UI emphasis for:
+
+* 1m
+* 30m
+* 1h
+* daily
+* weekly
+* monthly
+
+This platform is now specifically optimized for:
+
+* scalping
+* intraday trading
+* fast market analysis
+
+====================================================
+4. SIGNAL ENGINE MUST WORK ON 5M + 15M
+======================================
+
+The signal engine currently does not properly appear on the 5-minute chart.
+
+Fix:
+
+* signal generation
+* rendering
+* timing
+* chart updates
+* candle synchronization
+
+Signals must appear correctly on:
+
+* 5m
+* 15m
+
+====================================================
+5. STOP LOSS / TAKE PROFIT LINES
+================================
+
+Currently too many historical SL/TP lines remain on chart.
+
+I ONLY want:
+
+* the MOST RECENT ACTIVE TRADE lines
+
+Remove ALL previous trade lines automatically.
+
+Chart should only display:
+
+* latest entry
+* latest SL
+* latest TP
+
+Old trades must disappear visually.
+
+====================================================
+6. CHANGE ENTRY SIGNAL STYLE
+============================
+
+Current signal markers look amateur.
+
+Redesign signals to look similar to:
+
+* LuxAlgo
+* institutional premium indicators
+
+LONG:
+
+* clean modern green entry marker
+* elegant glow
+* anchored below candle
+
+SHORT:
+
+* clean modern red entry marker
+* elegant glow
+* anchored above candle
+
+EXIT:
+
+* elegant subtle "$" icon
+
+Use:
+
+* minimalist style
+* premium design
+* smooth rendering
+* no oversized labels
+
+====================================================
+7. HISTORICAL DATA REQUIREMENT
+==============================
+
+I want:
+
+* historical stock data from approximately 1950 onward
+* maximum historical candles available
+* especially for:
+
+  * NVDA
+  * AAPL
+  * TSLA
+  * SPY
+  * QQQ
+  * META
+
+Use:
+
+* Yahoo Finance / yfinance historical data
+
+If exact intraday data from 1950 is unavailable:
+
+* gracefully fallback
+* use maximum available historical intraday data
+* keep long-term daily history available
+
+====================================================
+8. REAL-TIME MARKET DATA
+========================
+
+I want the CURRENT chart prices to update in real time.
+
+Use:
+
+* Alpaca
+  or
+* Finnhub WebSocket
+
+for:
+
+* live price updates
+* live candles
+* live intraday movement
+
+Historical candles:
+
+* use yfinance
+
+Live candles:
+
+* use WebSocket feed
+
+====================================================
+9. CHART CLEANLINESS
+====================
+
+Keep chart very clean.
+
+DO NOT display:
+
+* EMA lines
+* RSI
+* MACD
+* VWAP
+* debug text
+* unnecessary labels
+* pattern drawings
+
+Analyze all indicators internally only.
+
+====================================================
+10. PERFORMANCE OPTIMIZATION
+============================
+
+Optimize:
+
+* signal rendering
+* chart redraws
+* historical loading
+* WebSocket updates
+* memory usage
+
+Prevent:
+
+* UI lag
+* duplicate signals
+* rendering outside chart
+* chart clutter
+
+====================================================
+11. IMPORTANT POSITIONING FIX
+=============================
+
+Ensure all chart markers use proper positioning logic.
+
+Signals must:
+
+* remain inside chart bounds
+* remain attached to candle prices
+* move naturally during zoom and drag
+* never overlap sidebar UI
+
+====================================================
+12. FINAL REQUIREMENTS
+======================
+
+Before finishing:
+
+* verify signals render correctly on 5m and 15m
+* verify no markers render outside chart
+* verify latest SL/TP only
+* verify LuxAlgo-style signal appearance
+* verify live data updates correctly
+* verify historical data loads correctly
+* verify no broken rendering
+* verify no TypeScript errors
+* verify no backend API errors
+* verify smooth chart performance
+
+DO NOT leave broken UI behavior.
+DO NOT leave floating markers.
+DO NOT leave duplicate SL/TP lines.

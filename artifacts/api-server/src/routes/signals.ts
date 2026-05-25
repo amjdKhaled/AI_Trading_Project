@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, type SQL } from "drizzle-orm";
 import { db, signalsTable } from "@workspace/db";
 import {
   ListSignalsQueryParams,
@@ -20,47 +20,54 @@ router.get("/signals", async (req, res): Promise<void> => {
   }
 
   const { symbol, limit } = query.data;
+  // timeframe is not in the generated schema — parse manually; default to "5m"
+  const timeframe = typeof req.query.timeframe === "string" && req.query.timeframe ? req.query.timeframe : "5m";
 
-  // Query the DB directly — the WebSocket background process keeps signals fresh
-  let q = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
-  if (symbol) {
-    q = q.where(eq(signalsTable.symbol, symbol)) as typeof q;
-  }
-  const rows = await q.limit(limit ?? 50);
+  const conditions: SQL[] = [];
+  if (symbol)    conditions.push(eq(signalsTable.symbol,    symbol));
+  if (timeframe) conditions.push(eq(signalsTable.timeframe, timeframe));
 
-  // If DB is empty for this symbol, seed it once from the analysis engine
+  const base = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
+  const rows = await (
+    conditions.length === 0 ? base :
+    conditions.length === 1 ? base.where(conditions[0]) :
+    base.where(and(...conditions))
+  ).limit(limit ?? 50);
+
+  // Seed once if the DB is empty for this symbol+timeframe combo
   if (rows.length === 0 && symbol) {
     try {
-      const rawBars = await fetchHistory(symbol, "1d");
+      const rawBars = await fetchHistory(symbol, timeframe);
       const bars = rawBars as import("../lib/analyzer/types").OhlcvBar[];
       if (bars.length >= 50) {
-        const { signals } = generateSignals(bars, symbol, "1d");
+        const { signals } = generateSignals(bars, symbol, timeframe);
         for (const sig of signals) {
           try {
             await db.insert(signalsTable).values({
-              signalId: sig.id,
-              symbol: sig.symbol,
-              timeframe: sig.timeframe,
-              barTime: new Date(sig.barTime * 1000),
-              side: sig.side,
-              entryPrice: sig.entryPrice,
-              slPrice: sig.slPrice,
-              tpPrice: sig.tpPrice,
+              signalId:       sig.id,
+              symbol:         sig.symbol,
+              timeframe:      sig.timeframe,
+              barTime:        new Date(sig.barTime * 1000),
+              side:           sig.side,
+              entryPrice:     sig.entryPrice,
+              slPrice:        sig.slPrice,
+              tpPrice:        sig.tpPrice,
               currentSlPrice: sig.slPrice,
-              confidence: sig.confidence,
-              riskTag: sig.riskLevel,
-              state: "active",
-              rrRatio: Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / Math.abs(sig.entryPrice - sig.slPrice || 0.001) * 100) / 100,
-              pattern: sig.patterns[0] ?? "analysis_engine",
-              regime: "trend_up",
+              confidence:     sig.confidence,
+              riskTag:        sig.riskLevel,
+              state:          "active",
+              rrRatio:        Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / (Math.abs(sig.entryPrice - sig.slPrice) || 0.001) * 100) / 100,
+              pattern:        sig.patterns[0] ?? "analysis_engine",
+              regime:         "trend_up",
             });
           } catch { /* duplicate — skip */ }
         }
         // Re-query after seeding
-        const seeded = await db.select().from(signalsTable)
-          .where(eq(signalsTable.symbol, symbol))
-          .orderBy(desc(signalsTable.createdAt))
-          .limit(limit ?? 50);
+        const seeded = await (
+          conditions.length === 0 ? db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt)) :
+          conditions.length === 1 ? db.select().from(signalsTable).where(conditions[0]).orderBy(desc(signalsTable.createdAt)) :
+          db.select().from(signalsTable).where(and(...conditions)).orderBy(desc(signalsTable.createdAt))
+        ).limit(limit ?? 50);
         res.json(ListSignalsResponse.parse(seeded));
         return;
       }
@@ -78,36 +85,26 @@ router.get("/signals/stats", async (req, res): Promise<void> => {
   }
 
   const { symbol } = query.data;
-  let q = db.select().from(signalsTable);
-  if (symbol) {
-    q = q.where(eq(signalsTable.symbol, symbol)) as typeof q;
-  }
-  const rows = await q;
+  const base = db.select().from(signalsTable);
+  const rows = symbol ? await base.where(eq(signalsTable.symbol, symbol)) : await base;
 
-  const total = rows.length;
+  const total  = rows.length;
   const active = rows.filter((r) => r.state === "active").length;
   const tp_hit = rows.filter((r) => r.state === "tp_hit").length;
   const sl_hit = rows.filter((r) => r.state === "sl_hit").length;
   const expired = rows.filter((r) => r.state === "expired").length;
-  const closed = tp_hit + sl_hit;
+  const closed  = tp_hit + sl_hit;
   const winRate = closed > 0 ? tp_hit / closed : 0;
-  const avgConfidence =
-    total > 0 ? rows.reduce((s, r) => s + r.confidence, 0) / total : 0;
-  const rrs = rows.filter((r) => r.rrRatio != null).map((r) => r.rrRatio!);
-  const avgRR = rrs.length > 0 ? rrs.reduce((s, v) => s + v, 0) / rrs.length : 0;
+  const avgConfidence = total > 0 ? rows.reduce((s, r) => s + r.confidence, 0) / total : 0;
+  const rrs    = rows.filter((r) => r.rrRatio != null).map((r) => r.rrRatio!);
+  const avgRR  = rrs.length > 0 ? rrs.reduce((s, v) => s + v, 0) / rrs.length : 0;
 
-  res.json(
-    GetSignalStatsResponse.parse({
-      total,
-      active,
-      tp_hit,
-      sl_hit,
-      expired,
-      winRate: Math.round(winRate * 100) / 100,
-      avgConfidence: Math.round(avgConfidence * 10) / 10,
-      avgRR: Math.round(avgRR * 100) / 100,
-    })
-  );
+  res.json(GetSignalStatsResponse.parse({
+    total, active, tp_hit, sl_hit, expired,
+    winRate:        Math.round(winRate * 100) / 100,
+    avgConfidence:  Math.round(avgConfidence * 10) / 10,
+    avgRR:          Math.round(avgRR * 100) / 100,
+  }));
 });
 
 export default router;
