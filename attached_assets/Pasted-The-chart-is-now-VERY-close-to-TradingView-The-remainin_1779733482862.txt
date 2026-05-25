@@ -1,0 +1,118 @@
+The chart is now VERY close to TradingView.
+
+The remaining differences are now subtle:
+
+* slightly different prices
+* slightly different candle bodies
+* slightly different wicks
+* slightly different volume distribution
+* slightly different candle aggregation
+
+This is NO LONGER a rendering issue.
+
+====================================================
+IMPORTANT
+=========
+
+Please STOP rewriting websocket logic and rendering logic.
+
+The remaining divergence is now about:
+
+* market data normalization
+* TradingView-style aggregation
+* session handling
+* candle bucketing
+* timezone alignment
+* RTH/ETH logic
+* adjusted OHLC handling
+
+====================================================
+I WANT YOU TO RESEARCH THIS PROPERLY
+====================================
+
+Please research how TradingView handles:
+
+1. NASDAQ intraday aggregation
+2. 5-minute candle bucketing
+3. session boundaries
+4. Regular Trading Hours (RTH)
+5. Extended Hours (ETH)
+6. adjusted vs unadjusted OHLC
+7. exchange timezone normalization
+8. intraday bar alignment
+9. SIP vs IEX aggregation behavior
+10. candle timestamp rounding
+
+====================================================
+CURRENT PROBLEM
+===============
+
+The app is still:
+
+* grouping some candles differently
+* producing slightly different highs/lows
+* showing slightly different close prices
+* producing different wick structures
+* generating different volume clustering
+
+TradingView is still more accurate.
+
+====================================================
+VERY IMPORTANT
+==============
+
+The chart MUST align candles exactly on proper 5m boundaries:
+
+13:40
+13:45
+13:50
+13:55
+
+NOT:
+13:43
+13:48
+13:53
+
+The candle timestamps MUST be bucketed EXACTLY like TradingView.
+
+====================================================
+TARGET
+======
+
+I want the chart behavior to visually and structurally match TradingView as closely as possible:
+
+* same session segmentation
+* same intraday grouping
+* same candle alignment
+* same candle structure
+* same volume alignment
+* same market-hours handling
+* same timezone logic
+
+====================================================
+DO NOT CHANGE PROVIDER YET
+==========================
+
+Do NOT switch APIs again yet.
+
+First:
+
+* normalize the current data properly
+* implement TradingView-style aggregation rules
+* align candle timestamps correctly
+* align session handling correctly
+
+Only after that should we evaluate whether a SIP feed upgrade is still necessary.
+
+====================================================
+FINAL GOAL
+==========
+
+The chart should visually behave like TradingView:
+
+* same candle timing
+* same structure
+* same session grouping
+* same price continuity
+* same volume timing
+* same intraday flow
