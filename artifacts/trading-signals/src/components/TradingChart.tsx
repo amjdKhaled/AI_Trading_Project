@@ -282,14 +282,36 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
 
-  // Live tick
+  // Live tick — only applied when the market is confirmed open.
+  // Validates OHLC before rendering to prevent corrupted bars from reaching the chart.
   useEffect(() => {
     if (!candleRef.current || !lastBar || !bars.length) return;
+    // Guard: when market is closed the snapshot still polls but carries daily H/L values,
+    // which would inject a giant day-range candle into the 5m chart. Skip entirely.
+    if (!isMarketOpen) return;
+
     try {
+      const { open, high, low, close } = lastBar;
+
+      // Reject non-finite values
+      if (!isFinite(open) || !isFinite(high) || !isFinite(low) || !isFinite(close)) return;
+      if (isNaN(open)     || isNaN(high)     || isNaN(low)     || isNaN(close))     return;
+
+      // OHLC integrity: high must be the highest, low must be the lowest
+      if (high < open || high < close) return;
+      if (low  > open || low  > close) return;
+      if (low  > high) return;
+
+      // Sanity: reject bars whose H-L range exceeds 10% of price — impossible for a single 5m bar.
+      // Catches any stale daily-range data that slips through.
+      const price = close || 1;
+      if ((high - low) / price > 0.10) return;
+
+      // Align to the current 5m (or 15m) boundary
       const t = (lastBar.time - (lastBar.time % intervalSec)) as Time;
-      candleRef.current.update({ time: t, open: lastBar.open, high: lastBar.high, low: lastBar.low, close: lastBar.close });
-    } catch {}
-  }, [lastBar, bars.length, intervalSec]);
+      candleRef.current.update({ time: t, open, high, low, close });
+    } catch { /* ignore — chart may not be ready */ }
+  }, [lastBar, bars.length, intervalSec, isMarketOpen]);
 
   return (
     <div className="flex flex-col h-full">

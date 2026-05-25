@@ -1,0 +1,289 @@
+IMPORTANT:
+The platform is getting closer to correct behavior, but there are STILL critical intraday candle rendering problems and historical analysis limitations.
+
+The current signal quality is improving and many setups are correct, but:
+
+1. Candle rendering corruption still exists
+2. Some candles become malformed
+3. Extreme vertical candles appear incorrectly
+4. Historical analysis still does not fully analyze ALL available history
+5. The engine is still too restrictive and misses many valid opportunities
+
+These issues must now be fixed professionally.
+
+====================================================
+CRITICAL CANDLE RENDERING BUG
+=============================
+
+I can clearly see malformed candles:
+
+* giant vertical candles
+* broken wick rendering
+* stretched candle bodies
+* invalid volatility scaling
+* visually corrupted bars
+
+This is NOT acceptable.
+
+The chart must behave visually like real TradingView intraday charts.
+
+====================================================
+FIX THE ENTIRE CANDLE PIPELINE
+==============================
+
+Verify and rebuild:
+
+1. OHLC normalization
+2. intraday bar ordering
+3. timestamp synchronization
+4. candle rendering calculations
+5. visible range scaling
+6. autoscale logic
+7. live update merging
+8. historical pagination merging
+
+====================================================
+IMPORTANT:
+PREVENT CANDLE CORRUPTION
+=========================
+
+Prevent:
+
+* malformed giant candles
+* duplicated bars
+* timestamp overlaps
+* incorrect bar merging
+* invalid high/low values
+* invalid live candle replacement
+* broken visible range calculations
+
+====================================================
+LIKELY ROOT CAUSE
+=================
+
+The current issue likely comes from:
+
+* incorrect live candle replacement
+* broken historical merge logic
+* duplicate timestamps
+* incorrect OHLC updates
+* invalid visible-range scaling
+
+Fix this carefully.
+
+====================================================
+STRICT BAR VALIDATION
+=====================
+
+Before rendering ANY candle:
+validate:
+
+* high >= open
+* high >= close
+* low <= open
+* low <= close
+* low <= high
+* timestamps are sequential
+* OHLC values are numeric
+* no NaN values
+* no infinite values
+
+Reject corrupted bars automatically.
+
+====================================================
+REBUILD LIVE CANDLE MERGING
+===========================
+
+Current live updates may be corrupting candles.
+
+Implement:
+
+* proper bar replacement
+* proper candle updating
+* proper timestamp matching
+* proper partial-candle updates
+
+Do NOT:
+
+* append duplicate live candles
+* overwrite historical bars incorrectly
+* create malformed candles
+
+====================================================
+REBUILD AUTOSCALE ENGINE
+========================
+
+The visible price scaling is still incorrect.
+
+Fix:
+
+* visible range calculations
+* volatility scaling
+* intraday scaling
+* price padding
+* high-volatility handling
+
+Prevent:
+
+* compressed movement
+* stretched candles
+* giant malformed bars
+
+====================================================
+HISTORICAL ANALYSIS REQUIREMENT
+===============================
+
+I want the engine to analyze:
+
+* the ENTIRE available chart history
+* from earliest available date
+* all the way to LIVE market data
+
+The signal engine should NOT only analyze recent candles.
+
+====================================================
+FULL HISTORY ANALYSIS
+=====================
+
+The engine must:
+
+* scan entire historical dataset
+* analyze all candles
+* analyze all historical structure
+* analyze all historical patterns
+* analyze all historical trend phases
+
+====================================================
+SIGNAL FREQUENCY IMPROVEMENT
+============================
+
+Current signals are:
+
+* accurate
+* but too restrictive
+
+The engine is filtering too aggressively.
+
+I want:
+
+* more valid opportunities
+* while maintaining quality
+
+====================================================
+IMPORTANT:
+DO NOT GENERATE RANDOM SIGNALS
+==============================
+
+Do NOT lower quality randomly.
+
+Instead:
+improve:
+
+* setup recognition
+* continuation detection
+* pullback detection
+* breakout continuation detection
+* trend continuation logic
+
+====================================================
+IMPROVE ENTRY DETECTION
+=======================
+
+Add better detection for:
+
+* pullback continuation entries
+* breakout continuation entries
+* momentum continuation entries
+* retest entries
+* liquidity sweep reversals
+* volatility expansion setups
+
+====================================================
+MARKET STRUCTURE IMPROVEMENTS
+=============================
+
+Improve:
+
+* swing detection
+* BOS detection
+* CHOCH detection
+* trend continuation analysis
+* trend exhaustion analysis
+
+====================================================
+CANDLESTICK ENGINE IMPROVEMENTS
+===============================
+
+Improve weighting for:
+
+* strong momentum candles
+* engulfing candles
+* breakout candles
+* rejection candles
+* exhaustion candles
+
+====================================================
+VOLUME ENGINE IMPROVEMENTS
+==========================
+
+Improve:
+
+* RVOL analysis
+* breakout volume confirmation
+* momentum volume
+* accumulation/distribution logic
+
+====================================================
+LIVE ANALYSIS ENGINE
+====================
+
+Ensure the engine continuously analyzes:
+
+* historical data
+* current intraday data
+* live candles
+* active momentum
+* active volatility
+
+====================================================
+IMPORTANT:
+NO ANALYSIS GAPS
+================
+
+The engine should continuously analyze:
+EARLIEST HISTORY → LIVE MARKET
+
+Without resetting incorrectly.
+
+====================================================
+CHART REQUIREMENTS
+==================
+
+The chart must:
+
+* visually match TradingView behavior
+* render candles naturally
+* render volatility naturally
+* update smoothly
+* never show malformed candles
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* no malformed candles exist
+* no giant broken candles exist
+* no duplicate timestamps exist
+* no corrupted OHLC values exist
+* live candle merging works correctly
+* autoscaling works correctly
+* full historical analysis works
+* signal frequency improves
+* valid opportunities are no longer missed
+* signals remain high quality
+* chart behaves like a professional trading terminal
+* no TypeScript errors exist
+* no rendering bugs exist
+* no synchronization bugs exist

@@ -181,9 +181,18 @@ export function setupWebSocket(server: Server) {
       } else {
         const now   = Date.now() / 1000;
         const barTs = Math.floor(now / 300) * 300;
+        // IMPORTANT: snap.open/high/low are the DAILY bar values, not the current 5m bar.
+        // Using them here would inject a giant day-range candle into the intraday chart.
+        // Instead, seed the partial bar at the current price — the polling loop will
+        // build up the real 5m O/H/L/C from repeated snap.price samples.
         ws.send(JSON.stringify({
           type: "bar.partial", symbol,
-          time: barTs, open: snap.open, high: snap.high, low: snap.low, close: snap.price, volume: snap.volume,
+          time: barTs,
+          open:   snap.price,
+          high:   snap.price,
+          low:    snap.price,
+          close:  snap.price,
+          volume: snap.volume,
         }));
       }
     }).catch(() => {});

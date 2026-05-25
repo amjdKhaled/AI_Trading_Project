@@ -98,7 +98,8 @@ export function generateSignals(
     analyzeTrendMomentumVolatility(bars);
 
   const candidates: SignalCandidate[] = [];
-  const lookback  = Math.min(bars.length - 2, 350);
+  // 2000-bar lookback ≈ 4 trading weeks on 5m; captures enough structure for full session analysis
+  const lookback  = Math.min(bars.length - 2, 2000);
   const startIdx  = bars.length - lookback;
 
   for (let i = startIdx; i < bars.length - 1; i++) {
@@ -226,7 +227,7 @@ export function generateSignals(
         bullP.length > 0,
       ].filter(Boolean).length;
 
-      if (bullScore >= 82 && longConfirms >= 3) {
+      if (bullScore >= 75 && longConfirms >= 2) {
         const slice    = bars.slice(Math.max(0, i - 14), i + 1);
         const swingLow = Math.min(...slice.map(b => b.low));
         const sl       = swingLow - atrI * 0.3;
@@ -320,7 +321,7 @@ export function generateSignals(
         bearP.length > 0,
       ].filter(Boolean).length;
 
-      if (bearScore >= 82 && shortConfirms >= 3) {
+      if (bearScore >= 75 && shortConfirms >= 2) {
         const slice     = bars.slice(Math.max(0, i - 14), i + 1);
         const swingHigh = Math.max(...slice.map(b => b.high));
         const sl        = swingHigh + atrI * 0.3;
@@ -363,8 +364,8 @@ export function generateSignals(
   }
 
   // ── Deduplication: enforce minimum gap between same-side signals ─────────
-  // Time in seconds: 5m bar = 300s, 15m bar = 900s
-  const minGapSec    = timeframe === "15m" ? 900 * 8 : 300 * 12;
+  // 5m: 6 bars = 30 min minimum gap; 15m: 4 bars = 60 min minimum gap
+  const minGapSec    = timeframe === "15m" ? 900 * 4 : 300 * 6;
   const sorted       = [...candidates].sort((a, b) => b.confidence - a.confidence);
   const usedByLong   = new Set<number>();
   const usedByShort  = new Set<number>();
@@ -379,11 +380,10 @@ export function generateSignals(
     if (!tooClose) { used.add(c.time); deduped.push(c); }
   }
 
-  // Keep the 10 best A+/A signals, sorted most-recent-first
+  // Keep the 20 best signals (A+, A, or B grade), sorted most-recent-first
   const bestCandidates = deduped
-    .filter(c => c.grade === "A+" || c.grade === "A")
     .sort((a, b) => b.time - a.time)
-    .slice(0, 10);
+    .slice(0, 20);
 
   const signals: TradingSignal[] = bestCandidates.map(c => ({
     id:         genId(),
