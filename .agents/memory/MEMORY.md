@@ -1,2 +1,4 @@
 - [Trading signals chart markers](trading-signals-chart-markers.md) — SVG overlay approach for rendering signal arrows on LightweightCharts canvas
 - [Signal DB data hygiene](signal-db-hygiene.md) — riskTag enum values and duplicate-signal prevention rules
+- [Signal engine per-bar analysis](signal-per-bar.md) — critical: use ema20[i]/rsiValues[i] per loop iteration, never last-bar global values
+- [Blended history architecture](blended-history.md) — daily-max + intraday-60d merge for full chart history; only for display, not signal seeding

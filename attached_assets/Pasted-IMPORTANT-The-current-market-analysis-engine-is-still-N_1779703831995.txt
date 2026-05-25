@@ -1,0 +1,390 @@
+IMPORTANT:
+The current market analysis engine is still NOT behaving like a professional institutional trading system.
+
+The analysis quality is weak, random, and incomplete.
+
+You did NOT fully implement the technical analysis requirements I previously gave.
+
+The current signal logic feels random and disconnected from real market structure.
+
+This must now be fixed properly.
+
+====================================================
+CRITICAL HISTORICAL DATA PROBLEM
+================================
+
+The 5-minute chart currently only shows data starting around 2026.
+
+This is WRONG.
+
+I want the platform to load the MAXIMUM AVAILABLE historical data possible.
+
+Requirements:
+
+* Load historical data as far back as possible
+* Preferably from around 1950 onward
+* Use the maximum available intraday history
+* If full intraday history is unavailable:
+
+  * fallback intelligently
+  * combine:
+
+    * long-term daily candles
+    * intraday recent candles
+
+The chart should NEVER look like it only started recently.
+
+====================================================
+IMPORTANT DATA ARCHITECTURE
+===========================
+
+Implement proper historical layering:
+
+LONG HISTORY:
+
+* daily/weekly/monthly candles from earliest available date
+
+INTRADAY:
+
+* 5m and 15m recent high-resolution candles
+
+Blend them correctly.
+
+====================================================
+THE ANALYSIS ENGINE IS TOO RANDOM
+=================================
+
+Current signals appear random.
+
+The system is NOT properly analyzing:
+
+* candlestick behavior
+* market structure
+* chart patterns
+* momentum
+* breakout quality
+* volume behavior
+
+The current engine behaves like weak indicator logic.
+
+I want PROFESSIONAL institutional-grade technical analysis.
+
+====================================================
+FULL CANDLESTICK ANALYSIS ENGINE
+================================
+
+You MUST implement COMPLETE Japanese candlestick analysis.
+
+Do NOT implement only a few patterns.
+
+The engine must recognize and score ALL major candlestick patterns professionally.
+
+====================================================
+BULLISH PATTERNS
+================
+
+Implement:
+
+* Bullish Engulfing
+* Hammer
+* Inverted Hammer
+* Morning Star
+* Piercing Pattern
+* Bullish Harami
+* Tweezer Bottom
+* Three White Soldiers
+* Rising Three Methods
+* Bullish Marubozu
+* Dragonfly Doji
+* Bullish Kicker
+* Bullish Belt Hold
+* Matching Low
+* Bullish Abandoned Baby
+
+====================================================
+BEARISH PATTERNS
+================
+
+Implement:
+
+* Bearish Engulfing
+* Shooting Star
+* Hanging Man
+* Evening Star
+* Dark Cloud Cover
+* Bearish Harami
+* Tweezer Top
+* Three Black Crows
+* Falling Three Methods
+* Bearish Marubozu
+* Gravestone Doji
+* Bearish Kicker
+* Bearish Belt Hold
+* Deliberation Pattern
+* Bearish Abandoned Baby
+
+====================================================
+NEUTRAL PATTERNS
+================
+
+Implement:
+
+* Doji
+* Long-Legged Doji
+* Spinning Top
+* High Wave
+* Rickshaw Man
+
+====================================================
+ADVANCED CANDLE ANALYSIS
+========================
+
+Analyze:
+
+* rejection candles
+* breakout candles
+* exhaustion candles
+* momentum candles
+* imbalance candles
+* continuation candles
+* climax candles
+* volatility expansion candles
+
+====================================================
+FULL PRICE ACTION ENGINE
+========================
+
+Implement complete price action analysis.
+
+Detect:
+
+* breakout
+* breakout strength
+* breakout failure
+* retest
+* fake breakout
+* liquidity sweep
+* support bounce
+* resistance rejection
+* trend continuation
+* trend exhaustion
+* compression
+* expansion
+* volatility contraction
+* volatility expansion
+* pullback quality
+* momentum continuation
+
+====================================================
+FULL MARKET STRUCTURE ENGINE
+============================
+
+Implement:
+
+* Higher High
+* Higher Low
+* Lower High
+* Lower Low
+* BOS
+* CHOCH
+* swing structure
+* internal structure
+* external structure
+* trend shifts
+* regime changes
+
+====================================================
+FULL CHART PATTERN ENGINE
+=========================
+
+Implement ALL major chart patterns:
+
+* Bull Flag
+* Bear Flag
+* Ascending Triangle
+* Descending Triangle
+* Symmetrical Triangle
+* Rising Wedge
+* Falling Wedge
+* Pennant
+* Rectangle
+* Channel
+* Double Top
+* Double Bottom
+* Triple Top
+* Triple Bottom
+* Head and Shoulders
+* Inverse Head and Shoulders
+* Cup and Handle
+* Rounded Bottom
+* Rounded Top
+* Diamond Pattern
+* Broadening Formation
+
+====================================================
+VOLUME ANALYSIS ENGINE
+======================
+
+Implement proper volume analysis.
+
+Analyze:
+
+* RVOL
+* breakout volume
+* accumulation
+* distribution
+* exhaustion volume
+* climax volume
+* volume divergence
+* momentum volume
+* absorption
+
+====================================================
+SIGNAL QUALITY IMPROVEMENTS
+===========================
+
+Current entries are weak and random.
+
+Signals must ONLY appear when:
+
+* trend confirms
+* momentum confirms
+* candle confirms
+* structure confirms
+* volume confirms
+* breakout quality confirms
+* confidence score is high
+
+Reduce signals heavily.
+
+Prioritize QUALITY over quantity.
+
+====================================================
+STOP LOSS / TAKE PROFIT ENGINE
+==============================
+
+Current SL/TP logic is unrealistic and disconnected from entries.
+
+Fix this completely.
+
+SL and TP must:
+
+* relate logically to the entry
+* use ATR intelligently
+* use market structure intelligently
+* use volatility intelligently
+* adapt to trend strength
+
+====================================================
+IMPORTANT:
+ONLY SHOW LATEST ACTIVE TRADE
+=============================
+
+The chart must ONLY display:
+
+* latest LONG or SHORT signal
+* latest active SL
+* latest active TP
+* latest EXIT
+
+REMOVE old trade visuals automatically.
+
+====================================================
+EXIT ENGINE
+===========
+
+Implement proper exits.
+
+Exit logic should consider:
+
+* momentum weakening
+* trend failure
+* structure breaks
+* volatility changes
+* TP reached
+* SL reached
+* exhaustion signals
+
+====================================================
+LUXALGO-STYLE VISUALS
+=====================
+
+Improve signal appearance.
+
+Signals should look:
+
+* clean
+* premium
+* minimalist
+* institutional
+
+NOT amateur.
+
+====================================================
+IMPORTANT:
+DO NOT DISPLAY ANALYSIS VISUALLY
+================================
+
+Do NOT visually draw:
+
+* EMA
+* RSI
+* MACD
+* VWAP
+* pattern overlays
+* support/resistance lines
+* structure labels
+* debug information
+
+Analyze all of these internally only.
+
+====================================================
+ONLY DISPLAY
+============
+
+1. LONG ENTRY
+2. SHORT ENTRY
+3. EXIT
+4. CURRENT ACTIVE SL
+5. CURRENT ACTIVE TP
+
+Nothing else.
+
+====================================================
+5M + 15M ONLY
+=============
+
+The platform should now focus ONLY on:
+
+* 5 minute
+* 15 minute
+
+Optimize the entire engine specifically for:
+
+* intraday trading
+* scalping
+* fast market movement
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing:
+
+* verify signals are logical
+* verify entries are not random
+* verify candlestick analysis works
+* verify chart pattern analysis works
+* verify market structure works
+* verify SL/TP logic is realistic
+* verify only latest active trade is shown
+* verify historical data loading is improved
+* verify no rendering bugs exist
+* verify no TypeScript errors
+* verify no backend API issues
+
+The final result must feel like:
+
+* an institutional AI trading assistant
+* a professional market intelligence system
+* a premium LuxAlgo-style trading platform

@@ -75,7 +75,11 @@ export function TradingChart({ bars, activeSignals, lastBar, symbol, timeframe, 
 
     const positions: MarkerPos[] = [];
 
-    for (const sig of signals) {
+    // Only show the single latest signal marker on the chart
+    // All other signals appear in the side panel — the chart stays clean
+    const latestOnly = signals.slice(0, 1);
+
+    for (const sig of latestOnly) {
       if (!sig.barTime) continue;
       const sigSec = Math.floor(new Date(sig.barTime).getTime() / 1000);
 

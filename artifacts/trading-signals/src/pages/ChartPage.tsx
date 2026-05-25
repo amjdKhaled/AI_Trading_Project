@@ -37,7 +37,7 @@ function useHistoryBars(symbol: string | null, interval: Timeframe) {
     setError(null);
 
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    const url = `${base}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`;
+    const url = `${base}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&blended=true`;
     fetch(url, { signal: ctrl.signal })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<OhlcvBar[]>; })
       .then((data) => { if (!ctrl.signal.aborted) { setBars(Array.isArray(data) ? data : []); setLoading(false); } })
