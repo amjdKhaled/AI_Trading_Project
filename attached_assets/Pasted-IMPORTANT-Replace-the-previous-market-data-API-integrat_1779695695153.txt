@@ -1,0 +1,200 @@
+IMPORTANT:
+Replace the previous market data API integration completely.
+
+DO NOT use:
+
+* Polygon
+* Finnhub
+  as the main historical candle source anymore.
+
+====================================================
+NEW MARKET DATA REQUIREMENTS
+============================
+
+Use:
+
+* Yahoo Finance historical data
+* yfinance Python library
+
+for historical candles and full stock history.
+
+====================================================
+GOAL
+====
+
+I want the website chart to display:
+
+* full stock history
+* from the beginning of the stock listing
+* across all available timeframes
+
+Even if:
+
+* data is delayed
+* data is free
+* some intraday history is limited
+
+That is acceptable.
+
+====================================================
+CHART REQUIREMENTS
+==================
+
+Keep using:
+TradingView Lightweight Charts
+
+The chart must:
+
+* display full historical candles
+* support smooth zooming
+* support dragging
+* support timeframe switching
+* support large datasets efficiently
+
+====================================================
+TIMEFRAMES
+==========
+
+Support:
+
+* 1m
+* 5m
+* 15m
+* 30m
+* 1h
+* 4h
+* 1D
+* 1W
+* 1M
+
+If Yahoo Finance limits some intraday history:
+
+* gracefully fallback
+* show maximum available candles
+* continue working without errors
+
+====================================================
+HISTORICAL DATA ENGINE
+======================
+
+Build a backend historical data service using:
+
+* Python
+* FastAPI
+* yfinance
+
+The backend should:
+
+* fetch historical candles
+* cache responses
+* normalize OHLCV data
+* support timeframe requests
+* support symbol switching
+* support pagination/loading more candles
+
+====================================================
+LIVE DATA
+=========
+
+For live or near-live updates:
+Keep optional support for:
+
+* Finnhub
+  or
+* Alpaca
+
+BUT:
+Historical candle loading must primarily come from Yahoo Finance/yfinance.
+
+====================================================
+AI ENGINE
+=========
+
+The AI system must analyze:
+
+* historical candles
+* live candles
+* chart patterns
+* candlestick patterns
+* trend
+* volume
+* momentum
+* volatility
+
+The AI should use the full historical chart data for learning and analysis.
+
+====================================================
+PERFORMANCE
+===========
+
+Optimize:
+
+* large historical datasets
+* candle rendering
+* zoom performance
+* memory usage
+* chart responsiveness
+
+The chart must remain smooth even with long historical data.
+
+====================================================
+FRONTEND
+========
+
+Frontend should:
+
+* request candles dynamically
+* support timeframe switching
+* lazy load historical candles
+* update chart efficiently
+* keep TradingView-like smooth behavior
+
+====================================================
+BACKEND API
+===========
+
+Create endpoints such as:
+
+GET /api/history?symbol=AAPL&interval=5m
+GET /api/history?symbol=TSLA&interval=1d
+GET /api/history?symbol=NVDA&interval=1h
+
+Return normalized OHLCV candle arrays.
+
+====================================================
+ERROR HANDLING
+==============
+
+Handle:
+
+* missing data
+* timeframe limitations
+* API limits
+* invalid symbols
+* Yahoo Finance interruptions
+
+Gracefully without crashing the app.
+
+====================================================
+FINAL RESULT
+============
+
+The final platform must:
+
+* display full stock history
+* display all possible timeframes
+* work smoothly
+* support AI analysis
+* support live updates
+* support future ML training
+* feel like a professional TradingView-style platform
+
+Verify:
+
+* frontend runs correctly
+* backend runs correctly
+* yfinance integration works
+* candles load correctly
+* all timeframe switching works
+* there are no syntax errors
+* there are no broken API routes
