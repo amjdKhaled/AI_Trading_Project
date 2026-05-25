@@ -1,0 +1,293 @@
+IMPORTANT:
+Completely replace the current intraday market data engine with Alpaca.
+
+The current system has serious problems caused by:
+
+* incorrect intraday data
+* broken candle scaling
+* fake prices
+* incorrect OHLC normalization
+* weak synchronization
+* bad signal timing
+
+We are now migrating the ENTIRE intraday system to Alpaca.
+
+====================================================
+NEW DATA ARCHITECTURE
+=====================
+
+Use:
+
+1. Alpaca
+   FOR:
+
+* 5 minute candles
+* 15 minute candles
+* live market data
+* WebSocket streaming
+* intraday OHLCV
+* live updates
+
+2. yfinance
+   ONLY FOR:
+
+* daily candles
+* weekly candles
+* monthly candles
+* long-term historical history
+
+DO NOT use yfinance for intraday trading anymore.
+
+====================================================
+IMPORTANT
+=========
+
+The platform is now optimized ONLY for:
+
+* 5m scalping
+* 15m intraday trading
+
+Remove dependence on:
+
+* broken intraday yfinance logic
+* merged fake candles
+* incorrect historical intraday blending
+
+====================================================
+ALPACA INTEGRATION
+==================
+
+Use:
+
+* Alpaca historical bars API
+* Alpaca WebSocket streaming
+
+for:
+
+* live price updates
+* intraday candles
+* real OHLCV
+* real-time updates
+
+====================================================
+API KEYS
+========
+
+Use environment variables:
+
+ALPACA_API_KEY
+ALPACA_SECRET_KEY
+
+Do NOT hardcode keys.
+
+====================================================
+CORRECT MARKET DATA PIPELINE
+============================
+
+Build a clean market data architecture:
+
+LONG TERM HISTORY:
+
+* yfinance
+* daily/weekly/monthly only
+
+INTRADAY:
+
+* Alpaca historical bars
+* 5m
+* 15m
+
+LIVE:
+
+* Alpaca WebSocket
+
+====================================================
+IMPORTANT:
+NO MORE FAKE PRICE SCALING
+==========================
+
+Fix:
+
+* incorrect price normalization
+* broken candle scaling
+* invalid OHLC values
+* incorrect timestamps
+* shifted candles
+* duplicated candles
+* broken gaps
+
+====================================================
+TIMEZONE FIX
+============
+
+Use proper:
+
+* US market timezone
+* EST/EDT handling
+* trading session handling
+
+Prevent:
+
+* future candles
+* invalid timestamps
+* shifted sessions
+
+====================================================
+INTRADAY CANDLE REQUIREMENTS
+============================
+
+For:
+
+* 5m
+* 15m
+
+Ensure:
+
+* correct OHLC
+* correct volume
+* proper candle ordering
+* realistic intraday movement
+* accurate live updates
+
+====================================================
+REAL-TIME UPDATES
+=================
+
+Use Alpaca WebSocket to:
+
+* update live candles
+* stream live prices
+* stream volume updates
+* update active trades
+* trigger signals in real time
+
+====================================================
+SIGNAL ENGINE SYNCHRONIZATION
+=============================
+
+The signal engine must now synchronize with:
+
+* REAL Alpaca candles
+* REAL intraday prices
+* REAL volume data
+
+Improve:
+
+* signal timing
+* breakout detection
+* pullback entries
+* momentum continuation entries
+
+====================================================
+IMPORTANT:
+REBUILD SIGNAL TIMING
+=====================
+
+Current signals are:
+
+* late
+* random
+* weak
+
+After migrating to Alpaca:
+Rebuild signal timing logic using:
+
+* trend continuation
+* pullback quality
+* breakout confirmation
+* volume confirmation
+* momentum continuation
+* volatility expansion
+
+====================================================
+ACTIVE TRADE ENGINE
+===================
+
+Ensure active trades use:
+
+* real Alpaca prices
+* real-time updates
+* proper SL/TP monitoring
+
+Trades must:
+
+* open correctly
+* update correctly
+* close correctly
+* trigger exits correctly
+
+====================================================
+CHART REQUIREMENTS
+==================
+
+The chart must:
+
+* display realistic intraday prices
+* behave like TradingView
+* update smoothly
+* remain synchronized
+* avoid candle corruption
+
+====================================================
+ONLY DISPLAY
+============
+
+Keep chart clean.
+
+ONLY show:
+
+* LONG entry
+* SHORT entry
+* EXIT
+* active SL
+* active TP
+
+Hide all internal analysis.
+
+====================================================
+PERFORMANCE
+===========
+
+Optimize:
+
+* WebSocket updates
+* candle rendering
+* signal updates
+* memory usage
+* live chart performance
+
+====================================================
+FINAL GOAL
+==========
+
+The final platform should behave like:
+
+* a professional intraday trading terminal
+* a realistic scalping platform
+* an institutional-grade signal engine
+
+NOT:
+
+* a fake chart simulator
+
+====================================================
+VERIFY BEFORE FINISHING
+=======================
+
+Verify:
+
+* Alpaca API works correctly
+* Alpaca WebSocket works correctly
+* 5m candles are realistic
+* 15m candles are realistic
+* OHLC values are correct
+* volume values are correct
+* timestamps are correct
+* no fake price scaling exists
+* no duplicated candles exist
+* no broken gaps exist
+* signals improve after migration
+* active trades update correctly
+* exits work correctly
+* no TypeScript errors exist
+* no backend synchronization issues exist
