@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { spawn } from "child_process";
 import path from "path";
-import { fetchAlpacaBars } from "../lib/alpaca";
+import { fetchPolygonBars } from "../lib/polygon";
 
 const router: IRouter = Router();
 
@@ -16,6 +16,13 @@ const DAILY_CONFIG: Record<string, { yf: string; period: string; cacheTtl: numbe
 };
 
 const INTRADAY_INTERVALS = new Set(["5m", "15m"]);
+
+// Per-interval lookback windows sized to fit in a single Polygon response
+// (free tier returns ~10k bars per page; paginating costs 13s per page on the
+// 5-req/min rate limit, so we keep the cold-cache fetch fast by default).
+// 5m: 78 bars/trading day × 250 days ≈ 19.5k → cap at 180 days (≈14k bars)
+// 15m: 26 bars/trading day × 540 days ≈ 14k bars
+const INTRADAY_DAYS: Record<string, number> = { "5m": 180, "15m": 540 };
 
 // Cache shared by all interval types
 const cache = new Map<string, { data: unknown[]; expiresAt: number }>();
@@ -52,8 +59,10 @@ function runPython(symbol: string, yf_interval: string, period: string, timeoutM
 // Signals use real Alpaca intraday data for accurate analysis.
 export async function fetchHistory(symbol: string, interval: string): Promise<unknown[]> {
   if (INTRADAY_INTERVALS.has(interval)) {
-    // Use Alpaca for intraday signal seeding — real OHLCV, proper timestamps
-    return fetchAlpacaBars(symbol, interval, 90).catch(() => []);
+    // Polygon SIP intraday — consolidated OHLCV matching TradingView.
+    // Uses the same per-interval window as the /history route so signal
+    // seeding and chart display share an identical bar set.
+    return fetchPolygonBars(symbol, interval, INTRADAY_DAYS[interval] ?? 180).catch(() => []);
   }
   const config = DAILY_CONFIG[interval];
   if (!config) return [];
@@ -80,7 +89,7 @@ router.get("/history", async (req, res): Promise<void> => {
     }); return;
   }
 
-  const cacheKey = `${rawSymbol}:${rawInterval}${isIntraday ? ":alpaca-blended" : ""}`;
+  const cacheKey = `${rawSymbol}:${rawInterval}${isIntraday ? ":polygon-sip" : ""}`;
   const cacheTtl = isIntraday ? 300_000 : dailyConf!.cacheTtl;
 
   const cached = cache.get(cacheKey);
@@ -92,9 +101,10 @@ router.get("/history", async (req, res): Promise<void> => {
 
   try {
     const bars = isIntraday
-      // Pure Alpaca intraday — no blending with daily candles.
-      // SIP feed goes back to ~2016; "2015-01-01" ensures we always capture the full range.
-      ? await fetchAlpacaBars(rawSymbol, rawInterval, 90, "2015-01-01")
+      // Polygon SIP intraday — consolidated tape, matches TradingView OHLCV.
+      // Window is sized to fit in one Polygon response so first paint is fast
+      // even on the free tier's 5-req/min budget.
+      ? await fetchPolygonBars(rawSymbol, rawInterval, INTRADAY_DAYS[rawInterval] ?? 180)
       : await runPython(rawSymbol, dailyConf!.yf, dailyConf!.period);
 
     cache.set(cacheKey, { data: bars, expiresAt: Date.now() + cacheTtl });

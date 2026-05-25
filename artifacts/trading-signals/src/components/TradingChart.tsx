@@ -26,6 +26,7 @@ interface Props {
   timeframe: string;
   intervalSec: number;
   isMarketOpen: boolean;
+  realtimeAvailable: boolean;
 }
 
 const PRICE_SCALE_W = 68;
@@ -51,7 +52,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen }: Props) {
+export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -447,7 +448,17 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             <span className="text-muted-foreground/40 ml-2">·{telemetry.barsFinalized}f</span>
           </span>
         )}
-        {isMarketOpen ? (
+        {!realtimeAvailable ? (
+          <>
+            <span
+              className="text-[10px] text-sky-400/80 font-mono tracking-widest"
+              title="Real-time streaming is not available on the current data-provider plan. Historical bars are still accurate; live updates are disabled."
+            >
+              HIST ONLY
+            </span>
+            <div className="w-1.5 h-1.5 rounded-full bg-sky-500/60" />
+          </>
+        ) : isMarketOpen ? (
           <>
             <span className="text-[10px] text-emerald-400 font-mono tracking-widest">LIVE</span>
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

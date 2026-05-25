@@ -65,7 +65,7 @@ export default function ChartPage() {
   const [tradeResult, setTradeResult]   = useState<TradeResult | null>(null);
 
   const { bars, loading, error } = useHistoryBars(activeSymbol, timeframe);
-  const { connected, lastPrice, isMarketOpen, newSignals: wsSignals } = useMarketSocket(activeSymbol);
+  const { connected, lastPrice, isMarketOpen, realtimeAvailable, newSignals: wsSignals } = useMarketSocket(activeSymbol);
 
   // Fetch historical signals
   useEffect(() => {
@@ -232,6 +232,7 @@ export default function ChartPage() {
             timeframe={timeframe}
             intervalSec={TF_SECONDS[timeframe]}
             isMarketOpen={isMarketOpen}
+            realtimeAvailable={realtimeAvailable}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
