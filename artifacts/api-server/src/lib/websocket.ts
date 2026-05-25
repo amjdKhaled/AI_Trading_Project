@@ -1,4 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { spawn } from "child_process";
+import path from "path";
 import type { Server } from "http";
 import { logger } from "./logger";
 
@@ -18,74 +20,91 @@ function broadcast(symbol: string, message: object) {
   }
 }
 
-// Approximate prices reflecting US market as of May 2026.
-// Used as the mean-reversion anchor for the simulation so that
-// live ticks stay realistic relative to yfinance intraday data.
-const BASE_PRICES: Record<string, number> = {
-  NVDA:  215,
-  AAPL:  205,
-  AMD:   105,
-  MSFT:  430,
-  TSLA:  245,
-  AMZN:  200,
-  META:  610,
-  QQQ:   490,
-  SPY:   575,
-  GOOGL: 165,
-  NFLX:  1120,
-  UBER:   85,
-  PLTR:   28,
-};
+// ── Real-price fetcher via yfinance_fetch.py live ─────────────────────────
+const PYTHON_SCRIPT = path.join(process.cwd(), "src", "yfinance_fetch.py");
 
-// Per-symbol last-price tracking so ticks are continuous.
-// Mean-reversion ensures we don't drift far from the anchor price.
-const lastClose: Record<string, number> = {};
-
-function nextPrice(symbol: string): number {
-  const anchor = BASE_PRICES[symbol]
-    ?? (100 + (symbol.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % 400));
-
-  if (!lastClose[symbol]) lastClose[symbol] = anchor;
-
-  // Mean-reversion drift: gently pull price back toward anchor
-  const mean      = (anchor - lastClose[symbol]) * 0.003;
-  const noise     = (Math.random() - 0.5) * lastClose[symbol] * 0.0012;
-  const newPrice  = lastClose[symbol] + mean + noise;
-  lastClose[symbol] = Math.max(newPrice, anchor * 0.80);
-  return lastClose[symbol];
+interface LivePrice {
+  symbol: string;
+  price: number;
+  lastClose: number;
+  isMarketOpen: boolean;
+  timestamp: number;
+  bar: { time: number; open: number; high: number; low: number; close: number; volume: number } | null;
+  error?: string;
 }
 
-function generateBar(symbol: string): object {
-  const price  = nextPrice(symbol);
-  const spread = price * 0.0010;
-  const open   = price;
-  const close  = price + (Math.random() - 0.49) * spread;
-  const high   = Math.max(open, close) * (1 + Math.random() * 0.0006);
-  const low    = Math.min(open, close) * (1 - Math.random() * 0.0006);
-  const now    = Math.floor(Date.now() / 1000);
+// In-process cache: avoid hammering yfinance on every tick
+const priceCache = new Map<string, { data: LivePrice; ts: number }>();
+const CACHE_TTL_MS = 12_000; // 12 seconds — yfinance updates ~every 15s
 
-  return {
-    time:   now - (now % 300),
-    open:   Math.round(open  * 100) / 100,
-    high:   Math.round(high  * 100) / 100,
-    low:    Math.round(low   * 100) / 100,
-    close:  Math.round(close * 100) / 100,
-    volume: Math.floor(300_000 + Math.random() * 2_000_000),
-  };
+function fetchLivePrice(symbol: string): Promise<LivePrice | null> {
+  const cached = priceCache.get(symbol);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return Promise.resolve(cached.data);
+
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    const proc = spawn("python3", [PYTHON_SCRIPT, symbol, "live"]);
+    proc.stdout.on("data", (c: Buffer) => { stdout += c.toString(); });
+    proc.stderr.on("data", (c: Buffer) => { stderr += c.toString(); });
+    proc.on("close", () => {
+      try {
+        const data: LivePrice = JSON.parse(stdout.trim());
+        if (!data.error) priceCache.set(symbol, { data, ts: Date.now() });
+        resolve(data.error ? null : data);
+      } catch {
+        logger.warn({ symbol, stderr: stderr.slice(0, 200) }, "live price parse failed");
+        resolve(null);
+      }
+    });
+    proc.on("error", (err) => { logger.warn({ err, symbol }, "python spawn error"); resolve(null); });
+    // Hard timeout: if yfinance hangs, don't block the interval
+    setTimeout(() => { try { proc.kill(); } catch {} resolve(null); }, 9_000);
+  });
 }
 
-let simulationInterval: ReturnType<typeof setInterval> | null = null;
+// ── Broadcast real market data to all subscribed clients ─────────────────
+async function broadcastMarketData() {
+  if (clients.size === 0) return;
 
-function startSimulation() {
-  if (simulationInterval) return;
-  simulationInterval = setInterval(() => {
-    if (clients.size === 0) return;
-    const active = new Set<string>();
-    for (const c of clients) active.add(c.symbol);
-    for (const symbol of active) {
-      broadcast(symbol, { type: "bar.partial", symbol, ...generateBar(symbol) });
+  const active = new Set<string>();
+  for (const c of clients) active.add(c.symbol);
+
+  for (const symbol of active) {
+    const data = await fetchLivePrice(symbol);
+    if (!data) continue;
+
+    if (!data.isMarketOpen) {
+      // Market closed — send status so the chart shows "CLOSED"
+      broadcast(symbol, {
+        type:       "market.status",
+        symbol,
+        isOpen:     false,
+        price:      data.lastClose || data.price,
+        lastClose:  data.lastClose,
+        timestamp:  data.timestamp,
+      });
+    } else {
+      // Market open — send the real current bar partial
+      if (data.bar) {
+        broadcast(symbol, {
+          type:   "bar.partial",
+          symbol,
+          ...data.bar,
+        });
+      }
     }
-  }, 3000);
+  }
+}
+
+let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+function startPolling() {
+  if (pollInterval) return;
+  // Poll every 15 seconds — matches yfinance refresh cadence
+  pollInterval = setInterval(() => { broadcastMarketData().catch(() => {}); }, 15_000);
+  // Immediate first broadcast when polling starts
+  broadcastMarketData().catch(() => {});
 }
 
 export function setupWebSocket(server: Server) {
@@ -98,22 +117,41 @@ export function setupWebSocket(server: Server) {
     clients.add(client);
     logger.info({ symbol }, "WebSocket client connected");
 
-    ws.send(JSON.stringify({ type: "subscribed", symbol, tf: "5m", lastBarTime: new Date().toISOString() }));
+    // Send current market status immediately on connect
+    fetchLivePrice(symbol).then((data) => {
+      if (!data || ws.readyState !== WebSocket.OPEN) return;
+      if (!data.isMarketOpen) {
+        ws.send(JSON.stringify({ type: "market.status", symbol, isOpen: false, price: data.lastClose || data.price, lastClose: data.lastClose }));
+      } else if (data.bar) {
+        ws.send(JSON.stringify({ type: "bar.partial", symbol, ...data.bar }));
+      }
+    }).catch(() => {});
 
-    ws.on("message", (data) => {
+    ws.send(JSON.stringify({ type: "subscribed", symbol, tf: "5m" }));
+
+    ws.on("message", (raw) => {
       try {
-        const msg = JSON.parse(data.toString());
+        const msg = JSON.parse(raw.toString());
         if (msg.op === "subscribe" && msg.symbol) {
-          client.symbol = msg.symbol;
-          ws.send(JSON.stringify({ type: "subscribed", symbol: msg.symbol, tf: msg.tf ?? "5m" }));
+          client.symbol = String(msg.symbol).toUpperCase();
+          ws.send(JSON.stringify({ type: "subscribed", symbol: client.symbol, tf: msg.tf ?? "5m" }));
+          // Send immediate status for the new symbol
+          fetchLivePrice(client.symbol).then((data) => {
+            if (!data || ws.readyState !== WebSocket.OPEN) return;
+            if (!data.isMarketOpen) {
+              ws.send(JSON.stringify({ type: "market.status", symbol: client.symbol, isOpen: false, price: data.lastClose || data.price, lastClose: data.lastClose }));
+            } else if (data.bar) {
+              ws.send(JSON.stringify({ type: "bar.partial", symbol: client.symbol, ...data.bar }));
+            }
+          }).catch(() => {});
         }
       } catch { /* ignore malformed */ }
     });
 
-    ws.on("close", () => { clients.delete(client); logger.info({ symbol: client.symbol }, "WebSocket client disconnected"); });
-    ws.on("error", (err)  => { logger.warn({ err }, "WebSocket error"); clients.delete(client); });
+    ws.on("close", () => { clients.delete(client); logger.info({ symbol: client.symbol }, "WebSocket disconnected"); });
+    ws.on("error", ()  => { clients.delete(client); });
 
-    startSimulation();
+    startPolling();
   });
 
   logger.info("WebSocket server attached at /ws");

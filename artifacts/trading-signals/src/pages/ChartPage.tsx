@@ -46,7 +46,7 @@ function useHistoryBars(symbol: string | null, interval: Timeframe) {
     setBars([]); setLoad(true); setError(null);
 
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    fetch(`${base}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`, { signal: ctrl.signal })
+    fetch(`${base}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&blended=true`, { signal: ctrl.signal })
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<OhlcvBar[]>; })
       .then((d) => { if (!ctrl.signal.aborted) { setBars(Array.isArray(d) ? d : []); setLoad(false); } })
       .catch((e) => { if (e.name === "AbortError") return; setError(e.message); setLoad(false); });
@@ -65,7 +65,7 @@ export default function ChartPage() {
   const [tradeResult, setTradeResult]   = useState<TradeResult | null>(null);
 
   const { bars, loading, error } = useHistoryBars(activeSymbol, timeframe);
-  const { connected, lastBar, newSignals: wsSignals } = useMarketSocket(activeSymbol);
+  const { connected, lastBar, isMarketOpen, newSignals: wsSignals } = useMarketSocket(activeSymbol);
 
   // Fetch historical signals
   useEffect(() => {
@@ -227,6 +227,7 @@ export default function ChartPage() {
             symbol={activeSymbol}
             timeframe={timeframe}
             intervalSec={TF_SECONDS[timeframe]}
+            isMarketOpen={isMarketOpen}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

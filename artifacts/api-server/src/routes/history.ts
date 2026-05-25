@@ -92,7 +92,9 @@ router.get("/history", async (req, res): Promise<void> => {
     res.status(400).json({ error: `Unsupported interval: ${rawInterval}`, supported: Object.keys(INTERVAL_CONFIG) }); return;
   }
 
-  const canBlend = blended && (rawInterval === "5m" || rawInterval === "15m");
+  // Intraday intervals always use blended mode: daily bars from ~1990 + recent intraday.
+  // This gives the chart full historical context while keeping recent candles accurate.
+  const canBlend = rawInterval === "5m" || rawInterval === "15m";
   const cacheKey = `${rawSymbol}:${rawInterval}${canBlend ? ":blended" : ""}`;
   const cacheTtl = canBlend ? 300_000 : config.cacheTtl;  // 5 min for blended
 

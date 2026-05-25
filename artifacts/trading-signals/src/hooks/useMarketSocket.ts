@@ -11,6 +11,15 @@ export interface BarUpdate {
   volume: number;
 }
 
+export interface MarketStatus {
+  type: "market.status";
+  symbol: string;
+  isOpen: boolean;
+  price: number;
+  lastClose: number;
+  timestamp?: number;
+}
+
 export interface SignalNew {
   type: "signal.new";
   signalId: string;
@@ -40,58 +49,71 @@ export interface SignalExit {
   barTime: string;
 }
 
-export type MarketEvent = BarUpdate | SignalNew | SlUpdate | SignalExit;
+export type MarketEvent = BarUpdate | MarketStatus | SignalNew | SlUpdate | SignalExit;
 
 interface UseMarketSocketResult {
   connected: boolean;
   lastBar: BarUpdate | null;
+  isMarketOpen: boolean;
+  marketPrice: number | null;
   newSignals: SignalNew[];
   slUpdates: SlUpdate[];
   signalExits: SignalExit[];
 }
 
 export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
-  const [connected, setConnected] = useState(false);
-  const [lastBar, setLastBar] = useState<BarUpdate | null>(null);
-  const [newSignals, setNewSignals] = useState<SignalNew[]>([]);
-  const [slUpdates, setSlUpdates] = useState<SlUpdate[]>([]);
-  const [signalExits, setSignalExits] = useState<SignalExit[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [connected,    setConnected]    = useState(false);
+  const [lastBar,      setLastBar]      = useState<BarUpdate | null>(null);
+  const [isMarketOpen, setIsMarketOpen] = useState<boolean>(false);
+  const [marketPrice,  setMarketPrice]  = useState<number | null>(null);
+  const [newSignals,   setNewSignals]   = useState<SignalNew[]>([]);
+  const [slUpdates,    setSlUpdates]    = useState<SlUpdate[]>([]);
+  const [signalExits,  setSignalExits]  = useState<SignalExit[]>([]);
+
+  const wsRef          = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connect = useCallback(() => {
     if (!symbol) return;
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+    if (wsRef.current) wsRef.current.close();
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const basePath = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    const url = `${protocol}//${host}${basePath}/ws?symbol=${encodeURIComponent(symbol)}`;
+    const host     = window.location.host;
+    const base     = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    const url      = `${protocol}//${host}${base}/ws?symbol=${encodeURIComponent(symbol)}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
-    ws.onopen = () => {
-      setConnected(true);
-    };
+    ws.onopen = () => { setConnected(true); };
 
     ws.onmessage = (ev) => {
       try {
-        const msg: MarketEvent = JSON.parse(ev.data);
-        if (msg.type === "bar.partial" || msg.type === "bar.final") {
-          setLastBar(msg as BarUpdate);
-        } else if (msg.type === "signal.new") {
-          setNewSignals((prev) => [msg as SignalNew, ...prev].slice(0, 20));
-        } else if (msg.type === "sl.update") {
-          setSlUpdates((prev) => [msg as SlUpdate, ...prev].slice(0, 20));
-        } else if (msg.type === "signal.exit") {
-          setSignalExits((prev) => [msg as SignalExit, ...prev].slice(0, 20));
+        const msg = JSON.parse(ev.data) as MarketEvent;
+        switch (msg.type) {
+          case "bar.partial":
+          case "bar.final":
+            setLastBar(msg as BarUpdate);
+            setIsMarketOpen(true);
+            setMarketPrice((msg as BarUpdate).close);
+            break;
+          case "market.status": {
+            const s = msg as MarketStatus;
+            setIsMarketOpen(s.isOpen);
+            setMarketPrice(s.price);
+            break;
+          }
+          case "signal.new":
+            setNewSignals((prev) => [msg as SignalNew, ...prev].slice(0, 20));
+            break;
+          case "sl.update":
+            setSlUpdates((prev) => [msg as SlUpdate, ...prev].slice(0, 20));
+            break;
+          case "signal.exit":
+            setSignalExits((prev) => [msg as SignalExit, ...prev].slice(0, 20));
+            break;
         }
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
     };
 
     ws.onclose = () => {
@@ -99,21 +121,16 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
       reconnectTimer.current = setTimeout(() => connect(), 3000);
     };
 
-    ws.onerror = () => {
-      ws.close();
-    };
+    ws.onerror = () => { ws.close(); };
   }, [symbol]);
 
   useEffect(() => {
     connect();
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-      }
+      if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
     };
   }, [connect]);
 
-  return { connected, lastBar, newSignals, slUpdates, signalExits };
+  return { connected, lastBar, isMarketOpen, marketPrice, newSignals, slUpdates, signalExits };
 }

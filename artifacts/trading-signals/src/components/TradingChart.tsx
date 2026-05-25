@@ -24,12 +24,13 @@ interface Props {
   symbol: string;
   timeframe: string;
   intervalSec: number;
+  isMarketOpen: boolean;
 }
 
 const PRICE_SCALE_W = 68;
 const VOLUME_RATIO  = 0.28;
 
-export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar, symbol, timeframe, intervalSec }: Props) {
+export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar, symbol, timeframe, intervalSec, isMarketOpen }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -276,8 +277,17 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
           </span>
         )}
         <div className="flex-1" />
-        <span className="text-[10px] text-emerald-400 font-mono tracking-widest">LIVE</span>
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        {isMarketOpen ? (
+          <>
+            <span className="text-[10px] text-emerald-400 font-mono tracking-widest">LIVE</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          </>
+        ) : (
+          <>
+            <span className="text-[10px] text-amber-500/80 font-mono tracking-widest">CLOSED</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-amber-600/60" />
+          </>
+        )}
       </div>
 
       {/* Chart + SVG overlay */}
