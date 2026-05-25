@@ -1,0 +1,243 @@
+The previous fixes improved some parts of the system, but the candle rendering corruption problem is STILL NOT fully solved.
+
+I understand the fixes you implemented:
+
+* replacing daily snapshot OHLC seeding with snap.price
+* adding OHLC integrity checks
+* adding market-open guards
+* adding invalid-range rejection
+* increasing signal frequency
+
+However, the chart still contains malformed candles and rendering corruption.
+
+====================================================
+THE MAIN PROBLEM STILL EXISTS
+=============================
+
+I still see:
+
+* giant vertical candles
+* malformed candle bodies
+* distorted wick rendering
+* incorrect volatility scaling
+* visually corrupted bars
+* compressed neighboring candles after malformed spikes
+
+The chart still does NOT visually behave like real TradingView intraday charts.
+
+====================================================
+THIS IS NOW A RENDERING + DATA MERGE ISSUE
+==========================================
+
+The remaining issue is likely caused by:
+
+* incorrect live bar replacement
+* duplicate timestamp merges
+* broken partial candle updates
+* malformed visible-range calculations
+* autoscale corruption after rejected bars
+* stale websocket bars overwriting historical bars
+* race conditions between:
+
+  * historical fetches
+  * websocket updates
+  * partial bar updates
+
+====================================================
+REBUILD THE LIVE BAR UPDATE ENGINE
+==================================
+
+The current live candle update logic must be rebuilt carefully.
+
+Implement:
+
+* strict timestamp matching
+* strict in-place candle updates
+* immutable historical bars
+* safe partial-candle mutation
+* deduplicated websocket updates
+
+====================================================
+IMPORTANT:
+ONLY UPDATE THE CURRENT ACTIVE BAR
+==================================
+
+WebSocket updates must:
+
+* ONLY mutate the currently active candle
+* NEVER overwrite historical candles
+* NEVER create duplicate timestamps
+* NEVER insert malformed bars
+
+====================================================
+STRICT BAR VALIDATION
+=====================
+
+Before rendering ANY candle:
+validate:
+
+* open/high/low/close are finite numbers
+* no NaN values
+* no undefined values
+* high >= open
+* high >= close
+* low <= open
+* low <= close
+* low <= high
+
+Reject invalid bars automatically.
+
+====================================================
+ADVANCED RANGE VALIDATION
+=========================
+
+The current 10% range rejection is not enough.
+
+Implement:
+
+* ATR-based anomaly detection
+* volatility-aware rejection
+* session-aware range validation
+
+Reject:
+
+* impossible spikes
+* malformed jumps
+* corrupted partial bars
+
+====================================================
+AUTOSCALE ENGINE IS STILL BROKEN
+================================
+
+The malformed candles are corrupting chart scaling.
+
+Rebuild:
+
+* visible range calculations
+* autoscale calculations
+* volatility normalization
+* price padding logic
+
+Prevent:
+
+* compressed neighboring candles
+* giant stretched candles
+* flattened movement after spikes
+
+====================================================
+IMPORTANT:
+RECALCULATE VISIBLE RANGE AFTER BAR REJECTION
+=============================================
+
+When invalid bars are rejected:
+
+* fully recalculate chart visible range
+* fully recalculate autoscale
+* prevent stale malformed ranges
+
+====================================================
+LIVE / HISTORICAL MERGE FIX
+===========================
+
+Historical bars and websocket bars must merge safely.
+
+Prevent:
+
+* overlapping timestamps
+* duplicate bars
+* stale websocket overwrites
+* malformed partial-bar replacements
+
+====================================================
+INTRADAY INTEGRITY
+==================
+
+If user selects:
+
+* 5m
+
+ALL candles must remain:
+
+* true 5-minute candles only
+
+If user selects:
+
+* 15m
+
+ALL candles must remain:
+
+* true 15-minute candles only
+
+NO timeframe blending.
+NO synthetic bars.
+NO stretched daily candles.
+
+====================================================
+VISUAL TARGET
+=============
+
+The chart should visually behave VERY close to:
+
+* TradingView
+* ThinkOrSwim
+* professional institutional terminals
+
+Candles must:
+
+* scale naturally
+* show volatility naturally
+* render wick/body proportions correctly
+* update smoothly
+
+====================================================
+SIGNAL ENGINE
+=============
+
+The improved signal frequency is better.
+
+Keep:
+
+* expanded lookback
+* reduced threshold
+* lower dedup gap
+
+BUT:
+continue improving:
+
+* pullback continuation entries
+* breakout continuation entries
+* liquidity sweep reversals
+* trend continuation detection
+
+The signals are now more accurate, but the engine should still detect more valid setups without becoming random.
+
+====================================================
+FULL HISTORY ANALYSIS
+=====================
+
+Continue analyzing:
+
+* ALL available intraday history
+* from earliest available Alpaca bars
+* all the way to live market
+
+====================================================
+FINAL REQUIREMENTS
+==================
+
+Before finishing verify:
+
+* no malformed candles exist
+* no giant spikes exist
+* no compressed neighboring candles exist
+* autoscale behaves correctly
+* live candle updates work correctly
+* websocket merging works correctly
+* no duplicate timestamps exist
+* no stale overwrites exist
+* chart visually matches TradingView behavior
+* volatility renders naturally
+* wick/body proportions are correct
+* no rendering corruption remains
+* no TypeScript errors exist
+* no synchronization bugs exist

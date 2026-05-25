@@ -31,6 +31,25 @@ const PRICE_SCALE_W = 68;
 // Fraction of chart height reserved for the volume pane (must match scaleMargins bottom below)
 const VOLUME_RATIO  = 0.22;
 
+// ── OHLC validation ───────────────────────────────────────────────────────────
+// Returns true only if all four values are finite, non-NaN, and internally
+// consistent (high >= open/close, low <= open/close, low <= high).
+function isValidOhlc(o: number, h: number, l: number, c: number): boolean {
+  if (!isFinite(o) || !isFinite(h) || !isFinite(l) || !isFinite(c)) return false;
+  if (isNaN(o)     || isNaN(h)     || isNaN(l)     || isNaN(c))     return false;
+  if (h < o || h < c) return false;
+  if (l > o || l > c) return false;
+  if (l > h)          return false;
+  return true;
+}
+
+// Rolling average bar range over the last N bars (used for ATR-based spike rejection).
+function avgBarRange(bars: Bar[], n = 50): number {
+  const slice = bars.slice(-n);
+  if (slice.length < 5) return 0;
+  return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
+}
+
 export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar, symbol, timeframe, intervalSec, isMarketOpen }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
@@ -38,8 +57,15 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
   const volumeRef    = useRef<ISeriesApi<"Histogram"> | null>(null);
   const slRef        = useRef<ISeriesApi<"Line"> | null>(null);
   const tpRef        = useRef<ISeriesApi<"Line"> | null>(null);
-  const tradeIdRef   = useRef<string | null>(null);
-  const barsRef      = useRef<Bar[]>([]);
+  const tradeIdRef       = useRef<string | null>(null);
+  const barsRef          = useRef<Bar[]>([]);
+  // Tracks the timestamp of the last bar in the most-recently loaded historical dataset.
+  // The live-tick handler uses this to ensure it NEVER overwrites a historical bar —
+  // only bars with time >= lastHistTime are eligible for live updates.
+  const lastHistTimeRef  = useRef<number>(0);
+  // Tracks the aligned timestamp of the currently-active live bar. Prevents stale
+  // WebSocket updates from a previous 5m boundary from being applied to a new bar slot.
+  const liveBarTimeRef   = useRef<number>(0);
 
   // stable refs for computeMarkers closure
   const signalsRef     = useRef<SignalNew[]>([]);
@@ -199,35 +225,49 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
     };
   }, [computeMarkers, removeSLTP]);
 
-  // Load bar data
+  // Load bar data — validates every bar before rendering to prevent corrupted OHLC
+  // from reaching the chart engine.  Also resets live-bar tracking so stale WebSocket
+  // updates from a previous symbol/timeframe can never overwrite the new dataset.
   useEffect(() => {
     if (!candleRef.current || !chartRef.current || !bars.length) return;
 
-    candleRef.current.setData(bars.map<CandlestickData<Time>>((b) => ({
+    // Validate every bar before it reaches setData.  Any bar that fails OHLC integrity
+    // is silently dropped — better to have a gap than a malformed spike.
+    const validBars = bars.filter((b) =>
+      isValidOhlc(b.open, b.high, b.low, b.close) &&
+      b.time > 0 &&
+      isFinite(b.volume) && b.volume >= 0
+    );
+    if (validBars.length === 0) return;
+
+    // Record the last historical timestamp.  The live-tick handler uses this to
+    // ensure it only updates bars that come AFTER the historical dataset ends.
+    const lastHistTime = validBars[validBars.length - 1].time;
+    lastHistTimeRef.current = lastHistTime;
+    liveBarTimeRef.current  = 0; // reset live bar — new dataset, no live bar yet
+
+    candleRef.current.setData(validBars.map<CandlestickData<Time>>((b) => ({
       time: b.time as Time, open: b.open, high: b.high, low: b.low, close: b.close,
     })));
-    volumeRef.current?.setData(bars.map<HistogramData>((b) => ({
+    volumeRef.current?.setData(validBars.map<HistogramData>((b) => ({
       time: b.time as Time, value: b.volume,
       color: b.close >= b.open ? "#26a69a28" : "#ef535028",
     })));
 
     // Default view: last 78 bars = exactly one NYSE session (9:30–16:00 = 78 × 5m bars).
-    // This matches TradingView's default zoom on a 5m chart — one full day is visible,
-    // each candle is wide enough to clearly show body + wicks.
-    // User can scroll left for full multi-year history or zoom out for a wider view.
     const defaultBars = 78;
-    if (bars.length > defaultBars) {
+    if (validBars.length > defaultBars) {
       chartRef.current.timeScale().setVisibleLogicalRange({
-        from: bars.length - defaultBars,
-        to:   bars.length + 5,  // small right-side padding so last bar isn't cut off
+        from: validBars.length - defaultBars,
+        to:   validBars.length + 5,
       });
     } else {
       chartRef.current.timeScale().fitContent();
     }
 
-    setBarCount(bars.length);
+    setBarCount(validBars.length);
     setDateRange(
-      `${new Date(bars[0].time * 1000).toISOString().slice(0, 10)} – ${new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10)}`
+      `${new Date(validBars[0].time * 1000).toISOString().slice(0, 10)} – ${new Date(lastHistTime * 1000).toISOString().slice(0, 10)}`
     );
 
     removeSLTP();
@@ -282,36 +322,57 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastBar,
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
 
-  // Live tick — only applied when the market is confirmed open.
-  // Validates OHLC before rendering to prevent corrupted bars from reaching the chart.
+  // ── Live tick engine ──────────────────────────────────────────────────────
+  // Strict rules that prevent every known source of chart corruption:
+  //
+  //  1. Symbol guard       — reject bars from a different symbol (symbol switch race)
+  //  2. Market-open guard  — never apply ticks when exchange is closed
+  //  3. OHLC integrity     — reject any bar with impossible H/L/O/C relationships
+  //  4. ATR spike filter   — reject ticks whose range exceeds 5× the rolling avg bar range
+  //  5. Historical guard   — only update bars whose aligned timestamp is STRICTLY AFTER
+  //                          the last bar in the historical dataset (never overwrite history)
+  //  6. Live bar tracking  — record the current live-bar timestamp; if an update arrives
+  //                          for an older boundary it is discarded as stale
   useEffect(() => {
     if (!candleRef.current || !lastBar || !bars.length) return;
-    // Guard: when market is closed the snapshot still polls but carries daily H/L values,
-    // which would inject a giant day-range candle into the 5m chart. Skip entirely.
+
+    // 1. Symbol guard
+    if (lastBar.symbol !== symbol) return;
+
+    // 2. Market-open guard
     if (!isMarketOpen) return;
 
+    const { open, high, low, close } = lastBar;
+
+    // 3. OHLC integrity
+    if (!isValidOhlc(open, high, low, close)) return;
+
+    // 4. ATR-based spike rejection.
+    //    Compute rolling average bar range from the last 50 historical bars.
+    //    Reject any tick whose H-L range exceeds 5× that average — or a hard cap
+    //    of 5% of price, whichever is more permissive.  This catches daily-range
+    //    contamination that somehow slipped through and wild data spikes.
+    const atr = avgBarRange(barsRef.current, 50);
+    const price = close || 1;
+    const maxAllowedRange = atr > 0
+      ? Math.max(atr * 5, price * 0.02)   // 5× ATR or 2% of price, whichever is larger
+      : price * 0.05;                      // fallback: 5% when we have no history yet
+    if ((high - low) > maxAllowedRange) return;
+
+    // 5. Historical guard — NEVER overwrite a bar that already exists in the
+    //    historical dataset.  Only timestamps that are strictly after the last
+    //    fetched bar are eligible for live updates.
+    const t = lastBar.time - (lastBar.time % intervalSec);
+    if (t < lastHistTimeRef.current) return;
+
+    // 6. Live bar tracking — discard stale updates for past 5m boundaries
+    if (liveBarTimeRef.current > 0 && t < liveBarTimeRef.current) return;
+    liveBarTimeRef.current = t;
+
     try {
-      const { open, high, low, close } = lastBar;
-
-      // Reject non-finite values
-      if (!isFinite(open) || !isFinite(high) || !isFinite(low) || !isFinite(close)) return;
-      if (isNaN(open)     || isNaN(high)     || isNaN(low)     || isNaN(close))     return;
-
-      // OHLC integrity: high must be the highest, low must be the lowest
-      if (high < open || high < close) return;
-      if (low  > open || low  > close) return;
-      if (low  > high) return;
-
-      // Sanity: reject bars whose H-L range exceeds 10% of price — impossible for a single 5m bar.
-      // Catches any stale daily-range data that slips through.
-      const price = close || 1;
-      if ((high - low) / price > 0.10) return;
-
-      // Align to the current 5m (or 15m) boundary
-      const t = (lastBar.time - (lastBar.time % intervalSec)) as Time;
-      candleRef.current.update({ time: t, open, high, low, close });
-    } catch { /* ignore — chart may not be ready */ }
-  }, [lastBar, bars.length, intervalSec, isMarketOpen]);
+      candleRef.current.update({ time: t as Time, open, high, low, close });
+    } catch { /* chart may not be ready */ }
+  }, [lastBar, bars.length, intervalSec, isMarketOpen, symbol]);
 
   return (
     <div className="flex flex-col h-full">

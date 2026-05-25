@@ -1,3 +1,4 @@
+- [Live bar corruption root causes](live-bar-corruption.md) — snap.open/high/low are DAILY values; pollSnapshots() and on-connect seed must use snap.price only
 - [Trading signals chart markers](trading-signals-chart-markers.md) — SVG overlay approach for rendering signal arrows on LightweightCharts canvas
 - [Signal DB data hygiene](signal-db-hygiene.md) — riskTag enum values and duplicate-signal prevention rules
 - [Signal engine per-bar analysis](signal-per-bar.md) — critical: use ema20[i]/rsiValues[i] per loop iteration, never last-bar global values

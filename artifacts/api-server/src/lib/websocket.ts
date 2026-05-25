@@ -133,12 +133,17 @@ async function pollSnapshots() {
     // Market open — build / update the current partial 5-minute bar
     const barTs = Math.floor(now / 300) * 300; // floor to 5-minute boundary
     const prev  = currentBars.get(symbol);
+    const isNewBar = prev?.time !== barTs;
 
+    // CRITICAL: snap.open is the DAILY market-open price (e.g. $218.50 at 9:30 AM),
+    // NOT the price at the start of this 5m bar. Using snap.open as the bar open
+    // creates a synthetic giant candle spanning from the day's open to the current price.
+    // Always use snap.price as the open for the first tick of a new 5m bar.
     const updatedBar: CurrentBar = {
       time:   barTs,
-      open:   prev?.time === barTs ? prev.open : snap.open,      // keep open from start of 5m bar
-      high:   Math.max(snap.price, prev?.time === barTs ? prev.high : snap.price),
-      low:    Math.min(snap.price, prev?.time === barTs ? prev.low  : snap.price),
+      open:   isNewBar ? snap.price : prev!.open,
+      high:   isNewBar ? snap.price : Math.max(snap.price, prev!.high),
+      low:    isNewBar ? snap.price : Math.min(snap.price, prev!.low),
       close:  snap.price,
       volume: snap.volume,
     };
