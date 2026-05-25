@@ -1,0 +1,220 @@
+NOW the REAL issue is finally clear.
+
+The remaining problem is NOT just candle rendering.
+
+The entire intraday candle aggregation engine is producing incorrect 5m / 15m bars.
+
+====================================================
+THE PROBLEM IS NOW DATA CONSTRUCTION
+====================================
+
+The candles in my platform DO NOT match TradingView structurally.
+
+This is NOT:
+
+* a styling issue
+* a minMove issue
+* an autoscale issue
+
+The OHLC structure itself is diverging from TradingView.
+
+====================================================
+VISIBLE SYMPTOMS
+================
+
+Compared to TradingView:
+
+* candles are missing
+* price movement is fragmented
+* transitions are discontinuous
+* volume structure is wrong
+* some candles collapse into fake dojis
+* some candles become tiny dashes incorrectly
+* some momentum candles are malformed
+* intraday movement appears "teleporting"
+* market structure is inconsistent
+
+====================================================
+THIS MEANS:
+===========
+
+THE 5M / 15M BAR AGGREGATION ENGINE IS BROKEN.
+
+====================================================
+LIKELY ROOT CAUSE
+=================
+
+The current system is probably:
+
+* polling snapshots
+* missing ticks
+* missing minute bars
+* overwriting partial candles
+* aggregating incorrectly
+* building candles from incomplete streams
+
+This causes:
+
+* incomplete OHLC
+* incorrect candle bodies
+* wrong highs/lows
+* incorrect volume accumulation
+* fake dojis
+* fragmented structure
+
+====================================================
+TRADINGVIEW BEHAVIOR
+====================
+
+TradingView builds:
+
+* tick-accurate candles
+* continuous intraday aggregation
+* deterministic OHLC construction
+* complete volume accumulation
+* uninterrupted market structure
+
+My platform must behave similarly.
+
+====================================================
+STOP PATCHING THE UI
+====================
+
+Do NOT focus on:
+
+* autoscale
+* minMove
+* candle borders
+* rendering cosmetics
+
+Those are secondary.
+
+The core issue is:
+BAR CONSTRUCTION.
+
+====================================================
+REQUIRED REBUILD
+================
+
+REBUILD the entire:
+5m / 15m aggregation engine.
+
+====================================================
+REQUIRED ARCHITECTURE
+=====================
+
+Use:
+
+1. Continuous minute-bar stream
+   OR
+2. Tick-by-tick aggregation
+
+NOT:
+snapshot-based fake candles.
+
+====================================================
+CORRECT AGGREGATION RULES
+=========================
+
+For every 5m candle:
+open = first trade price in interval
+high = highest trade in interval
+low = lowest trade in interval
+close = last trade in interval
+volume = sum of all interval volume
+
+Same for 15m.
+
+====================================================
+IMPORTANT:
+NO SYNTHETIC CANDLES
+====================
+
+Do NOT:
+
+* infer candles from snapshots
+* seed bars from daily open
+* patch missing candles visually
+* fake OHLC
+* extrapolate prices
+
+Only use:
+real intraday stream data.
+
+====================================================
+CRITICAL REQUIREMENTS
+=====================
+
+The engine MUST:
+
+* preserve every candle
+* preserve continuity
+* preserve intraday structure
+* preserve momentum candles
+* preserve consolidation candles
+* preserve volume structure
+* preserve exact order of price movement
+
+====================================================
+VERIFY AGAINST TRADINGVIEW
+==========================
+
+After rebuilding:
+compare directly against TradingView.
+
+The chart should visually match:
+
+* candle sequence
+* momentum structure
+* volume behavior
+* consolidation behavior
+* highs/lows
+* reversals
+* candle spacing
+
+====================================================
+NO MORE:
+========
+
+* fragmented movement
+* teleporting candles
+* fake dojis
+* missing bodies
+* malformed intraday structure
+* discontinuous momentum
+* incorrect volume spikes
+
+====================================================
+FINAL GOAL
+==========
+
+I want:
+professional-grade intraday market structure.
+
+The chart should behave close to:
+
+* TradingView
+* institutional terminals
+* real trading software
+
+NOT:
+a patched snapshot renderer.
+
+====================================================
+FINAL INSTRUCTION
+=================
+
+Before finishing:
+
+* compare multiple timestamps against TradingView
+* verify every OHLC
+* verify every volume bar
+* verify continuity
+* verify no missing intraday movement
+* verify no malformed candles
+* verify no fake dojis
+* verify no dash candles caused by bad aggregation
+* verify no data gaps
+* verify no partial-bar corruption
+* verify TypeScript clean
+* verify websocket synchronization

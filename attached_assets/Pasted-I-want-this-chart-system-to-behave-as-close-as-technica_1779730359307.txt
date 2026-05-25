@@ -1,0 +1,156 @@
+I want this chart system to behave as close as technically possible to TradingView.
+
+Right now the chart does NOT match TradingView:
+
+* candles differ
+* volume differs
+* price movement differs
+* consolidation structure differs
+* some candles become fake dojis/dashes
+* movement looks fragmented
+* intraday structure is inconsistent
+
+I do NOT want patch fixes anymore.
+
+I want you to rebuild the chart/data engine architecture so the result visually and structurally behaves like TradingView.
+
+====================================================
+MAIN GOAL
+=========
+
+Make the chart:
+
+* visually match TradingView
+* structurally match TradingView
+* behave like a professional trading terminal
+
+I want:
+
+* same candle structure
+* same intraday movement
+* same volume behavior
+* same 5m candles
+* same 15m candles
+* same continuity
+* same market structure
+
+====================================================
+CRITICAL REQUIREMENTS
+=====================
+
+The chart MUST:
+
+* use REAL intraday market data
+* use proper OHLC aggregation
+* use continuous intraday streams
+* preserve all candles
+* preserve all movement
+* preserve exact highs/lows
+* preserve exact candle bodies
+* preserve volume accuracy
+* preserve candle continuity
+
+====================================================
+DO NOT USE
+==========
+
+Do NOT:
+
+* fake candles from snapshots
+* infer OHLC from daily data
+* patch candles visually only
+* synthesize movement
+* extrapolate missing bars
+* use broken polling logic
+* overwrite candles incorrectly
+
+====================================================
+REBUILD THE BAR ENGINE
+======================
+
+Rebuild:
+
+* 5m aggregation engine
+* 15m aggregation engine
+* websocket synchronization
+* live candle state management
+* intraday OHLC construction
+
+Use:
+
+* proper minute stream aggregation
+  OR
+* tick-based aggregation
+
+====================================================
+CANDLE REQUIREMENTS
+===================
+
+Candles must behave like TradingView:
+
+* no fake dojis
+* no dash candles
+* no collapsed bodies
+* no malformed candles
+* no fragmented movement
+* no teleporting price movement
+* no broken continuity
+
+Even tiny-body candles should still render properly.
+
+====================================================
+VOLUME REQUIREMENTS
+===================
+
+Volume must:
+
+* match candle structure
+* match intraday momentum
+* match TradingView visually
+* aggregate correctly per interval
+
+====================================================
+LIVE DATA REQUIREMENTS
+======================
+
+Live candles must:
+
+* update smoothly
+* not corrupt historical candles
+* not overwrite previous bars
+* not reset incorrectly
+* not inherit stale OHLC values
+
+====================================================
+VISUAL REQUIREMENTS
+===================
+
+Make the chart visually close to TradingView:
+
+* candle spacing
+* candle proportions
+* wick rendering
+* body rendering
+* autoscaling behavior
+* scrolling behavior
+* zoom behavior
+* crosshair behavior
+* realtime updates
+
+====================================================
+FINAL REQUIREMENT
+=================
+
+After rebuilding:
+compare the same symbol/timeframe side-by-side with TradingView and ensure:
+
+* candle sequence matches
+* volume sequence matches
+* reversals match
+* momentum structure matches
+* consolidations match
+* OHLC values match
+* no malformed candles exist
+
+The final result should feel like:
+a real professional TradingView-style trading terminal.
