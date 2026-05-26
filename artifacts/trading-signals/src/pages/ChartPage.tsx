@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { WatchlistPanel } from "@/components/WatchlistPanel";
-import { TVChartContainer } from "@/components/TVChartContainer";
+import { TradingChart } from "@/components/TradingChart";
 import { SignalPanel } from "@/components/SignalPanel";
 import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 
@@ -222,23 +222,15 @@ export default function ChartPage() {
             </div>
           </div>
         ) : activeSymbol ? (
-          <TVChartContainer
+          <TradingChart
+            bars={bars}
+            signals={allSignals}
+            activeTrade={activeTrade}
+            tradeResult={tradeResult}
+            lastPrice={lastPrice}
             symbol={activeSymbol}
             timeframe={timeframe}
-            signals={allSignals}
-            activeTrade={
-              activeTrade
-                ? {
-                    side:       activeTrade.side,
-                    entryPrice: activeTrade.entryPrice,
-                    slPrice:    activeTrade.slPrice,
-                    tpPrice:    activeTrade.tpPrice,
-                    entryTime:  Math.floor(new Date(activeTrade.barTime).getTime() / 1000),
-                    symbol:     activeTrade.symbol,
-                  }
-                : null
-            }
-            lastPrice={lastPrice}
+            intervalSec={TF_SECONDS[timeframe]}
             isMarketOpen={isMarketOpen}
             realtimeAvailable={realtimeAvailable}
           />

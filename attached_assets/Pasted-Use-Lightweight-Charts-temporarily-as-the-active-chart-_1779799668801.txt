@@ -1,0 +1,139 @@
+Use Lightweight Charts temporarily as the active chart engine until the official TradingView Advanced Charts Library approval arrives.
+
+IMPORTANT:
+This is a TEMPORARY fallback architecture only.
+
+====================================================
+GOAL
+====
+
+I want the current platform to function as a stable realtime AI-powered chart analysis platform while waiting for TradingView Charting Library approval.
+
+Use:
+
+* Lightweight Charts for rendering
+* existing WebSocket infrastructure
+* existing signal engine
+* existing AI analysis pipeline
+
+Do NOT rebuild the whole system again.
+
+====================================================
+KEEP EXISTING WORKING SYSTEMS
+=============================
+
+Keep:
+
+* websocket infrastructure
+* signal engine
+* realtime candle aggregation
+* 5m / 15m logic
+* AI analysis pipeline
+* LONG/SHORT signals
+* SL/TP overlays
+* watchlist
+* backend architecture
+
+====================================================
+LIGHTWEIGHT CHARTS TEMPORARY MODE
+=================================
+
+Use Lightweight Charts only as a temporary renderer.
+
+Focus on:
+
+* stability
+* realtime updates
+* smooth candle rendering
+* proper volume rendering
+* correct candle alignment
+* proper autoscaling
+
+====================================================
+REALTIME REQUIREMENTS
+=====================
+
+Use WebSocket for:
+
+* realtime price updates
+* realtime candle updates
+* realtime signal updates
+* realtime volume updates
+
+Do NOT rely on aggressive polling.
+
+====================================================
+CANDLE AGGREGATION
+==================
+
+Keep the current correct aggregation logic.
+
+5m candles:
+00,05,10,15,20,25,30,35,40,45,50,55
+
+15m candles:
+00,15,30,45
+
+Prevent:
+
+* malformed candles
+* flat dash candles
+* stale candle corruption
+* timestamp drift
+
+====================================================
+AI SIGNAL ENGINE
+================
+
+Keep the AI analysis engine running continuously in the background.
+
+The AI should continue analyzing:
+
+* historical candles
+* realtime candles
+* trend
+* momentum
+* volume
+* candle patterns
+* support/resistance
+* breakouts
+
+Continue generating:
+
+* LONG signals
+* SHORT signals
+* EXIT signals
+* SL/TP levels
+* confidence %
+
+====================================================
+IMPORTANT
+=========
+
+Do NOT waste time rebuilding already-working systems.
+
+The current goal is:
+
+* stabilize the platform
+* improve realtime behavior
+* keep AI analysis running
+* use Lightweight Charts temporarily
+* prepare for future migration to TradingView Advanced Charts
+
+====================================================
+FINAL GOAL
+==========
+
+I am NOT building a broker.
+
+This is a personal AI-powered market analysis platform.
+
+Priority:
+
+1. Stable realtime candles
+2. AI analysis
+3. Signal quality
+4. Stable websocket updates
+5. Clean chart behavior
+
+We will migrate to TradingView Advanced Charts later once the approval arrives.
