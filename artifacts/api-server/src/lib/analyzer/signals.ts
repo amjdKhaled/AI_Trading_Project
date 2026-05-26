@@ -117,14 +117,15 @@ function buildTriggerName(opts: {
 }
 
 // ── Per-regime / per-session score threshold ──────────────────────────────
-// Adaptive entry bar: chop and lunch require stronger setups.
+// Adaptive entry bar: chop / midday require stronger setups, but not so
+// strict that virtually no signals pass. Historical analysis needs breadth.
 function scoreThreshold(regime: Regime, session: Session): number {
-  let t = 75;
-  if (regime === "chop")            t += 12; // 87
-  else if (regime === "ranging")    t += 4;  // 79
-  else if (regime === "vol-expansion") t -= 2; // 73 (breakouts wanted)
-  if (session === "midday")         t += 6;
-  if (session === "open")           t -= 2;
+  let t = 68;                                  // base (was 75 — too few signals historically)
+  if (regime === "chop")               t += 6; // 74 (was +12 / 87 — over-filtered)
+  else if (regime === "ranging")       t += 2; // 70 (was +4 / 79)
+  else if (regime === "vol-expansion") t -= 3; // 65 (breakouts; was -2)
+  if (session === "midday")            t += 3; // +3 (was +6)
+  if (session === "open")              t -= 2; // same
   return t;
 }
 
@@ -234,8 +235,10 @@ export function generateSignals(
 
     // ══════════════════════════════════════════════════════════════════════
     // LONG ANALYSIS — skip entirely only in confirmed strong downtrend
+    // HTF bear bias is already a score penalty below; don't hard-block here
+    // or we lose too many valid counter-trend setups in historical analysis.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongDowntrend && htfI !== "bear") {
+    if (!strongDowntrend) {
       let bullScore = 0;
       const reasons: string[] = [];
 
@@ -307,7 +310,7 @@ export function generateSignals(
         htfI === "bull",
       ].filter(Boolean).length;
 
-      if (bullScore >= threshold && longConfirms >= 3) {
+      if (bullScore >= threshold && longConfirms >= 2) {
         const slice    = bars.slice(Math.max(0, i - 14), i + 1);
         const swingLow = Math.min(...slice.map(b => b.low));
         const sl       = swingLow - atrI * 0.3;
@@ -353,8 +356,9 @@ export function generateSignals(
 
     // ══════════════════════════════════════════════════════════════════════
     // SHORT ANALYSIS — skip entirely only in confirmed strong uptrend
+    // HTF bull bias is already a score penalty below; don't hard-block here.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongUptrend && htfI !== "bull") {
+    if (!strongUptrend) {
       let bearScore = 0;
       const reasons: string[] = [];
 
@@ -425,7 +429,7 @@ export function generateSignals(
         htfI === "bear",
       ].filter(Boolean).length;
 
-      if (bearScore >= threshold && shortConfirms >= 3) {
+      if (bearScore >= threshold && shortConfirms >= 2) {
         const slice     = bars.slice(Math.max(0, i - 14), i + 1);
         const swingHigh = Math.max(...slice.map(b => b.high));
         const sl        = swingHigh + atrI * 0.3;
@@ -470,8 +474,9 @@ export function generateSignals(
   }
 
   // ── Deduplication: enforce minimum gap between same-side signals ─────────
-  // 5m: 6 bars = 30 min minimum gap; 15m: 4 bars = 60 min minimum gap
-  const minGapSec    = timeframe === "15m" ? 900 * 4 : 300 * 6;
+  // 5m: 3 bars = 15 min minimum gap; 15m: 3 bars = 45 min minimum gap
+  // (Reduced from 6/4 bars — tighter windows mean more historical coverage)
+  const minGapSec    = timeframe === "15m" ? 900 * 3 : 300 * 3;
   const sorted       = [...candidates].sort((a, b) => b.confidence - a.confidence);
   const usedByLong   = new Set<number>();
   const usedByShort  = new Set<number>();

@@ -40,11 +40,14 @@ router.get("/signals", async (req, res): Promise<void> => {
   if (symbol)    conditions.push(eq(signalsTable.symbol,    symbol));
   if (timeframe) conditions.push(eq(signalsTable.timeframe, timeframe));
 
-  // Default raised: full historical scan can produce 100s of signals; we want
-  // the chart to render all of them across the entire history.
-  const effectiveLimit = limit ?? 500;
+  // Full historical coverage: up to 5000 signals per fetch.
+  // Ordered by barTime DESC so the most-recent setups appear first.
+  // No ETags / conditional-GET caching for this route — the dataset changes
+  // on every regenerate and must always return fresh data.
+  res.setHeader("Cache-Control", "no-store");
+  const effectiveLimit = Math.min(limit ?? 3000, 5000);
 
-  const base = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
+  const base = db.select().from(signalsTable).orderBy(desc(signalsTable.barTime));
   const rows = await (
     conditions.length === 0 ? base :
     conditions.length === 1 ? base.where(conditions[0]) :

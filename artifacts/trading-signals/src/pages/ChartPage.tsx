@@ -71,10 +71,11 @@ export default function ChartPage() {
   useEffect(() => {
     if (!activeSymbol) { setRestSignals([]); return; }
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    // Limit raised: backtested engine produces full-history signals (often
-    // 100–400 per symbol). The chart filters off-viewport markers cheaply,
-    // so pulling all of them keeps the historical analysis complete.
-    fetch(`${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=500`)
+    // Fetch up to 3000 signals — the backtested engine generates 1k–3k signals
+    // across full intraday history. Viewport culling in TradingChart keeps
+    // rendering fast regardless of how many signals are loaded.
+    // cache: 'no-cache' forces a fresh response after every regenerate.
+    fetch(`${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=3000`, { cache: "no-cache" })
       .then((r) => r.json())
       .then((data: unknown) => {
         if (!Array.isArray(data)) { setRestSignals([]); return; }
