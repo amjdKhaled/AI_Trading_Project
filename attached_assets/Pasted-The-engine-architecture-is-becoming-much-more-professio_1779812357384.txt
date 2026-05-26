@@ -1,0 +1,190 @@
+The engine architecture is becoming much more professional now.
+
+The signal quality, sequential trade flow, and technical filtering have improved significantly.
+
+However, I now want to push the system toward a much more institutional-grade execution model.
+
+====================================================
+PRIMARY OBJECTIVE
+=================
+
+I do NOT want:
+
+* noisy trading
+* conflicting trades
+* chaotic reversals
+* oversized losses
+* random flips between long and short
+
+I want the engine to behave like:
+
+* a disciplined professional trader
+* a high-quality institutional analysis system
+* a precision execution engine
+
+====================================================
+
+1. ACTIVE TRADE STATE VISUALIZATION
+   ====================================================
+
+Every active trade must have a clear visual state.
+
+If a trade is still open:
+
+* show ACTIVE marker
+* glowing active icon
+* or active lifecycle path
+
+I should instantly understand:
+
+* this trade is still running
+* this trade has not closed yet
+
+There should NEVER be:
+
+* orphan entries
+* incomplete trade lifecycle
+* hidden active positions
+
+====================================================
+2. STRICT POSITION STATE MANAGEMENT
+===================================
+
+This is extremely important.
+
+If a LONG position is active:
+
+DO NOT:
+
+* open another LONG
+* open a SHORT
+* flip direction instantly
+
+until the current LONG is fully resolved.
+
+The only valid sequence is:
+
+LONG ENTRY
+→ ACTIVE LONG
+→ EXIT / TP / SL
+→ THEN new signal allowed
+
+Same exact logic for SHORT positions.
+
+====================================================
+3. PROFESSIONAL REVERSAL LOGIC
+==============================
+
+When strong opposite-direction conditions appear:
+
+DO NOT instantly reverse positions.
+
+Instead:
+
+STEP 1:
+close the current position first
+
+STEP 2:
+mark EXIT clearly
+
+STEP 3:
+wait for confirmation
+
+STEP 4:
+only then allow reverse entry
+
+====================================================
+4. SMARTER LOSS CONTROL
+=======================
+
+Current losses still feel too wide and inefficient.
+
+I want:
+
+* smaller controlled losses
+* cleaner invalidation levels
+* tighter institutional risk management
+* more precise entries
+
+Improve:
+
+* stop placement quality
+* entry timing
+* pullback precision
+* rejection candle entries
+* breakout confirmation quality
+* volatility-adjusted risk
+
+====================================================
+5. AVOID BAD ENTRIES
+====================
+
+The engine should aggressively reject:
+
+* late entries
+* overextended candles
+* emotional chase setups
+* weak momentum
+* weak volume breakouts
+* low RR trades
+* entries directly into resistance/support
+* fake breakouts
+* noisy consolidation
+* weak reversals
+
+====================================================
+6. PRIORITIZE HIGH-CONVICTION SETUPS
+====================================
+
+I prefer:
+
+* fewer trades
+* higher quality setups
+* stronger confluence
+* smaller losses
+* cleaner execution
+
+I do NOT care if signal count drops further.
+
+That is acceptable.
+
+====================================================
+7. INSTITUTIONAL EXECUTION STYLE
+================================
+
+The system should behave like:
+
+* one disciplined trader
+* one active position at a time
+* structured reversals
+* patient entries
+* controlled risk
+* precision execution
+
+NOT:
+
+* overlapping positions
+* conflicting signals
+* flip-flopping
+* hyperactive scalping behavior
+
+====================================================
+8. VISUAL CLARITY
+=================
+
+The chart should visually tell a complete and professional story:
+
+ENTRY
+→ ACTIVE
+→ EXIT / TP / SL
+
+with:
+
+* clear lifecycle flow
+* obvious active trades
+* obvious outcomes
+* clean professional visualization
+
+No ambiguity.
+No incomplete state transitions.
+No conflicting positions.

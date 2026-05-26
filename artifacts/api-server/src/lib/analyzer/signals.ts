@@ -250,6 +250,13 @@ export function generateSignals(
     // 4. Below-average volume = no conviction behind the move. Hard skip.
     if (vol.rvol < 0.75) continue;
 
+    // Close position within the bar (0 = at low, 1 = at high).
+    // A breakout bar that closes in the lower half of its range means bears
+    // pushed back hard intra-bar — that is a fake breakout, not a valid entry.
+    const closeInRange    = (bar.close - bar.low) / barRng;
+    const fakeBreakoutBull = pa?.type === "breakout"  && closeInRange < 0.45;
+    const fakeBreakoutBear = pa?.type === "breakdown" && closeInRange > 0.55;
+
     const bullP  = allPatterns.filter(p => p.type === "bullish" && p.index === i);
     const bearP  = allPatterns.filter(p => p.type === "bearish" && p.index === i);
 
@@ -275,6 +282,7 @@ export function generateSignals(
       if (bar.close > e200i)   bullScore += 5;
 
       if (pullbackLong)        bullScore += 24;
+      if (pullbackLong && ema20Dist < 0.005) bullScore += 8; // textbook EMA20 touch = precision bonus
 
       // RSI discipline: longs need RSI in a healthy pullback zone.
       // Entering a long at RSI 70+ is chasing overbought momentum.
@@ -325,9 +333,10 @@ export function generateSignals(
       if (vol.distribution)                    bullScore -= 8;
       if (vol.climax && bar.close > bar.open)  bullScore -= 10;
       // Overextension / late entry penalties
-      if (isVertBull)   bullScore -= 30; // chasing a 5-bar vertical spike
-      if (farAboveEma)  bullScore -= 18; // entry >1.8% above EMA20 = overextended
-      if (isDoji)       bullScore -= 12; // indecisive bar = bad signal bar
+      if (isVertBull)       bullScore -= 30; // chasing a 5-bar vertical spike
+      if (farAboveEma)      bullScore -= 18; // entry >1.8% above EMA20 = overextended
+      if (isDoji)           bullScore -= 12; // indecisive bar = bad signal bar
+      if (fakeBreakoutBull) bullScore -= 20; // breakout bar closed weak — bears pushed back
 
       // ── SL / RR pre-check (computed before gate to allow early rejection) ──
       // Use 20-bar swing low (wider lookback than before = more robust level).
@@ -335,8 +344,8 @@ export function generateSignals(
       // maximum 2.2 ATR SL distance (no wide stops that need huge TP to justify).
       const longSlice   = bars.slice(Math.max(0, i - 20), i + 1);
       const longSwingLow = Math.min(...longSlice.map(b => b.low));
-      const longRawRisk  = Math.max(bar.close - (longSwingLow - atrI * 0.4), atrI * 0.8);
-      const longBadRR    = longRawRisk > atrI * 2.2; // SL too wide → TP too far → low probability
+      const longRawRisk  = Math.max(bar.close - (longSwingLow - atrI * 0.25), atrI * 0.7);
+      const longBadRR    = longRawRisk > atrI * 1.8; // SL too wide → TP too far → low probability
 
       const longConfirms = [
         regimeI === "trending-up" || regimeI === "vol-expansion", // local regime is bullish
@@ -354,7 +363,7 @@ export function generateSignals(
       // Require 6+ confluence pillars (raised from 5) + hard score floor of 95.
       // Six independent confirmations from separate analysis dimensions = only
       // the cleanest, highest-conviction institutional setups. No mediocre entries.
-      if (!longBadRR && bullScore >= threshold && longConfirms >= 6 && bullScore >= 95) {
+      if (!longBadRR && bullScore >= threshold && longConfirms >= 6 && bullScore >= 97) {
         const sl       = bar.close - longRawRisk;
         const riskDist = longRawRisk;
         const tp       = bar.close + riskDist * 2.5;
@@ -412,6 +421,7 @@ export function generateSignals(
       if (bar.close < e200i)    bearScore += 5;
 
       if (pullbackShort)        bearScore += 24;
+      if (pullbackShort && ema20Dist < 0.005) bearScore += 8; // textbook EMA20 touch = precision bonus
 
       // RSI discipline: shorts need RSI in a healthy rejection zone.
       // Entering a short at RSI 30 or below is chasing oversold momentum.
@@ -461,15 +471,16 @@ export function generateSignals(
       if (vol.accumulation)                    bearScore -= 8;
       if (vol.climax && bar.close < bar.open)  bearScore -= 10;
       // Overextension / late entry penalties
-      if (isVertBear)   bearScore -= 30; // chasing a 5-bar vertical drop
-      if (farBelowEma)  bearScore -= 18; // entry >1.8% below EMA20 = overextended
-      if (isDoji)       bearScore -= 12; // indecisive bar = bad signal bar
+      if (isVertBear)       bearScore -= 30; // chasing a 5-bar vertical drop
+      if (farBelowEma)      bearScore -= 18; // entry >1.8% below EMA20 = overextended
+      if (isDoji)           bearScore -= 12; // indecisive bar = bad signal bar
+      if (fakeBreakoutBear) bearScore -= 20; // breakdown bar closed strong — bulls pushed back
 
       // ── SL / RR pre-check for shorts ───────────────────────────────────
       const shortSlice    = bars.slice(Math.max(0, i - 20), i + 1);
       const shortSwingHigh = Math.max(...shortSlice.map(b => b.high));
-      const shortRawRisk   = Math.max((shortSwingHigh + atrI * 0.4) - bar.close, atrI * 0.8);
-      const shortBadRR     = shortRawRisk > atrI * 2.2;
+      const shortRawRisk   = Math.max((shortSwingHigh + atrI * 0.25) - bar.close, atrI * 0.7);
+      const shortBadRR     = shortRawRisk > atrI * 1.8;
 
       const shortConfirms = [
         regimeI === "trending-down" || regimeI === "vol-expansion", // local regime is bearish
@@ -485,7 +496,7 @@ export function generateSignals(
       ].filter(Boolean).length;
 
       // Same six-pillar institutional filter for shorts.
-      if (!shortBadRR && bearScore >= threshold && shortConfirms >= 6 && bearScore >= 95) {
+      if (!shortBadRR && bearScore >= threshold && shortConfirms >= 6 && bearScore >= 97) {
         const sl       = bar.close + shortRawRisk;
         const riskDist = shortRawRisk;
         const tp       = bar.close - riskDist * 2.5;

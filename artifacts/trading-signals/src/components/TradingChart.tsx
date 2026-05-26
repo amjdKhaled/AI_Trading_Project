@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
-  createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries,
+  createChart, CrosshairMode, CandlestickSeries, HistogramSeries,
   type IChartApi, type ISeriesApi, type CandlestickData,
-  type HistogramData, type Time, type LineData, type AutoscaleInfo,
+  type HistogramData, type Time, type AutoscaleInfo, type IPriceLine,
 } from "lightweight-charts";
 import type { PriceUpdate, SignalNew } from "@/hooks/useMarketSocket";
 import type { ActiveTrade, TradeResult } from "@/pages/ChartPage";
@@ -67,8 +67,9 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef    = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const slRef        = useRef<ISeriesApi<"Line"> | null>(null);
-  const tpRef        = useRef<ISeriesApi<"Line"> | null>(null);
+  const slRef        = useRef<IPriceLine | null>(null);
+  const tpRef        = useRef<IPriceLine | null>(null);
+  const entryLineRef = useRef<IPriceLine | null>(null);
   const tradeIdRef       = useRef<string | null>(null);
   const barsRef          = useRef<Bar[]>([]);
   // Timestamp of the last bar in the most-recently loaded historical dataset.
@@ -107,12 +108,16 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
   const [dateRange, setDateRange] = useState("");
   const [markers, setMarkers]     = useState<MarkerPos[]>([]);
   const [exitPos, setExitPos]     = useState<ExitPos | null>(null);
+  const [activeZone, setActiveZone] = useState<{
+    x: number; rightX: number; tpY: number; slY: number; isLong: boolean;
+  } | null>(null);
 
   const removeSLTP = useCallback(() => {
-    const c = chartRef.current;
-    if (!c) return;
-    if (slRef.current) { try { c.removeSeries(slRef.current); } catch {} slRef.current = null; }
-    if (tpRef.current) { try { c.removeSeries(tpRef.current); } catch {} tpRef.current = null; }
+    const cs = candleRef.current;
+    if (!cs) return;
+    if (slRef.current)        { try { cs.removePriceLine(slRef.current); }        catch {} slRef.current = null; }
+    if (tpRef.current)        { try { cs.removePriceLine(tpRef.current); }        catch {} tpRef.current = null; }
+    if (entryLineRef.current) { try { cs.removePriceLine(entryLineRef.current); } catch {} entryLineRef.current = null; }
   }, []);
 
   const computeMarkers = useCallback(() => {
@@ -207,6 +212,16 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
       });
     }
     setMarkers(positions);
+
+    // Active trade lifecycle zone: translucent band from entry bar to chart right edge
+    const activeM = positions.find(p => p.isActive);
+    if (activeM && trade) {
+      const tpY = series.priceToCoordinate(trade.tpPrice);
+      const slY = series.priceToCoordinate(trade.slPrice);
+      if (tpY !== null && slY !== null) {
+        setActiveZone({ x: activeM.x, rightX: maxX, tpY: Math.max(0, tpY), slY: Math.min(maxY, slY), isLong: activeM.isLong });
+      } else { setActiveZone(null); }
+    } else { setActiveZone(null); }
 
     // Exit marker
     if (tr) {
@@ -407,31 +422,26 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     tradeIdRef.current = activeTrade.signalId;
     removeSLTP();
 
-    // Line data from entry bar to beyond the last bar (so line reaches live edge)
-    const sigSec = Math.floor(new Date(activeTrade.barTime).getTime() / 1000);
-    const startIdx = bars.findIndex((b) => b.time >= sigSec - intervalSec);
-    const lineSlice = startIdx >= 0 ? bars.slice(startIdx) : bars.slice(-100);
-    if (lineSlice.length === 0) return;
+    // createPriceLine gives clean labeled SL / TP / Entry levels on the price axis —
+    // the professional way to display active trade levels. Axis labels show "SL", "TP",
+    // and "ENTRY" with color-coded dashed horizontal lines. No fake future data needed.
+    const cs = candleRef.current;
+    if (!cs) return;
 
-    // Extend line 50 bars into the future (fake times for visual continuity)
-    const lastT  = lineSlice[lineSlice.length - 1].time;
-    const extras: LineData[] = Array.from({ length: 50 }, (_, k) => ({
-      time: (lastT + intervalSec * (k + 1)) as Time, value: 0, // placeholder; series handles fill
-    }));
-
-    const mkLine = (color: string, value: number): ISeriesApi<"Line"> => {
-      const s = chart.addSeries(LineSeries, {
-        priceScaleId: "right", color, lineStyle: 2, lineWidth: 1,
-        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
-      });
-      const historicalPts: LineData[] = lineSlice.map((b) => ({ time: b.time as Time, value }));
-      const futurePts: LineData[] = extras.map((e) => ({ ...e, value }));
-      s.setData([...historicalPts, ...futurePts]);
-      return s;
-    };
-
-    slRef.current = mkLine("#ef535088", activeTrade.slPrice);
-    tpRef.current = mkLine("#26a69a88", activeTrade.tpPrice);
+    slRef.current = cs.createPriceLine({
+      price: activeTrade.slPrice, color: "#ef5350dd",
+      lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: "⊗ SL",
+    });
+    tpRef.current = cs.createPriceLine({
+      price: activeTrade.tpPrice, color: "#00ff88dd",
+      lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: "⊕ TP",
+    });
+    entryLineRef.current = cs.createPriceLine({
+      price: activeTrade.entryPrice,
+      color: activeTrade.side === "long" ? "#22d3eedd" : "#ef5350dd",
+      lineWidth: 1, lineStyle: 0, axisLabelVisible: true,
+      title: activeTrade.side === "long" ? "▲ ENTRY" : "▼ ENTRY",
+    });
     setTimeout(computeMarkers, 50);
   }, [activeTrade, bars, intervalSec, computeMarkers, removeSLTP]);
 
@@ -529,6 +539,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
+            <style>{`@keyframes tradeRingPulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.05; } }`}</style>
             <filter id="gGreen" x="-80%" y="-80%" width="260%" height="260%">
               <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b"/>
               <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.149  0 0 0 0 0.647  0 0 0 0 0.604  0 0 0 0.9 0" result="cb"/>
@@ -541,15 +552,25 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             </filter>
           </defs>
 
+          {/* Active trade lifecycle zone: translucent band between TP and SL from entry → now */}
+          {activeZone && (
+            <rect
+              x={activeZone.x - 4}
+              y={activeZone.tpY}
+              width={Math.max(0, activeZone.rightX - activeZone.x + 4)}
+              height={Math.max(0, activeZone.slY - activeZone.tpY)}
+              fill={activeZone.isLong ? "#22d3ee0b" : "#ef53500b"}
+              stroke={activeZone.isLong ? "#22d3ee22" : "#ef535022"}
+              strokeWidth={1} strokeDasharray="6 3" rx={3}
+            />
+          )}
           {/* Signal entry markers — clean institutional style.
-               Historical signals: entry arrow + grade label only.
-               No lifecycle lines, no exit circles, no expired clutter.
-               Active trade uses larger glowing arrow. */}
+               Historical: entry arrow + exit dot. Active: glowing arrow + pulsing rings. */}
           {markers.map((m) => {
             const col      = m.isLong ? "#22d3ee" : "#ef5350";
             const flt      = m.isActive ? (m.isLong ? "url(#gGreen)" : "url(#gRed)") : undefined;
-            const mW       = m.isActive ? 12 : 8;
-            const mH       = m.isActive ? 18 : 12;
+            const mW       = m.isActive ? 16 : 8;
+            const mH       = m.isActive ? 26 : 12;
             const pts      = m.isLong
               ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
               : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
@@ -572,6 +593,17 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
 
             return (
               <g key={m.key}>
+                {/* Pulsing lifecycle rings — active trade only */}
+                {m.isActive && (
+                  <>
+                    <circle cx={m.x} cy={m.y} r={22} fill="none"
+                      stroke={col} strokeWidth={1.5}
+                      style={{ animation: "tradeRingPulse 2s ease-in-out infinite" }} />
+                    <circle cx={m.x} cy={m.y} r={30} fill="none"
+                      stroke={col} strokeWidth={0.8}
+                      style={{ animation: "tradeRingPulse 2s ease-in-out infinite 0.7s" }} />
+                  </>
+                )}
                 {/* Entry arrow */}
                 <polygon
                   points={pts}
