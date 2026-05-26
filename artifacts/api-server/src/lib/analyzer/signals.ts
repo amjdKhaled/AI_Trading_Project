@@ -60,6 +60,23 @@ function detectConsolidation(bars: OhlcvBar[], i: number) {
   return { contracting: lR < eR * 0.65, expanding: lR > eR * 1.5 };
 }
 
+// ── Trend Efficiency Ratio ─────────────────────────────────────────────────
+// Perry Kaufman's Efficiency Ratio: |net displacement| / total path length.
+// Measures how "directionally clean" price movement is over the last N bars.
+//   ER > 0.55 = very clean trending move (institutional edge present)
+//   ER < 0.20 = choppy, directionless — no sustainable edge regardless of
+//               what other indicators say. Hard skip these bars entirely.
+function efficiencyRatio(bars: OhlcvBar[], idx: number, n = 20): number {
+  if (idx < n) return 0.5; // not enough bars — assume neutral
+  const start = idx - n;
+  const net   = Math.abs(bars[idx].close - bars[start].close);
+  let   path  = 0;
+  for (let j = start + 1; j <= idx; j++) {
+    path += Math.abs(bars[j].close - bars[j - 1].close);
+  }
+  return path > 0 ? Math.min(1, net / path) : 0.5;
+}
+
 // ── HTF Bias Builder ──────────────────────────────────────────────────────
 // Builds a function that, given a 5m bar's epoch-seconds time, returns the
 // 15m bias active at that time: "bull" | "bear" | "neutral".
@@ -184,6 +201,15 @@ export function generateSignals(
     const atrPct = atrI / (bar.close || 1);
     if (atrPct < 0.0005) continue;
 
+    // ── Efficiency Ratio: hard skip + score modifiers ─────────────────────
+    // Skip bars where price is truly directionless. The threshold is kept
+    // conservative (0.12) because 5m bars naturally have ER 0.15–0.35 even
+    // in solid trends; only the worst chop falls below 0.12.
+    const efI     = efficiencyRatio(bars, i, 20);
+    if (efI < 0.12) continue;
+    const cleanER = efI > 0.50; // sustained directional momentum — reward
+    const weakER  = efI < 0.17; // genuinely choppy range — small penalty
+
     // ── Per-bar regime flags ─────────────────────────────────────────────
     const strongUptrend   = e20i > e50i && e50i > e200i && bar.close > e50i;
     const strongDowntrend = e20i < e50i && e50i < e200i && bar.close < e50i;
@@ -257,6 +283,31 @@ export function generateSignals(
     const fakeBreakoutBull = pa?.type === "breakout"  && closeInRange < 0.45;
     const fakeBreakoutBear = pa?.type === "breakdown" && closeInRange > 0.55;
 
+    // ── Liquidity sweep / stop hunt detection ─────────────────────────────
+    // A sweep = bar briefly violates a key structural level (triggering stops)
+    // then closes BACK through it, showing strong absorption on the other side.
+    // Bull sweep: wick below 15-bar swing low, close above + bullish body.
+    // Bear sweep: wick above 15-bar swing high, close below + bearish body.
+    // These are among the highest-probability reversal setups in the market.
+    const lookback15  = bars.slice(Math.max(0, i - 15), i);
+    const swingLow15  = lookback15.length > 0 ? Math.min(...lookback15.map(b => b.low))  : bar.low;
+    const swingHigh15 = lookback15.length > 0 ? Math.max(...lookback15.map(b => b.high)) : bar.high;
+    // Sweep requires a meaningful ATR-scaled breach (≥ 0.25 ATR below key low),
+    // a strong recovery (close clearly above the violated level), and good volume.
+    // The 0.9998 % threshold was too loose — any tiny wick would qualify.
+    const sweepBull = bar.low < swingLow15 - atrI * 0.25 && bar.close > swingLow15
+      && bar.close > bar.open && closeInRange > 0.60 && vol.rvol > 1.2;
+    const sweepBear = bar.high > swingHigh15 + atrI * 0.25 && bar.close < swingHigh15
+      && bar.close < bar.open && closeInRange < 0.40 && vol.rvol > 1.2;
+
+    // ── Pullback volume quality ───────────────────────────────────────────
+    // A healthy institutional pullback has LOWER volume than the trend that
+    // preceded it — passive retracement, no real counter-side participation.
+    // High volume on a pullback = genuine distribution/supply = avoid entry.
+    const recentVol5 = bars.slice(Math.max(0, i - 4), i + 1).reduce((s, b) => s + b.volume, 0) / 5;
+    const priorVol10 = bars.slice(Math.max(0, i - 14), i - 4).reduce((s, b) => s + b.volume, 0) / 10;
+    const pullbackVolOk = priorVol10 > 0 && recentVol5 < priorVol10 * 0.88;
+
     const bullP  = allPatterns.filter(p => p.type === "bullish" && p.index === i);
     const bearP  = allPatterns.filter(p => p.type === "bearish" && p.index === i);
 
@@ -283,6 +334,18 @@ export function generateSignals(
 
       if (pullbackLong)        bullScore += 24;
       if (pullbackLong && ema20Dist < 0.005) bullScore += 8; // textbook EMA20 touch = precision bonus
+
+      // ── Advanced quality factors ────────────────────────────────────────
+      // Liquidity sweep: genuine stop hunt with ATR-scaled breach + recovery.
+      // Treated as a supplemental bonus — it enhances a setup but is not the
+      // sole reason to enter. The main entry trigger must still be present.
+      if (sweepBull)                      bullScore += 8;
+      // ER: bonus for very clean directional trend, small penalty for extreme chop
+      if (cleanER)                        bullScore += 8;
+      if (weakER)                         bullScore -= 6;
+      // Pullback volume: declining vol on pullback = healthy, high vol = selling
+      if (pullbackLong && pullbackVolOk)  bullScore += 7;
+      if (pullbackLong && !pullbackVolOk) bullScore -= 5;
 
       // RSI discipline: longs need RSI in a healthy pullback zone.
       // Entering a long at RSI 70+ is chasing overbought momentum.
@@ -354,7 +417,7 @@ export function generateSignals(
         rsiI >= 30 && rsiI <= 64,                                 // RSI in healthy bull zone
         bar.close > bar.open,                                     // bullish close
         macdBull,                                                 // momentum positive
-        pullbackLong || pa?.bullish === true,                     // entry at pullback or retest
+        pullbackLong || pa?.bullish === true || sweepBull,        // entry at pullback, retest, or sweep
         bullP.length > 0,                                         // candlestick confirmation
         aboveVwap || vwapReclaim,                                 // price vs VWAP
         htfI === "bull",                                          // HTF timeframe aligned
@@ -363,7 +426,15 @@ export function generateSignals(
       // Require 6+ confluence pillars (raised from 5) + hard score floor of 95.
       // Six independent confirmations from separate analysis dimensions = only
       // the cleanest, highest-conviction institutional setups. No mediocre entries.
-      if (!longBadRR && bullScore >= threshold && longConfirms >= 6 && bullScore >= 97) {
+      // Require at least ONE clearly identifiable institutional entry trigger.
+      // Prevents "score assembly" — a high score from many tiny scattered
+      // bonuses without a single real setup pattern. Quality over quantity.
+      const hasLongStrategy = pullbackLong || vwapReclaim
+        || pa?.bullish === true || (consol.contracting && bullEmaAlign)
+        || (strongUptrend && (vol.accumulation || vol.breakoutVol))
+        || (bullEmaAlign && structBull && macdBull);
+
+      if (!longBadRR && bullScore >= threshold && longConfirms >= 6 && bullScore >= 97 && hasLongStrategy) {
         const sl       = bar.close - longRawRisk;
         const riskDist = longRawRisk;
         const tp       = bar.close + riskDist * 2.5;
@@ -387,6 +458,14 @@ export function generateSignals(
         // Append regime/session/htf reasons after the primary trigger name
         patternNames.push(...reasons);
 
+        const strategyTypeLong =
+          sweepBull                        ? "liquidity_sweep"       :
+          pullbackLong && consol.contracting ? "compression_pullback" :
+          pullbackLong                     ? "trend_pullback"         :
+          vwapReclaim                      ? "vwap_reclaim"           :
+          pa?.type === "breakout"          ? (consol.contracting ? "compression_breakout" : "breakout_continuation") :
+          pa?.type === "retest-bull"       ? "breakout_retest"        : "momentum";
+
         candidates.push({
           side: "long", barIndex: i, time: bar.time,
           entryPrice: bar.close, slPrice: sl, tpPrice: tp,
@@ -401,6 +480,19 @@ export function generateSignals(
           momentumConfirm:  rsiI < 65,
           candleConfirm:    bar.close > bar.open,
           volatilityOk:     !isExhBull,
+          strategy:         strategyTypeLong,
+          metadata: {
+            regime:         regimeI,
+            efRatio:        Math.round(efI * 100) / 100,
+            strategy:       strategyTypeLong,
+            sweepEntry:     sweepBull,
+            pullbackVolOk:  pullbackLong ? pullbackVolOk : null,
+            htfBias:        htfI,
+            session:        sessionI,
+            confluenceCount: longConfirms,
+            volumeState:    vol.accumulation ? "accumulation" : vol.distribution ? "distribution" : "neutral",
+            structureState: structBull ? "uptrend" : "mixed",
+          },
         });
       }
     }
@@ -422,6 +514,13 @@ export function generateSignals(
 
       if (pullbackShort)        bearScore += 24;
       if (pullbackShort && ema20Dist < 0.005) bearScore += 8; // textbook EMA20 touch = precision bonus
+
+      // ── Advanced quality factors ────────────────────────────────────────
+      if (sweepBear)                       bearScore += 8;  // stop hunt then rejection — supplemental bonus
+      if (cleanER)                         bearScore += 8;
+      if (weakER)                          bearScore -= 6;
+      if (pullbackShort && pullbackVolOk)  bearScore += 7;
+      if (pullbackShort && !pullbackVolOk) bearScore -= 5;
 
       // RSI discipline: shorts need RSI in a healthy rejection zone.
       // Entering a short at RSI 30 or below is chasing oversold momentum.
@@ -489,14 +588,19 @@ export function generateSignals(
         rsiI >= 36 && rsiI <= 70,                                   // RSI in healthy bear zone
         bar.close < bar.open,                                       // bearish close
         macdBear,                                                   // momentum negative
-        pullbackShort || (pa !== null && !pa.bullish),              // entry at rejection/retest
+        pullbackShort || (pa !== null && !pa.bullish) || sweepBear, // entry at rejection, retest, or sweep
         bearP.length > 0,                                           // candlestick confirmation
         belowVwap || vwapRejection,                                 // price vs VWAP
         htfI === "bear",                                            // HTF timeframe aligned
       ].filter(Boolean).length;
 
       // Same six-pillar institutional filter for shorts.
-      if (!shortBadRR && bearScore >= threshold && shortConfirms >= 6 && bearScore >= 97) {
+      const hasShortStrategy = pullbackShort || vwapRejection
+        || (pa !== null && !pa.bullish) || (consol.contracting && bearEmaAlign)
+        || (strongDowntrend && (vol.distribution || vol.breakoutVol))
+        || (bearEmaAlign && structBear && macdBear);
+
+      if (!shortBadRR && bearScore >= threshold && shortConfirms >= 6 && bearScore >= 97 && hasShortStrategy) {
         const sl       = bar.close + shortRawRisk;
         const riskDist = shortRawRisk;
         const tp       = bar.close - riskDist * 2.5;
@@ -519,6 +623,14 @@ export function generateSignals(
         }
         patternNames.push(...reasons);
 
+        const strategyTypeShort =
+          sweepBear                          ? "liquidity_sweep"        :
+          pullbackShort && consol.contracting ? "compression_pullback"  :
+          pullbackShort                      ? "trend_pullback"          :
+          vwapRejection                      ? "vwap_rejection"          :
+          pa?.type === "breakdown"           ? (consol.contracting ? "compression_breakout" : "breakdown_continuation") :
+          pa?.type === "retest-bear"         ? "breakout_retest"         : "momentum";
+
         candidates.push({
           side: "short", barIndex: i, time: bar.time,
           entryPrice: bar.close, slPrice: sl, tpPrice: tp,
@@ -533,6 +645,19 @@ export function generateSignals(
           momentumConfirm:  rsiI > 35,
           candleConfirm:    bar.close < bar.open,
           volatilityOk:     !isExhBear,
+          strategy:         strategyTypeShort,
+          metadata: {
+            regime:         regimeI,
+            efRatio:        Math.round(efI * 100) / 100,
+            strategy:       strategyTypeShort,
+            sweepEntry:     sweepBear,
+            pullbackVolOk:  pullbackShort ? pullbackVolOk : null,
+            htfBias:        htfI,
+            session:        sessionI,
+            confluenceCount: shortConfirms,
+            volumeState:    vol.distribution ? "distribution" : vol.accumulation ? "accumulation" : "neutral",
+            structureState: structBear ? "downtrend" : "mixed",
+          },
         });
       }
     }
@@ -614,6 +739,9 @@ export function generateSignals(
     patterns:   c.patterns.slice(0, 6),
     state:      "active",
     createdAt:  new Date().toISOString(),
+    strategy:   c.strategy,
+    regime:     (c.metadata?.regime as string | undefined) ?? "ranging",
+    metadata:   c.metadata,
   }));
 
   return { signals, candidates: allDeduped };

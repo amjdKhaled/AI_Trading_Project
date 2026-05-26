@@ -1,0 +1,233 @@
+The chart visualization and lifecycle system are now much more professional.
+
+However, the win rate is still far too low for the level of filtering currently applied.
+
+This means the main remaining weakness is no longer visualization or trade flow.
+
+The weakness is now the TECHNICAL ANALYSIS DECISION ENGINE itself.
+
+====================================================
+PRIMARY OBJECTIVE
+=================
+
+I want a major improvement in:
+
+* market understanding
+* setup quality
+* trade timing
+* technical decision accuracy
+
+The engine must stop behaving like:
+
+* a reactive signal generator
+
+and start behaving like:
+
+* a professional discretionary trader
+* a smart institutional analyst
+
+====================================================
+CURRENT PROBLEM
+===============
+
+The engine still enters too many trades that are technically valid,
+but contextually weak.
+
+Many losing trades come from:
+
+* entering too late
+* entering inside weak structure
+* entering during exhausted momentum
+* entering during unstable consolidation
+* entering before confirmation is fully complete
+
+====================================================
+I WANT MUCH SMARTER MARKET READING
+==================================
+
+The engine should deeply understand:
+
+* trend quality
+* momentum quality
+* structure cleanliness
+* liquidity behavior
+* exhaustion
+* trap setups
+* continuation probability
+* reversal probability
+
+====================================================
+
+1. IMPROVE TREND QUALITY ANALYSIS
+   ====================================================
+
+Do NOT trade every trend.
+
+Only trade:
+
+* clean trends
+* healthy pullbacks
+* strong continuation structure
+* trends with momentum expansion
+* trends with supportive volume
+
+Reject:
+
+* weak trends
+* choppy trends
+* unstable direction
+* noisy movement
+* overextended trends
+
+====================================================
+2. IMPROVE MARKET STRUCTURE LOGIC
+=================================
+
+I want stronger understanding of:
+
+* BOS quality
+* liquidity sweeps
+* failed breakdowns
+* failed breakouts
+* trend continuation structure
+* higher highs / higher lows quality
+* lower highs / lower lows quality
+
+The engine should identify:
+
+* when structure is healthy
+* when structure is weak
+* when structure is transitioning
+
+====================================================
+3. IMPROVE ENTRY TIMING
+=======================
+
+Current entries still feel late.
+
+I want entries closer to:
+
+* pullback confirmation
+* reclaim candles
+* liquidity sweep reversals
+* breakout retests
+* continuation compression releases
+
+Avoid:
+
+* chasing large candles
+* entering after expansion already happened
+* entering after momentum exhaustion
+
+====================================================
+4. IMPROVE VOLUME ANALYSIS
+==========================
+
+Volume should become a major filter.
+
+Strong setups should require:
+
+* real participation
+* strong relative volume
+* breakout confirmation volume
+* continuation support volume
+
+Reject:
+
+* weak-volume breakouts
+* weak continuation volume
+* fading momentum
+
+====================================================
+5. ADD SMART EXHAUSTION DETECTION
+=================================
+
+The engine should detect:
+
+* climax candles
+* parabolic movement
+* momentum exhaustion
+* trend fatigue
+* overextension
+* weakening continuation
+
+and avoid entering near probable exhaustion zones.
+
+====================================================
+6. IMPROVE REVERSAL QUALITY
+===========================
+
+Do NOT allow weak reversals.
+
+Only allow reversals when:
+
+* structure breaks clearly
+* momentum shifts strongly
+* liquidity sweep confirms reversal
+* volume confirms reversal
+* reclaim/rejection confirms direction change
+
+====================================================
+7. PRIORITIZE RISK-TO-REWARD QUALITY
+====================================
+
+The engine should strongly prefer:
+
+* tight invalidation
+* nearby logical stop
+* asymmetric reward potential
+
+Reject trades with:
+
+* poor RR
+* wide stops
+* weak target structure
+
+====================================================
+8. TRADE LESS, WIN MORE
+=======================
+
+I do NOT want more signals.
+
+I want:
+
+* fewer trades
+* significantly higher quality
+* stronger confirmations
+* much higher win probability
+
+Even if signal count becomes very low,
+that is completely acceptable.
+
+====================================================
+9. THINK LIKE A PROFESSIONAL TRADER
+===================================
+
+The engine should behave like:
+
+* a patient trader
+* a selective trader
+* a disciplined analyst
+* a high-conviction execution system
+
+NOT:
+
+* a reactive indicator bot
+* a momentum chaser
+* a noisy signal generator
+
+====================================================
+10. TARGET RESULT
+=================
+
+The goal is NOT visual beauty anymore.
+
+The goal now is:
+
+* dramatically better trade quality
+* smarter technical decisions
+* cleaner entries
+* smaller losses
+* stronger winners
+* much higher win rate
+* professional-grade execution quality

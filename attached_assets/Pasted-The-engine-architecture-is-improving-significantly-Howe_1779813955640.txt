@@ -1,0 +1,251 @@
+The engine architecture is improving significantly.
+
+However, I want to evolve the system beyond a single-strategy trading model.
+
+====================================================
+CRITICAL ARCHITECTURE CHANGE
+============================
+
+I do NOT want the engine to rely on:
+
+* one strategy
+* one setup type
+* one market behavior model
+
+I want the system to become:
+
+ADAPTIVE
+MULTI-STRATEGY
+MARKET-AWARE
+
+The engine should dynamically choose:
+
+* which strategy to use
+* when to trade
+* when NOT to trade
+  based on actual market conditions.
+
+====================================================
+
+1. MARKET REGIME DETECTION
+   ====================================================
+
+The engine must first classify the market before generating any signal.
+
+Examples:
+
+* trending market
+* ranging market
+* choppy market
+* volatility expansion
+* volatility compression
+* momentum trend
+* weak/noisy structure
+
+Different regimes require different trading behavior.
+
+====================================================
+2. STRATEGY ADAPTATION
+======================
+
+The engine should dynamically switch between multiple strategies.
+
+Example:
+
+TRENDING MARKET:
+
+* breakout continuation
+* pullback continuation
+* EMA trend entries
+* momentum expansion
+
+RANGING MARKET:
+
+* mean reversion
+* liquidity sweep reversals
+* support/resistance bounces
+
+HIGH VOLATILITY:
+
+* wider targets
+* stricter confirmations
+* avoid chasing
+
+LOW VOLATILITY:
+
+* avoid breakout traps
+* wait for expansion
+
+====================================================
+3. MULTI-TIMEFRAME MARKET BIAS
+==============================
+
+I want real multi-timeframe analysis.
+
+Not just:
+"15m bullish = +12 score"
+
+I want:
+
+* higher timeframe defines market bias
+* lower timeframe defines entry precision
+
+Example:
+
+* 1H = structure + direction
+* 15m = setup context
+* 5m = execution timing
+
+The engine should align trades with higher timeframe structure whenever possible.
+
+====================================================
+4. PRIORITIZE PRICE ACTION OVER INDICATORS
+==========================================
+
+Indicators should become secondary confirmation tools.
+
+Primary analysis should come from:
+
+* price action
+* structure
+* liquidity
+* momentum
+* volume
+* candle behavior
+* breakout quality
+* rejection quality
+
+Indicators should support the decision,
+NOT dominate the decision.
+
+====================================================
+5. LIQUIDITY + TRAP DETECTION
+=============================
+
+Add advanced liquidity understanding.
+
+The engine should identify:
+
+* stop hunts
+* liquidity grabs
+* failed breakouts
+* failed breakdowns
+* trap candles
+* engineered sweeps
+* fake momentum
+
+The system should recognize when:
+smart money is trapping traders.
+
+====================================================
+6. TRADE JOURNALING SYSTEM
+==========================
+
+I want every trade to store detailed metadata.
+
+For every signal save:
+
+* market regime
+* strategy type
+* structure state
+* volume state
+* momentum condition
+* confluence factors
+* entry reason
+* exit reason
+* TP/SL result
+* RR achieved
+* confidence level
+
+This data will later become the foundation for AI learning.
+
+====================================================
+7. CONFIDENCE CALIBRATION
+=========================
+
+Current confidence percentages are not statistically calibrated.
+
+I do NOT want:
+"98% confidence" based only on score weighting.
+
+I want confidence to become:
+historically performance-based.
+
+Example:
+"This setup type historically wins 71% under current market conditions."
+
+====================================================
+8. AVOID OVERFITTING
+====================
+
+The engine should generalize across multiple symbols.
+
+Do NOT optimize only for:
+
+* TSLA
+* NVDA
+
+The system should work across:
+
+* QQQ
+* SPY
+* AMD
+* META
+* AAPL
+* MSFT
+* high-volume NASDAQ stocks
+
+====================================================
+9. AI REVIEW LAYER (FUTURE ARCHITECTURE)
+========================================
+
+Do NOT implement machine learning yet.
+
+But architect the system for a future AI review layer.
+
+Future workflow:
+
+STEP 1:
+rule-based engine generates setup
+
+STEP 2:
+AI review layer evaluates:
+
+* quality
+* context
+* exhaustion risk
+* liquidity trap risk
+* continuation probability
+* reversal probability
+
+STEP 3:
+AI either:
+
+* approve
+* reject
+* downgrade confidence
+
+====================================================
+10. FINAL GOAL
+==============
+
+The final system should behave like:
+
+* a professional institutional analyst
+* a market-aware adaptive engine
+* a disciplined high-conviction trader
+
+NOT:
+
+* a single-strategy indicator bot
+* a momentum chaser
+* a noisy signal generator
+
+The priority is:
+
+* adaptability
+* market awareness
+* precision
+* context understanding
+* trade quality
+* consistency

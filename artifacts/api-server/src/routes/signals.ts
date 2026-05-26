@@ -91,7 +91,9 @@ router.get("/signals", async (req, res): Promise<void> => {
               exitBarTime:    lifecycle.exitBarTime ? new Date(lifecycle.exitBarTime * 1000) : undefined,
               rrRatio:        Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / (Math.abs(sig.entryPrice - sig.slPrice) || 0.001) * 100) / 100,
               pattern:        sig.patterns[0] ?? "analysis_engine",
-              regime:         "trend_up",
+              regime:         sig.regime ?? "ranging",
+              grade:          sig.grade,
+              metadata:       (sig.metadata ?? null) as Record<string, unknown> | null,
             });
           } catch { /* duplicate — skip */ }
         }
@@ -166,7 +168,9 @@ router.post("/signals/regenerate", async (req, res): Promise<void> => {
           exitBarTime:    lifecycle.exitBarTime ? new Date(lifecycle.exitBarTime * 1000) : undefined,
           rrRatio:        Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / (Math.abs(sig.entryPrice - sig.slPrice) || 0.001) * 100) / 100,
           pattern:        sig.patterns[0] ?? "analysis_engine",
-          regime:         "trend_up",
+          regime:         sig.regime ?? "ranging",
+          grade:          sig.grade,
+          metadata:       (sig.metadata ?? null) as Record<string, unknown> | null,
         });
         inserted++;
         if (lifecycle.state === "tp_hit")  tpHits++;

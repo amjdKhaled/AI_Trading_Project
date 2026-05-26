@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, real, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -20,8 +20,10 @@ export const signalsTable = pgTable("signals", {
   exitReason: text("exit_reason"),
   exitBarTime: timestamp("exit_bar_time", { withTimezone: true }),
   rrRatio: real("rr_ratio"),
-  pattern: text("pattern"),
-  regime: text("regime"),
+  pattern:  text("pattern"),
+  regime:   text("regime"),
+  grade:    text("grade"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

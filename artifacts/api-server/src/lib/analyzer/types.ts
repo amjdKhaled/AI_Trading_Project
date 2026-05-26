@@ -82,6 +82,8 @@ export interface SignalCandidate {
   momentumConfirm: boolean;
   candleConfirm: boolean;
   volatilityOk: boolean;
+  strategy?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TradingSignal {
@@ -99,4 +101,7 @@ export interface TradingSignal {
   patterns: string[];
   state: "active" | "tp_hit" | "sl_hit" | "expired";
   createdAt: string;
+  strategy?: string;
+  regime?: string;
+  metadata?: Record<string, unknown>;
 }
