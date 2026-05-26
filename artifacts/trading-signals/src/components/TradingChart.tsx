@@ -14,6 +14,15 @@ interface MarkerPos {
   x: number; y: number; isLong: boolean;
   confidence: number; key: string; isActive: boolean;
   grade?: "A+" | "A" | "B" | "Weak";
+  // Historical exit info — present when the signal has resolved via backtest.
+  // When set, the chart draws an exit marker at (exitX, exitY) and a thin
+  // connecting line from the entry marker to the exit marker.
+  exitX?: number;
+  exitY?: number;
+  outcome?: "tp_hit" | "sl_hit" | "expired";
+  // Price at the exit bar — used for the trade outcome label.
+  exitPrice?: number;
+  entryPrice?: number;
 }
 interface ExitPos { x: number; y: number; isWin: boolean; }
 
@@ -163,6 +172,28 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
       if (!b) continue;
       const coords = toCoords(b, sig.side === "long");
       if (!coords) continue;
+
+      // Compute exit coords if this signal has resolved historically.
+      // Exit marker is drawn at the actual exit price (TP/SL level for hits,
+      // bar close for expired) on the exit bar.
+      let exitX: number | undefined;
+      let exitY: number | undefined;
+      let exitPriceNum: number | undefined;
+      const outcome = sig.state && sig.state !== "active" ? sig.state : undefined;
+      if (outcome && sig.exitBarTime && sig.exitPrice != null) {
+        const exitSec = Math.floor(new Date(sig.exitBarTime).getTime() / 1000);
+        const xb = nearestBar(exitSec);
+        if (xb) {
+          const xCoord = chart.timeScale().timeToCoordinate(xb.time as Time);
+          const yCoord = series.priceToCoordinate(sig.exitPrice);
+          if (xCoord !== null && yCoord !== null && xCoord >= 0 && xCoord <= maxX && yCoord >= 0 && yCoord <= maxY) {
+            exitX        = xCoord;
+            exitY        = yCoord;
+            exitPriceNum = sig.exitPrice;
+          }
+        }
+      }
+
       positions.push({
         ...coords,
         isLong: sig.side === "long",
@@ -170,6 +201,9 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
         grade: sig.grade,
         key: sig.signalId,
         isActive: !!trade && sig.signalId === trade.signalId,
+        exitX, exitY, outcome,
+        exitPrice:  exitPriceNum,
+        entryPrice: sig.entryPrice,
       });
     }
     setMarkers(positions);
@@ -526,8 +560,46 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             const y0 = m.isLong ? m.y + mH + labelGap          : m.y - mH + labelGap;
             const y1 = m.isLong ? m.y + mH + labelGap + lineH  : m.y - mH + labelGap - lineH;
 
+            // Exit-trade visualization: thin connecting line + exit marker.
+            // Colored by outcome: green for TP hit, red for SL hit, amber for expired.
+            const hasExit = m.exitX !== undefined && m.exitY !== undefined && m.outcome;
+            const exitCol =
+              m.outcome === "tp_hit"  ? "#26a69a" :
+              m.outcome === "sl_hit"  ? "#ef5350" :
+              m.outcome === "expired" ? "#eab308" : col;
+            const exitGlyph =
+              m.outcome === "tp_hit"  ? "✓" :
+              m.outcome === "sl_hit"  ? "✗" : "○";
+            // R-multiple label: gain/loss in risk units (always ±2.5R for hits given the engine's RR target,
+            // but computed live in case future logic adjusts SL/TP per-signal).
+            let rText = "";
+            if (hasExit && m.entryPrice != null && m.exitPrice != null) {
+              // For long: profit = exit - entry; risk per share = entry - SL.  The
+              // sign of the R-multiple matches outcome.  We don't have SL here so
+              // we infer 2.5R for TP and -1R for SL by convention; expired uses raw %.
+              if (m.outcome === "tp_hit") rText = "+2.5R";
+              else if (m.outcome === "sl_hit") rText = "−1R";
+              else {
+                const pct = ((m.exitPrice - m.entryPrice) / m.entryPrice) * (m.isLong ? 100 : -100);
+                rText = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+              }
+            }
+
             return (
               <g key={m.key}>
+                {/* Entry → Exit connector */}
+                {hasExit && (
+                  <line
+                    x1={m.x} y1={m.y}
+                    x2={m.exitX!} y2={m.exitY!}
+                    stroke={exitCol}
+                    strokeWidth={1}
+                    strokeDasharray="3 2"
+                    opacity={0.55}
+                  />
+                )}
+
+                {/* Entry arrow */}
                 <polygon
                   points={pts}
                   fill={col}
@@ -548,6 +620,33 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
                   fontWeight="600" opacity={0.85}>
                   {m.confidence}%
                 </text>
+
+                {/* Exit marker (circle + outcome glyph + R-multiple label) */}
+                {hasExit && (
+                  <g>
+                    <circle
+                      cx={m.exitX!} cy={m.exitY!} r={6}
+                      fill={`${exitCol}22`}
+                      stroke={exitCol}
+                      strokeWidth={1.1}
+                    />
+                    <text x={m.exitX!} y={m.exitY! + 3} textAnchor="middle"
+                      fill={exitCol}
+                      fontSize={8}
+                      fontFamily="'JetBrains Mono',Menlo,monospace"
+                      fontWeight="800">
+                      {exitGlyph}
+                    </text>
+                    <text x={m.exitX!} y={m.exitY! - 9} textAnchor="middle"
+                      fill={exitCol}
+                      fontSize={7.5}
+                      fontFamily="'JetBrains Mono',Menlo,monospace"
+                      fontWeight="700"
+                      opacity={0.9}>
+                      {rText}
+                    </text>
+                  </g>
+                )}
               </g>
             );
           })}

@@ -41,6 +41,11 @@ export interface SignalNew {
   barTime: string;
   grade?: "A+" | "A" | "B" | "Weak";
   patterns?: string[];
+  // Historical lifecycle info (present for backtested signals; omitted for live WS signals)
+  state?: "active" | "tp_hit" | "sl_hit" | "expired";
+  exitPrice?: number | null;
+  exitBarTime?: string | null;
+  exitReason?: string | null;
 }
 
 export interface SlUpdate {

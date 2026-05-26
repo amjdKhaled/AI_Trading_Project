@@ -71,7 +71,10 @@ export default function ChartPage() {
   useEffect(() => {
     if (!activeSymbol) { setRestSignals([]); return; }
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    fetch(`${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=20`)
+    // Limit raised: backtested engine produces full-history signals (often
+    // 100–400 per symbol). The chart filters off-viewport markers cheaply,
+    // so pulling all of them keeps the historical analysis complete.
+    fetch(`${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=500`)
       .then((r) => r.json())
       .then((data: unknown) => {
         if (!Array.isArray(data)) { setRestSignals([]); return; }
@@ -88,6 +91,10 @@ export default function ChartPage() {
           barTime:    new Date(String(s.barTime)).toISOString(),
           grade:      s.grade as ("A+" | "A" | "B" | "Weak") | undefined,
           patterns:   Array.isArray(s.patterns) ? (s.patterns as string[]) : undefined,
+          state:      (s.state as SignalNew["state"]) ?? "active",
+          exitPrice:  s.exitPrice == null ? null : Number(s.exitPrice),
+          exitBarTime: s.exitBarTime == null ? null : new Date(String(s.exitBarTime)).toISOString(),
+          exitReason:  s.exitReason == null ? null : String(s.exitReason),
         }));
         setRestSignals(mapped);
       })

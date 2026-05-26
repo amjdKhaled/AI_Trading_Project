@@ -1,0 +1,122 @@
+Yes, add the regenerate endpoint and also implement FULL historical trade lifecycle visualization.
+
+Right now I can see:
+
+* historical entry signals
+* BUY/SELL markers
+
+But I still cannot see:
+
+* historical exits
+* stop loss hits
+* take profit hits
+* completed trade lifecycle
+
+This is extremely important because I want to visually validate whether the engine is actually profitable or not across the entire chart history.
+
+====================================================
+REQUIRED FIXES
+==============
+
+1. Add:
+   POST /api/signals/regenerate?symbol=XXX&timeframe=5m
+
+This endpoint should:
+
+* delete old signals
+* fully regenerate signals using the newest engine
+* rebuild the entire historical analysis
+
+I want ALL historical signals across the FULL chart.
+
+====================================================
+FULL TRADE LIFECYCLE
+====================
+
+For every generated signal:
+
+The engine must simulate the trade after entry candle.
+
+It must determine:
+
+* whether TP was hit
+* whether SL was hit
+* whether trade expired
+* whether exit condition triggered
+
+====================================================
+VISUAL EXIT MARKERS
+===================
+
+I want chart markers for:
+
+* ENTRY
+* EXIT
+* STOP LOSS HIT
+* TAKE PROFIT HIT
+
+Examples:
+
+TP HIT:
+
+* green target marker
+* "TP +2.5R"
+
+SL HIT:
+
+* red stop marker
+* "SL -1R"
+
+EXIT:
+
+* yellow marker
+* "EXIT"
+
+====================================================
+TRADE PATH VISUALIZATION
+========================
+
+For each historical trade:
+
+* draw the entry line
+* draw stop loss line
+* draw take profit line
+* optionally connect them visually
+
+I want to visually inspect:
+
+* whether the setup worked
+* how long it took
+* how often SL vs TP gets hit
+
+====================================================
+IMPORTANT
+=========
+
+Do NOT limit signals to recent candles.
+
+Analyze the FULL loaded chart history.
+
+I want the chart to behave like:
+
+* a historical analysis engine
+* a signal replay engine
+* a strategy validation system
+
+not just a live signal panel.
+
+====================================================
+SIGNAL QUALITY CONTROL
+======================
+
+Reduce marker overlap.
+
+Right now multiple signals stack on top of each other visually.
+
+Implement:
+
+* deduplication
+* minimum spacing between same-side signals
+* signal clustering reduction
+
+Only show the highest-quality signal inside a local consolidation area.

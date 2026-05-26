@@ -8,7 +8,23 @@ import {
   GetSignalStatsResponse,
 } from "@workspace/api-zod";
 import { generateSignals } from "../lib/analyzer/signals";
+import { simulateLifecycle } from "../lib/analyzer/lifecycle";
 import { fetchHistory } from "./history";
+
+// Find the bar index whose time equals (or is closest to) the signal's barTime.
+// Signals carry epoch-seconds matching the bar grid, so an exact match is
+// expected in almost every case.
+function findBarIndex(bars: { time: number }[], targetSec: number): number {
+  // Binary search assumes bars are time-sorted ascending.
+  let lo = 0, hi = bars.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (bars[mid].time === targetSec) return mid;
+    if (bars[mid].time < targetSec) lo = mid + 1; else hi = mid - 1;
+  }
+  // Fall back to nearest if no exact match
+  return Math.max(0, Math.min(bars.length - 1, lo - 1));
+}
 
 const router: IRouter = Router();
 
@@ -51,6 +67,8 @@ router.get("/signals", async (req, res): Promise<void> => {
       if (bars.length >= 50) {
         const { signals } = generateSignals(bars, symbol, timeframe, htfBars);
         for (const sig of signals) {
+          const entryIdx  = findBarIndex(bars, sig.barTime);
+          const lifecycle = simulateLifecycle(bars, entryIdx, sig.side, sig.entryPrice, sig.slPrice, sig.tpPrice);
           try {
             await db.insert(signalsTable).values({
               signalId:       sig.id,
@@ -64,7 +82,10 @@ router.get("/signals", async (req, res): Promise<void> => {
               currentSlPrice: sig.slPrice,
               confidence:     sig.confidence,
               riskTag:        sig.riskLevel,
-              state:          "active",
+              state:          lifecycle.state,
+              exitPrice:      lifecycle.exitPrice ?? undefined,
+              exitReason:     lifecycle.exitReason ?? undefined,
+              exitBarTime:    lifecycle.exitBarTime ? new Date(lifecycle.exitBarTime * 1000) : undefined,
               rrRatio:        Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / (Math.abs(sig.entryPrice - sig.slPrice) || 0.001) * 100) / 100,
               pattern:        sig.patterns[0] ?? "analysis_engine",
               regime:         "trend_up",
@@ -116,7 +137,13 @@ router.post("/signals/regenerate", async (req, res): Promise<void> => {
 
     const { signals } = generateSignals(bars, symbol, timeframe, htfBars);
     let inserted = 0;
+    let tpHits   = 0;
+    let slHits   = 0;
+    let expired  = 0;
+    let active   = 0;
     for (const sig of signals) {
+      const entryIdx  = findBarIndex(bars, sig.barTime);
+      const lifecycle = simulateLifecycle(bars, entryIdx, sig.side, sig.entryPrice, sig.slPrice, sig.tpPrice);
       try {
         await db.insert(signalsTable).values({
           signalId:       sig.id,
@@ -130,15 +157,31 @@ router.post("/signals/regenerate", async (req, res): Promise<void> => {
           currentSlPrice: sig.slPrice,
           confidence:     sig.confidence,
           riskTag:        sig.riskLevel,
-          state:          "active",
+          state:          lifecycle.state,
+          exitPrice:      lifecycle.exitPrice ?? undefined,
+          exitReason:     lifecycle.exitReason ?? undefined,
+          exitBarTime:    lifecycle.exitBarTime ? new Date(lifecycle.exitBarTime * 1000) : undefined,
           rrRatio:        Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / (Math.abs(sig.entryPrice - sig.slPrice) || 0.001) * 100) / 100,
           pattern:        sig.patterns[0] ?? "analysis_engine",
           regime:         "trend_up",
         });
         inserted++;
+        if (lifecycle.state === "tp_hit")  tpHits++;
+        else if (lifecycle.state === "sl_hit") slHits++;
+        else if (lifecycle.state === "expired") expired++;
+        else active++;
       } catch { /* duplicate — skip */ }
     }
-    res.json({ ok: true, symbol, timeframe, bars: bars.length, htfBars: htfBars.length, inserted });
+    const closed = tpHits + slHits;
+    res.json({
+      ok: true, symbol, timeframe,
+      bars: bars.length, htfBars: htfBars.length,
+      inserted,
+      backtest: {
+        total: inserted, tp_hit: tpHits, sl_hit: slHits, expired, active,
+        winRate: closed > 0 ? Math.round((tpHits / closed) * 1000) / 10 : null,
+      },
+    });
   } catch (err) {
     req.log?.warn({ err, symbol, timeframe }, "regenerate failed");
     res.status(500).json({ error: "regenerate failed" });
