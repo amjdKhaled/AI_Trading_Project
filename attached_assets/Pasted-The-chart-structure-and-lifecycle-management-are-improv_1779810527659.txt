@@ -1,0 +1,125 @@
+The chart structure and lifecycle management are improving significantly.
+
+However, I noticed that many trades are still low quality and losing frequently.
+
+At this stage, I do NOT want machine learning or AI self-learning yet.
+
+Right now I want to improve the RULE-BASED TECHNICAL ENGINE itself first.
+
+====================================================
+CURRENT PRIORITY
+================
+
+Focus on improving:
+
+* technical analysis quality
+* signal logic
+* setup filtering
+* market context understanding
+* trade selection quality
+
+before introducing AI learning systems.
+
+====================================================
+GOAL
+====
+
+I want:
+
+* fewer trades
+* much higher quality trades
+* better win rate
+* more professional market reading
+
+The engine should behave like:
+
+* a disciplined professional trader
+* not a high-frequency signal spammer
+
+====================================================
+IMPROVE TECHNICAL ANALYSIS LOGIC
+================================
+
+Improve filtering for:
+
+* weak breakouts
+* late entries
+* overextended moves
+* low-volume setups
+* choppy market conditions
+* fake momentum
+* weak reversals
+* bad RR setups
+* exhausted trends
+
+====================================================
+IMPROVE TREND QUALITY DETECTION
+===============================
+
+Avoid entering:
+
+* after major exhaustion candles
+* after vertical moves
+* directly into resistance/support
+* during low-quality consolidation
+* during sideways noise
+
+====================================================
+IMPROVE MARKET STRUCTURE UNDERSTANDING
+======================================
+
+Prioritize:
+
+* clean BOS
+* strong trend continuation
+* healthy pullbacks
+* strong reclaim setups
+* clean momentum expansion
+
+Avoid:
+
+* messy structure
+* unclear direction
+* weak continuation
+
+====================================================
+BETTER ENTRY TIMING
+===================
+
+Improve entry precision.
+
+I want entries closer to:
+
+* pullbacks
+* confirmations
+* retests
+* momentum continuation
+
+NOT random mid-move entries.
+
+====================================================
+SMARTER TRADE FILTERING
+=======================
+
+The engine should reject more trades automatically.
+
+No forced trades.
+No mediocre setups.
+No weak confluence.
+
+Only high-conviction setups should appear.
+
+====================================================
+IMPORTANT
+=========
+
+Do NOT add AI learning yet.
+
+First:
+
+* strengthen the technical engine
+* improve win rate
+* improve setup quality
+* improve signal discipline
+
+Later we can build AI learning on top of a strong foundation.
