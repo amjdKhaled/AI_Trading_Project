@@ -1,0 +1,171 @@
+I want you to rebuild the realtime chart engine using a proper WebSocket-based architecture similar to how professional charting platforms work.
+
+The goal is:
+
+* realtime candles
+* realtime volume
+* realtime chart updates
+* TradingView-like behavior
+* AI analysis running continuously in the background
+
+====================================================
+MAIN GOAL
+=========
+
+I want the platform to behave similarly to TradingView:
+
+* smooth realtime updates
+* realtime candle movement
+* proper 5m and 15m candle aggregation
+* realtime volume updates
+* realtime signal generation
+
+====================================================
+WEBSOCKET REQUIREMENTS
+======================
+
+Implement a dedicated realtime WebSocket system for market data.
+
+Architecture:
+
+Market Data Provider
+↓
+WebSocket Server
+↓
+Chart Engine
+↓
+AI Analysis Engine
+↓
+Signal Overlay System
+
+====================================================
+REALTIME ENGINE
+===============
+
+Use WebSocket for:
+
+* live price updates
+* live candle updates
+* live volume updates
+* signal updates
+* chart synchronization
+
+Do NOT use aggressive polling anymore.
+
+====================================================
+CANDLE ENGINE
+=============
+
+Build candles using realtime streaming data.
+
+Focus ONLY on:
+
+* 5 minute candles
+* 15 minute candles
+
+Candles MUST align correctly:
+
+5m:
+00,05,10,15,20,25,30,35,40,45,50,55
+
+15m:
+00,15,30,45
+
+====================================================
+TRADINGVIEW-LIKE BEHAVIOR
+=========================
+
+I want the chart to visually and behaviorally feel similar to TradingView:
+
+* smooth updates
+* smooth scrolling
+* proper autoscaling
+* realtime candle movement
+* stable rendering
+* proper wick updates
+* proper volume synchronization
+
+====================================================
+AI ANALYSIS ENGINE
+==================
+
+The AI should continuously analyze:
+
+* all historical candles
+* realtime candles
+* volume
+* volatility
+* trend
+* momentum
+* candle patterns
+* support/resistance
+* breakouts
+* consolidations
+
+The AI runs in the background continuously.
+
+====================================================
+SIGNAL SYSTEM
+=============
+
+The AI should generate:
+
+* LONG signals
+* SHORT signals
+* EXIT signals
+* Stop Loss
+* Take Profit
+* Confidence %
+
+Signals should appear directly on the chart.
+
+====================================================
+HISTORICAL ANALYSIS
+===================
+
+The AI must analyze:
+
+* the entire chart history
+* not just visible candles
+* not just recent candles
+
+The engine should process:
+
+* years of historical candles
+* realtime candles
+* ongoing market structure
+
+====================================================
+PERFORMANCE
+===========
+
+The WebSocket system must:
+
+* reconnect automatically
+* prevent duplicate subscriptions
+* prevent stale candle corruption
+* prevent malformed candles
+* keep realtime updates stable
+
+====================================================
+FINAL GOAL
+==========
+
+I am NOT building a broker.
+
+This is a personal AI-powered trading analysis platform.
+
+The goal is:
+
+* AI analyzing charts continuously
+* realtime signals
+* professional chart behavior
+* TradingView-like experience
+* intelligent entry/exit analysis
+
+Focus on:
+
+* stability
+* realtime performance
+* proper candle aggregation
+* proper AI analysis pipeline
