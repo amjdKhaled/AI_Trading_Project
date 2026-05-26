@@ -56,17 +56,26 @@ function runPython(symbol: string, yf_interval: string, period: string, timeoutM
 }
 
 // ── fetchHistory — exported for signal seeding ────────────────────────────
-// Signals use real Alpaca intraday data for accurate analysis.
+// Uses the SAME in-process cache as the HTTP route so regenerate calls never
+// hit Polygon fresh when bars are already loaded in memory (avoids 429s).
 export async function fetchHistory(symbol: string, interval: string): Promise<unknown[]> {
-  if (INTRADAY_INTERVALS.has(interval)) {
-    // Polygon SIP intraday — consolidated OHLCV matching TradingView.
-    // Uses the same per-interval window as the /history route so signal
-    // seeding and chart display share an identical bar set.
-    return fetchPolygonBars(symbol, interval, INTRADAY_DAYS[interval] ?? 180).catch(() => []);
-  }
-  const config = DAILY_CONFIG[interval];
-  if (!config) return [];
-  return runPython(symbol, config.yf, config.period);
+  const sym = symbol.toUpperCase().trim();
+  const isIntraday = INTRADAY_INTERVALS.has(interval);
+  const dailyConf  = DAILY_CONFIG[interval];
+
+  if (!isIntraday && !dailyConf) return [];
+
+  const cacheKey = `${sym}:${interval}${isIntraday ? ":polygon-sip" : ""}`;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const cacheTtl = isIntraday ? 300_000 : dailyConf!.cacheTtl;
+  const bars = isIntraday
+    ? await fetchPolygonBars(sym, interval, INTRADAY_DAYS[interval] ?? 180)
+    : await runPython(sym, dailyConf!.yf, dailyConf!.period);
+
+  cache.set(cacheKey, { data: bars, expiresAt: Date.now() + cacheTtl });
+  return bars;
 }
 
 // ── HTTP route ────────────────────────────────────────────────────────────────

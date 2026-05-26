@@ -1,0 +1,137 @@
+The chart is cleaner now, but you removed too much important information.
+
+I do NOT want to remove trade lifecycle visualization completely.
+
+I still want:
+
+* exit markers
+* TP hits
+* SL hits
+* trade outcomes
+
+BUT:
+
+I want FAR FEWER signals.
+
+====================================================
+MAIN GOAL
+=========
+
+The engine should become:
+
+* highly selective
+* high probability
+* professional quality
+* low frequency
+* high confidence
+
+I want:
+
+* fewer trades
+* much stronger setups
+* cleaner chart
+* smarter entries
+
+NOT:
+
+* removal of important trade information
+
+====================================================
+KEEP TRADE OUTCOME VISUALIZATION
+================================
+
+I still want:
+
+* TP hit markers
+* SL hit markers
+* exit markers
+
+But make them:
+
+* smaller
+* cleaner
+* less visually noisy
+
+====================================================
+REMOVE ONLY THE VISUAL SPAM
+===========================
+
+The problem was:
+
+* too many weak signals
+* overlapping labels
+* too many low-quality entries
+
+NOT the existence of exits themselves.
+
+====================================================
+NEW SIGNAL FILTERING RULES
+==========================
+
+Only generate signals when there is STRONG confluence between:
+
+* market structure
+* trend alignment
+* VWAP
+* EMA alignment
+* volume confirmation
+* momentum
+* breakout quality
+* higher timeframe bias
+
+====================================================
+STRICTER SIGNAL FILTERS
+=======================
+
+Increase quality thresholds significantly.
+
+I want:
+
+* mostly A+ setups
+* some A setups
+* almost no B setups
+
+====================================================
+NO OVERTRADING
+==============
+
+Do not generate repeated BUY signals during the same bullish move.
+
+Do not generate repeated SELL signals during the same bearish move.
+
+Generate only:
+
+* the BEST setup
+* the CLEANEST entry
+* the HIGHEST probability signal
+
+inside each move.
+
+====================================================
+SMART TRADE MANAGEMENT
+======================
+
+Keep:
+
+* TP hit visualization
+* SL hit visualization
+* exit markers
+
+because I want to evaluate:
+
+* signal quality
+* profitability
+* AI decision quality
+
+====================================================
+IMPORTANT
+=========
+
+I want the chart to look like:
+
+* a professional institutional analysis system
+
+NOT:
+
+* a cluttered backtesting sandbox
+* and NOT an empty clean chart with no trade outcomes.

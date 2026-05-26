@@ -563,6 +563,13 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             const y0 = m.isLong ? m.y + mH + labelGap         : m.y - mH + labelGap;
             const y1 = m.isLong ? m.y + mH + labelGap + lineH : m.y - mH + labelGap - lineH;
 
+            // Exit outcome dot — only for TP/SL hits, never expired.
+            // No connector line; just a small circle with glyph at exit bar.
+            const showExit = (m.outcome === "tp_hit" || m.outcome === "sl_hit")
+              && m.exitX !== undefined && m.exitY !== undefined;
+            const exitCol  = m.outcome === "tp_hit" ? "#26a69a" : "#ef5350";
+            const exitGlyph = m.outcome === "tp_hit" ? "✓" : "✗";
+
             return (
               <g key={m.key}>
                 {/* Entry arrow */}
@@ -581,7 +588,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
                   fontWeight="800" opacity={0.95}>
                   {sideText}{grade ? ` ${grade}` : ""}
                 </text>
-                {/* Confidence % — only show for active trade to cut label density */}
+                {/* Confidence % — only show for active trade */}
                 {m.isActive && (
                   <text x={m.x} y={y1} textAnchor="middle" fill={col}
                     fontSize={9}
@@ -589,6 +596,28 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
                     fontWeight="600" opacity={0.85}>
                     {m.confidence}%
                   </text>
+                )}
+                {/* TP / SL outcome dot — small, clean, no connector line */}
+                {showExit && (
+                  <g>
+                    <circle
+                      cx={m.exitX!} cy={m.exitY!} r={5}
+                      fill={`${exitCol}18`}
+                      stroke={exitCol}
+                      strokeWidth={1}
+                      opacity={0.85}
+                    />
+                    <text
+                      x={m.exitX!} y={m.exitY! + 3.5}
+                      textAnchor="middle"
+                      fill={exitCol}
+                      fontSize={7}
+                      fontFamily="'JetBrains Mono',Menlo,monospace"
+                      fontWeight="900"
+                      opacity={0.9}>
+                      {exitGlyph}
+                    </text>
+                  </g>
                 )}
               </g>
             );

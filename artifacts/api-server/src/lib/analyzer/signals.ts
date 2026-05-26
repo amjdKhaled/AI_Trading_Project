@@ -310,9 +310,10 @@ export function generateSignals(
         htfI === "bull",
       ].filter(Boolean).length;
 
-      // Require 4+ confluence pillars + grade A minimum (score ≥ 88 = grade A).
-      // This is the institutional filter — only clear, multi-factor setups fire.
-      if (bullScore >= threshold && longConfirms >= 4 && bullScore >= 88) {
+      // Require 5+ confluence pillars + hard score floor of 92 (A-grade strong).
+      // Five independent confirmations from different analysis dimensions is the
+      // institutional bar — only the cleanest multi-factor setups pass.
+      if (bullScore >= threshold && longConfirms >= 5 && bullScore >= 92) {
         const slice    = bars.slice(Math.max(0, i - 14), i + 1);
         const swingLow = Math.min(...slice.map(b => b.low));
         const sl       = swingLow - atrI * 0.3;
@@ -431,8 +432,8 @@ export function generateSignals(
         htfI === "bear",
       ].filter(Boolean).length;
 
-      // Same institutional filter for shorts.
-      if (bearScore >= threshold && shortConfirms >= 4 && bearScore >= 88) {
+      // Same five-pillar institutional filter for shorts.
+      if (bearScore >= threshold && shortConfirms >= 5 && bearScore >= 92) {
         const slice     = bars.slice(Math.max(0, i - 14), i + 1);
         const swingHigh = Math.max(...slice.map(b => b.high));
         const sl        = swingHigh + atrI * 0.3;
@@ -476,11 +477,12 @@ export function generateSignals(
     }
   }
 
-  // ── Deduplication: wide gap = one best setup per impulse leg ─────────────
-  // 5m: 10 bars = 50 min; 15m: 6 bars = 90 min.
-  // Within any trending leg or consolidation, only the highest-score signal
-  // survives — this prevents marker pileups on the same move.
-  const minGapSec    = timeframe === "15m" ? 900 * 6 : 300 * 10;
+  // ── Deduplication: one best setup per session segment ────────────────────
+  // 5m: 24 bars = 120 min (2 hours); 15m: 8 bars = 120 min.
+  // This enforces at most one long and one short entry per major session
+  // segment (open / midday / power-hour), eliminating repeated signals
+  // during the same sustained move.
+  const minGapSec    = timeframe === "15m" ? 900 * 8 : 300 * 24;
   const sorted       = [...candidates].sort((a, b) => b.confidence - a.confidence);
   const usedByLong   = new Set<number>();
   const usedByShort  = new Set<number>();
