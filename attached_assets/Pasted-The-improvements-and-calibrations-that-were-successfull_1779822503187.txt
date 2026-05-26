@@ -1,0 +1,126 @@
+The improvements and calibrations that were successfully applied to TSLA and NVDA on the 5m timeframe must now be fully generalized across the entire engine architecture.
+
+Right now the 15m timeframe is NOT using the same upgraded logic consistently, and symbol behavior is inconsistent between assets.
+
+I want the engine architecture unified.
+
+Requirements:
+
+1. Apply ALL current engine improvements to BOTH:
+- 5m
+- 15m
+
+including:
+- regime detection
+- fake breakout rejection
+- liquidity sweep logic
+- EMA distance logic
+- RVOL filtering
+- adaptive scoring
+- ATR-based SL logic
+- one-trade lifecycle management
+- setup classification
+- active trade visualization
+- TP/SL lifecycle simulation
+- confidence scoring
+- confluence system
+- continuation filters
+- exhaustion detection
+- pullback precision logic
+- vertical move analysis
+- HTF alignment logic
+
+The 15m engine should behave with the SAME intelligence and architecture quality as the 5m engine.
+
+2. Generalize the engine to ALL symbols
+
+Do NOT tune the engine only for TSLA and NVDA.
+
+The system must become symbol-agnostic and scalable.
+
+The engine should dynamically adapt per symbol using:
+- volatility profile
+- ATR behavior
+- average candle expansion
+- momentum persistence
+- average pullback depth
+- trend continuation probability
+- liquidity sweep frequency
+- fake breakout frequency
+
+The engine should automatically classify symbols into behavior types, for example:
+- high momentum
+- mean reverting
+- trend persistent
+- highly volatile
+- choppy
+
+and adapt thresholds accordingly.
+
+3. Dynamic per-symbol calibration
+
+Hardcoded universal thresholds are causing problems.
+
+Instead:
+- derive thresholds statistically from each symbol’s historical behavior.
+
+Examples:
+- TSLA can tolerate larger EMA extension.
+- NVDA requires stricter trend confirmation.
+- Slow symbols should reject weak volume spikes differently.
+
+4. Multi-timeframe consistency
+
+5m and 15m signals must not contradict each other aggressively.
+
+Examples:
+- If 15m structure is strongly bearish,
+  5m longs should require exceptional confirmation.
+- If 15m is strongly bullish,
+  5m pullback continuations should be favored.
+
+5. Shared engine core
+
+Refactor the architecture so there is:
+- one unified analysis core
+- timeframe-specific adapters
+- symbol-specific calibration layer
+
+instead of separate inconsistent logic paths.
+
+6. Backtesting + analytics
+
+Expand the analytics system to track:
+- win rate per timeframe
+- win rate per setup type
+- expectancy per setup type
+- best performing symbols
+- worst performing symbols
+- best market regime
+- worst market regime
+- average hold time
+- TP vs SL distribution
+
+7. Important goal
+
+I do NOT want:
+- a hyper-restrictive engine
+- or a spam-signal engine
+
+I want:
+- balanced intelligent signal generation
+- adaptive behavior
+- scalable architecture
+- professional-quality intraday analysis
+
+The engine should feel:
+- dynamic
+- context aware
+- adaptive
+- regime aware
+- symbol aware
+
+instead of static rule-based filtering.
+
+Goal:
+Create a professional multi-symbol, multi-timeframe intraday trading intelligence engine that scales beyond TSLA/NVDA and performs consistently across different market conditions.
