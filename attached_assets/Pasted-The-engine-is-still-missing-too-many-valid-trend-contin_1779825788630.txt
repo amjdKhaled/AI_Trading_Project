@@ -1,0 +1,150 @@
+The engine is still missing too many valid trend continuation opportunities.
+
+The problem is no longer low-quality spam signals.
+
+The problem now is insufficient trend participation.
+
+From the chart behavior:
+- the engine waits too long
+- enters too late
+- misses clean continuation structures
+- under-trades strong trends
+- behaves too defensively during directional expansion
+
+I want the engine to become significantly better at TREND PARTICIPATION.
+
+Main objective:
+Capture more of the move while maintaining intelligent filtering.
+
+Implement the following:
+
+1. Build dedicated trend continuation logic
+
+The engine should actively search for:
+- higher low continuation
+- EMA20 pullback continuation
+- EMA reclaim continuation
+- breakout continuation
+- consolidation continuation
+- bull flag / bear flag continuation
+- momentum compression expansion
+- liquidity sweep continuation
+
+These setups should become a MAJOR priority.
+
+2. Re-entry logic
+Currently the engine behaves as:
+- one entry only
+- then waits too long
+
+I want intelligent re-entry capability.
+
+If:
+- previous trade already closed
+- trend structure still intact
+- momentum still healthy
+- EMA structure still aligned
+
+then:
+allow continuation re-entry.
+
+3. Trend mode behavior
+When market regime is:
+- trending-up
+or
+- trending-down
+
+the engine should become MORE aggressive.
+
+Meaning:
+- lower thresholds
+- fewer confirmations required
+- more continuation participation
+- faster pullback entries
+
+4. Pullback intelligence
+The engine currently treats many pullbacks as dangerous.
+
+Instead:
+recognize healthy pullbacks:
+- shallow retracement
+- controlled volume
+- EMA respect
+- higher low formation
+- compression before continuation
+
+These should score HIGHLY.
+
+5. Stop fearing momentum
+The engine still over-penalizes:
+- strong candles
+- momentum expansion
+- RSI strength
+
+Strong trends naturally produce:
+- high RSI
+- large candles
+- momentum expansion
+
+This is NOT automatically exhaustion.
+
+Differentiate between:
+- healthy momentum continuation
+vs
+- climax exhaustion
+
+using:
+- volume behavior
+- candle follow-through
+- structure integrity
+- pullback quality
+
+6. Add trend persistence scoring
+Create a trend persistence model:
+
+Measure:
+- HH/HL consistency
+- EMA slope
+- trend duration
+- pullback depth
+- continuation success frequency
+
+If trend persistence is high:
+allow more continuation entries.
+
+7. Add continuation confidence boosts
+Boost scoring for:
+- EMA bounce continuation
+- breakout retest continuation
+- compression breakout continuation
+- liquidity reclaim continuation
+
+These should often outperform reversal trades.
+
+8. Avoid over-defensive behavior
+The engine should behave like:
+- an active momentum trader
+NOT:
+- an ultra-conservative sniper bot
+
+I want:
+- intelligent participation
+- adaptive aggression
+- momentum engagement
+- trend riding
+
+9. Important balance
+Do NOT return to spam signals.
+
+The goal is:
+MORE high-quality continuation setups,
+NOT random entries.
+
+10. Final desired behavior
+The engine should:
+- enter trends earlier
+- re-enter trends intelligently
+- ride momentum longer
+- participate in continuation structures
+- capture more of directional moves
+without sacrificing market structure awareness.

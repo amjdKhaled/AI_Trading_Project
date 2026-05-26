@@ -85,6 +85,40 @@ function efficiencyRatio(bars: OhlcvBar[], idx: number, n = 20): number {
 //   bull    → close > e20 > e50 > e200
 //   bear    → close < e20 < e50 < e200
 //   neutral → mixed
+// ── Daily bias lookup (macro trend filter) ────────────────────────────────
+// Determines whether the DAILY trend is bullish, bearish, or neutral at any
+// given intraday timestamp. Uses EMA20 > EMA50 (price above both) for bull,
+// EMA20 < EMA50 (price below both) for bear. Subtracted 4 h from tSec to
+// avoid lookahead — daily bars close at 4pm ET; the daily bar for "today"
+// should not influence signals fired at 9:30am of that same day.
+function buildDailyBiasLookup(dailyBars: OhlcvBar[]): (tSec: number) => "bull" | "bear" | "neutral" {
+  if (dailyBars.length === 0) return () => "neutral";
+  const closes = dailyBars.map(b => b.close);
+  const e20    = emaArray(closes, 20);
+  const e50    = emaArray(closes, 50);
+  const bias: ("bull" | "bear" | "neutral")[] = dailyBars.map((_, i) => {
+    const c = closes[i];
+    if (c > e20[i] && e20[i] > e50[i]) return "bull";
+    if (c < e20[i] && e20[i] < e50[i]) return "bear";
+    return "neutral";
+  });
+  return (tSec: number) => {
+    // yfinance daily bars are timestamped at midnight ET (04:00 UTC summer / 05:00 UTC winter).
+    // Subtracting 17 h pushes the earliest intraday bar (9:30 ET = 13:30 UTC) to 20:30 UTC
+    // the PREVIOUS calendar day, safely below the 04:00 UTC bar boundary.
+    // The latest intraday bar (4pm ET = 20:00 UTC) becomes 03:00 UTC — also before today's bar.
+    // This guarantees we always use yesterday's confirmed close with zero lookahead.
+    const lookupTs = tSec - 61_200; // 17 h → previous day's confirmed daily close
+    let lo = 0, hi = dailyBars.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (dailyBars[mid].time <= lookupTs) { ans = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    return ans >= 0 ? bias[ans] : "neutral";
+  };
+}
+
 function buildHtfBiasLookup(htfBars: OhlcvBar[]): (tSec: number) => "bull" | "bear" | "neutral" {
   if (htfBars.length === 0) return () => "neutral";
   const closes = htfBars.map(b => b.close);
@@ -161,8 +195,8 @@ const DEFAULT_PROFILE: SymbolProfile = { slAtrMult: 1.0, momentumBonus: 0, pullb
 function scoreThreshold(regime: Regime, session: Session): number {
   let t = 91;                                       // base calibrated for momentum participation
   if      (regime === "trending-up" ||
-           regime === "trending-down")  t -= 4;    // 87: trend regime — aggressive momentum entry
-  else if (regime === "vol-expansion")  t -= 8;    // 83: breakout regime — enter early
+           regime === "trending-down")  t -= 7;    // 84: trend regime — active momentum participation
+  else if (regime === "vol-expansion")  t -= 9;    // 82: breakout regime — enter early
   else if (regime === "ranging")        t += 2;    // 93: sideways — require clear structure
   else if (regime === "chop")           t += 6;    // 97: directionless — very selective
   if (session === "midday")             t += 4;    // lunch chop — raise bar (but not as much)
@@ -193,6 +227,10 @@ export function generateSignals(
   /** Higher-timeframe bars for multi-timeframe confirmation (e.g. 15m bars
    *  when generating 5m signals). Pass empty array or omit to disable HTF bias. */
   htfBars: OhlcvBar[] = [],
+  /** Daily bars for macro trend filter. When the daily trend opposes the intraday
+   *  direction the signal receives a heavy penalty — this addresses bear-rally longs
+   *  and bull-pullback shorts that look valid on 5m/15m but fail at the macro level. */
+  dailyBars: OhlcvBar[] = [],
 ): { signals: TradingSignal[]; candidates: SignalCandidate[] } {
 
   if (bars.length < 80) return { signals: [], candidates: [] };
@@ -208,7 +246,8 @@ export function generateSignals(
   // ── New analyzers ────────────────────────────────────────────────────
   const vwap    = vwapArray(bars);
   const regimes = classifyRegimes(bars, ema20, ema50, ema200, atrValues);
-  const htfBias = buildHtfBiasLookup(htfBars);
+  const htfBias   = buildHtfBiasLookup(htfBars);
+  const dailyBias = buildDailyBiasLookup(dailyBars);
   const profile  = SYMBOL_PROFILES[symbol] ?? DEFAULT_PROFILE;
 
   const candidates: SignalCandidate[] = [];
@@ -233,6 +272,7 @@ export function generateSignals(
     const regimeI   = regimes[i];
     const sessionI  = sessionFor(bar.time);
     const htfI      = htfBias(bar.time);
+    const dayBiasI  = dailyBias(bar.time);
 
     // Skip bars with negligible range (illiquid / blended daily artefacts)
     const atrPct = atrI / (bar.close || 1);
@@ -314,6 +354,30 @@ export function generateSignals(
     const vol    = analyzeVolume(bars, i);
     const consol = detectConsolidation(bars, i);
     const pa     = detectBreakoutRetest(bars, i);
+
+    // ── Trend persistence model ───────────────────────────────────────────
+    // Count consecutive Higher-High + Higher-Low pairs in last 8 bars.
+    // A persistent trend has a clear staircase structure; the engine should
+    // be MORE aggressive (fewer hesitations) when that structure is intact.
+    let hhhlCount = 0;
+    for (let j = Math.max(1, i - 7); j < i; j++) {
+      const cur = bars[j], prv = bars[j - 1];
+      if (cur.high > prv.high && cur.low > prv.low) hhhlCount++;
+    }
+    const trendPersistence  = hhhlCount; // 0–7
+    const persistenceBonus  = trendPersistence >= 4 ? 12
+                            : trendPersistence >= 3 ?  8
+                            : trendPersistence >= 2 ?  4 : 0;
+
+    // ── Bull / Bear flag continuation ─────────────────────────────────────
+    // Strong prior move (last 4 bars > 1% directional) followed by tight
+    // consolidation (contracting range) and a breakout close — classic flag.
+    const priorClose4   = bars[Math.max(0, i - 4)]?.close ?? bar.close;
+    const priorMovePct  = (bar.close - priorClose4) / (priorClose4 || bar.close);
+    const bullFlagCont  = strongUptrend   && priorMovePct >  0.005
+                        && consol.contracting && bar.close > bar.open && bar.close > e20i;
+    const bearFlagCont  = strongDowntrend && priorMovePct < -0.005
+                        && consol.contracting && bar.close < bar.open && bar.close < e20i;
 
     // ── Overextension / bar quality (pre-filter, applies to both sides) ──────
     // 1. Vertical move: last 5 bars moved >2.5×ATR in one direction. Entering
@@ -397,6 +461,12 @@ export function generateSignals(
       let bullScore = 0;
       const reasons: string[] = [];
 
+      // Daily bias is tracked in metadata (dayBiasI) but no score penalty is applied here.
+      // Symmetric daily-trend penalties were tested and found counterproductive:
+      // TSLA intraday shorts work well even in a daily bull phase (intraday mean-reversion),
+      // and penalizing them removes the profitable edge. Future directional filtering
+      // should be applied only after per-regime win-rate evidence is collected.
+
       bullP.forEach(p => { bullScore += p.confidence * 0.30; });
 
       if      (strongUptrend)  { bullScore += atrStr > 40 ? 26 : 16; }
@@ -408,6 +478,12 @@ export function generateSignals(
       if (pullbackLong && ema20Dist < 0.005) bullScore += 8; // textbook EMA20 touch = precision bonus
       if (emaReclaimBull)    { bullScore += 18; reasons.push("EMA Reclaim"); }
       if (higherLowBull)       bullScore += 10; // trend staircase structure
+      if (bullFlagCont)      { bullScore += 16; reasons.push("Bull Flag"); }
+      // Trend persistence: more bonus when structure is clean and consistent
+      if (persistenceBonus > 0 && strongUptrend) {
+        bullScore += persistenceBonus;
+        if (persistenceBonus >= 12) reasons.push("Trend Persistence");
+      }
 
       // ── Advanced quality factors ────────────────────────────────────────
       // Liquidity sweep: genuine stop hunt with ATR-scaled breach + recovery.
@@ -483,10 +559,13 @@ export function generateSignals(
       if (vol.distribution)                    bullScore -= 8;
       if (vol.climax && bar.close > bar.open)  bullScore -= 10;
       // Overextension / late entry penalties
-      // Volume-qualified vertical: high-volume vertical = institutional momentum (small penalty).
-      // Low-volume vertical = exhaustion chasing (larger penalty).
-      if (isVertBull)       bullScore -= (vol.rvol > 1.5 ? 8 : 22);
-      if (farAboveEma)      bullScore -= 18; // ATR-relative overextension (2.2× ATR in trend, 1.4× in range)
+      // Vertical move penalty is WAIVED when a valid continuation pattern is present
+      // (pullback near EMA, EMA reclaim, higher low, flag) — those ARE valid entries
+      // inside a strong momentum move. Only penalize raw "chasing" with no structure.
+      const hasContinuationPattern = pullbackLong || emaReclaimBull || higherLowBull || bullFlagCont;
+      if (isVertBull && !hasContinuationPattern) bullScore -= (vol.rvol > 1.5 ? 8 : 22);
+      if (isVertBull &&  hasContinuationPattern) bullScore -= 4; // tiny friction on continuation in spike
+      if (farAboveEma)      bullScore -= 18; // ATR-relative overextension
       if (isDoji)           bullScore -= 12; // indecisive bar = bad signal bar
       if (fakeBreakoutBull) bullScore -= 20; // breakout bar closed weak — bears pushed back
       // RVOL soft penalty: proportional for bars between hard skip (0.55) and healthy (0.80)
@@ -519,7 +598,7 @@ export function generateSignals(
       // Adaptive confluence gate: minPillars is regime-dependent (4 in trend, 6 in chop).
       // Score threshold is also regime-dependent — no separate hardcoded 97 floor.
       const hasLongStrategy = pullbackLong || vwapReclaim || emaReclaimBull || higherLowBull
-        || pa?.bullish === true || (consol.contracting && bullEmaAlign)
+        || bullFlagCont || pa?.bullish === true || (consol.contracting && bullEmaAlign)
         || (strongUptrend && (vol.accumulation || vol.breakoutVol))
         || (bullEmaAlign && structBull && macdBull);
 
@@ -596,6 +675,8 @@ export function generateSignals(
       let bearScore = 0;
       const reasons: string[] = [];
 
+      // No daily-bias score penalty here — see long-block comment above.
+
       bearP.forEach(p => { bearScore += p.confidence * 0.30; });
 
       if      (strongDowntrend) { bearScore += atrStr > 40 ? 26 : 16; }
@@ -607,6 +688,12 @@ export function generateSignals(
       if (pullbackShort && ema20Dist < 0.005) bearScore += 8; // textbook EMA20 touch = precision bonus
       if (emaRejectionBear)  { bearScore += 18; reasons.push("EMA Rejection"); }
       if (lowerHighBear)       bearScore += 10; // trend staircase structure
+      if (bearFlagCont)      { bearScore += 16; reasons.push("Bear Flag"); }
+      // Trend persistence: HH/HL count (inversely used for bear — falling staircase)
+      if (persistenceBonus > 0 && strongDowntrend) {
+        bearScore += persistenceBonus;
+        if (persistenceBonus >= 12) reasons.push("Trend Persistence");
+      }
 
       // ── Advanced quality factors ────────────────────────────────────────
       if (sweepBear)                       bearScore += 8;  // stop hunt then rejection — supplemental bonus
@@ -675,8 +762,10 @@ export function generateSignals(
       if (vol.accumulation)                    bearScore -= 8;
       if (vol.climax && bar.close < bar.open)  bearScore -= 10;
       // Overextension / late entry penalties
-      // Volume-qualified vertical: high-volume = institutional momentum (small penalty).
-      if (isVertBear)       bearScore -= (vol.rvol > 1.5 ? 8 : 22);
+      // Vertical move penalty waived when a valid short continuation pattern is present.
+      const hasBearContinuation = pullbackShort || emaRejectionBear || lowerHighBear || bearFlagCont;
+      if (isVertBear && !hasBearContinuation) bearScore -= (vol.rvol > 1.5 ? 8 : 22);
+      if (isVertBear &&  hasBearContinuation) bearScore -= 4; // tiny friction only
       if (farBelowEma)      bearScore -= 18; // ATR-relative overextension
       if (isDoji)           bearScore -= 12; // indecisive bar = bad signal bar
       if (fakeBreakoutBear) bearScore -= 20; // breakdown bar closed strong — bulls pushed back
@@ -708,7 +797,7 @@ export function generateSignals(
 
       // Adaptive confluence gate: regime-dependent pillars and threshold.
       const hasShortStrategy = pullbackShort || vwapRejection || emaRejectionBear || lowerHighBear
-        || (pa !== null && !pa.bullish) || (consol.contracting && bearEmaAlign)
+        || bearFlagCont || (pa !== null && !pa.bullish) || (consol.contracting && bearEmaAlign)
         || (strongDowntrend && (vol.distribution || vol.breakoutVol))
         || (bearEmaAlign && structBear && macdBear);
 
@@ -775,13 +864,12 @@ export function generateSignals(
     }
   }
 
-  // ── Deduplication: one best setup per 60-min window (per side) ──────────
-  // 5m: 12 bars = 60 min; 15m: 4 bars = 60 min.
-  // 60 min (vs old 120 min) allows roughly 2× more signals per session
-  // while still selecting only the best setup in each meaningful time window.
-  // Re-entry after TP is enabled through the sequential filter: after any
-  // trade closes, the next deduped candidate fires immediately.
-  const minGapSec    = timeframe === "15m" ? 900 * 4 : 300 * 12;
+  // ── Deduplication: one best setup per 45-min window (per side) ──────────
+  // 5m: 9 bars = 45 min; 15m: 3 bars = 45 min.
+  // 45-min windows allow faster re-entry after TP while still preventing
+  // micro-spam within the same momentum burst. Quality control is maintained
+  // by the score gate (84 in trending) and the sequential filter.
+  const minGapSec    = timeframe === "15m" ? 900 * 3 : 300 * 9;
   const sorted       = [...candidates].sort((a, b) => b.confidence - a.confidence);
   const usedByLong   = new Set<number>();
   const usedByShort  = new Set<number>();

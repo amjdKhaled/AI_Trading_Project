@@ -87,11 +87,20 @@ QQQ:  { slAtrMult: 0.9, momentumBonus: 0, pullbackAtrTol: 0.35 }
 | Strict (97/6/RSI-cap/RVOL-0.80/120min) | 19 | 36.8% | 24 | 25% | Positive EV |
 | v1 balanced (90/5/RVOL-0.55/60min) | 44 | 25% | 54 | 24% | Negative EV |
 | v3 aggressive-smart (87/4/ATR-rel/60min) | 35 | 28.6% | 46 | 20.5% | TSLA ≈ breakeven |
+| v3 + dedup/session tuning (current) | 41 | 29.3% | 43 | 19.5% | TSLA +EV shorts, NVDA −EV |
 
 ## Key structural finding (confirmed across all versions)
-TSLA/NVDA macro downtrend during backtest dominates ALL results.
-- TSLA shorts: consistently 37–42% WR (above breakeven)
-- TSLA longs: consistently 19–23% WR (below breakeven)
-- NVDA: all versions negative or barely-breakeven EV
-- Fix: daily bias filter (only take longs in bullish daily trend)
-- Recommended: add SPY/QQQ to get less directionally-biased backtest signal
+- TSLA shorts: consistently 37–42% WR (above breakeven, positive EV)
+- TSLA longs: consistently 6–23% WR (below breakeven) — persists regardless of intraday setup quality
+- NVDA: consistently negative or barely-breakeven EV
+- The current 180-day backtest window (approx Dec 2025 – May 2026) covers a TSLA bull phase
+- NVDA htfBars=0 in most regenerations due to Polygon rate limit hitting after TSLA 15m fetch
+  → when htfBars load for NVDA (53 signals, 24% WR), results are meaningfully better
+
+## Daily bias filter — tested and reverted
+See `daily-bias-filter-lessons.md` for full details.
+Short summary: symmetric ±30 penalty tested with both 4h and 17h timestamp offsets.
+4h offset = full lookahead (wrong). 17h offset = correct (previous day's close).
+Even with correct offset, penalties hurt performance because TSLA daily is BULL in current window
+→ short penalty eliminates profitable intraday mean-reversion shorts.
+Infrastructure kept in code (`buildDailyBiasLookup`, `dayBiasI`) but no penalties applied.

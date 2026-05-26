@@ -1,6 +1,8 @@
 - [Live candle architecture](live-candle-architecture.md) — server is pure price relay; client's CandleStateManager is sole writer to candleSeries.update().
 - [Candle rendering precision](candle-rendering-precision.md) — priceFormat minMove + autoscaleInfoProvider stop consolidation bars from collapsing to dashes in lightweight-charts.
 - [Polygon.io data source](polygon-data-source.md) — SIP intraday from Polygon (matches TradingView). Free-tier: 5 req/min, paginated, no WS — design backoff + cap windows + capability broadcast.
+- [Daily bias filter lessons](daily-bias-filter-lessons.md) — 17h offset required for yfinance midnight-ET timestamps; symmetric penalties tested and reverted; daily filter infrastructure kept but inactive.
+- [Engine scoring calibration](engine-scoring-calibration.md) — all thresholds, backtest baselines, and daily-filter test results for aggressive-smart v3.
 - [Sequential trade filter](sequential-trade-filter.md) — one-active-trade rule lives as a post-dedup pass in signals.ts; Polygon fetch timeout must be 55 s+ for cold-cache regenerate.
 - [Engine scoring calibration](engine-scoring-calibration.md) — all current thresholds, hard gates, bonus/penalty values for balanced-aggressive engine; backtest WR table included.
 - [WR measurement limits](wr-measurement-limits.md) — n<50 signals gives ±15–20% CI; never tune engine based on WR comparisons below n=100.

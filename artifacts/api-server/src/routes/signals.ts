@@ -133,14 +133,19 @@ router.post("/signals/regenerate", async (req, res): Promise<void> => {
     }
 
     let htfBars: import("../lib/analyzer/types").OhlcvBar[] = [];
+    let dailyBars: import("../lib/analyzer/types").OhlcvBar[] = [];
     if (timeframe === "5m") {
       try {
         const htf = await fetchHistory(symbol, "15m");
         htfBars = htf as import("../lib/analyzer/types").OhlcvBar[];
       } catch { /* HTF optional */ }
+      try {
+        const daily = await fetchHistory(symbol, "1d");
+        dailyBars = daily as import("../lib/analyzer/types").OhlcvBar[];
+      } catch { /* daily optional — filter simply disabled if unavailable */ }
     }
 
-    const { signals } = generateSignals(bars, symbol, timeframe, htfBars);
+    const { signals } = generateSignals(bars, symbol, timeframe, htfBars, dailyBars);
     let inserted = 0;
     let tpHits   = 0;
     let slHits   = 0;
