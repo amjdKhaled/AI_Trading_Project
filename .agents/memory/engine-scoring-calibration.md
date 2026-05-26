@@ -1,71 +1,90 @@
 ---
 name: Engine scoring calibration
-description: Current hard gates, bonus/penalty values, and calibrated thresholds in signals.ts.
+description: Current hard gates, bonus/penalty values, and calibrated thresholds in signals.ts — balanced-aggressive version.
 ---
 
-# Engine Scoring Calibration (current state)
+# Engine Scoring Calibration (balanced-aggressive, current state)
 
-## Hard gates (cause `continue` or signal rejection before scoring)
+## Hard gates (cause `continue` before scoring)
 - `atrPct < 0.0005` → skip bar (illiquid / blended daily artefact)
 - `efI < 0.12` → skip bar (ER hard skip — extreme chop only)
-- `vol.rvol < 0.80` → skip bar (below 80% of 20-bar average volume = no conviction)
-- `rsiI > 75` → skip **LONG** analysis (overbought; hard cap — −28 penalty alone insufficient on high-scoring bars)
-- `rsiI < 25` → skip **SHORT** analysis (oversold; hard cap — same reason)
-- `longRawRisk > atrI * 1.8` → reject long (SL too wide → TP too far → low probability)
+- `vol.rvol < 0.55` → skip bar (hard reject — essentially no participation)
+- `longRawRisk > atrI * 1.8 * profile.slAtrMult` → reject long (SL too wide)
 
 ## Long analysis entry gate (all must be true)
-- `!strongDowntrend && htfI !== "bear" && rsiI <= 75`
+- `!strongDowntrend && htfI !== "bear"` (RSI cap removed — handled via adaptive scoring)
 
 ## Signal acceptance gate (inside long block)
-- `bullScore >= threshold` (regime-/session-adjusted floor)
-- `longConfirms >= 6` (6 of 10 independent pillar confirmations)
-- `bullScore >= 97` (hard score floor)
-- `hasLongStrategy` (at least one identifiable institutional trigger)
-- `!longBadRR` (raw risk ≤ 1.8 ATR)
+- `bullScore >= threshold` (regime-/session-adjusted, no separate hardcoded floor)
+- `longConfirms >= minPillars` (regime-adaptive: 5 trending, 6 chop)
+- `hasLongStrategy` (at least one identifiable entry trigger)
+- `!longBadRR` (raw risk ≤ 1.8 ATR × profile.slAtrMult)
 
-## Score bonuses (long side; short is symmetric)
-| Condition | Points |
+## Regime-adaptive thresholds (scoreThreshold function)
+| Regime | Base | Session adjustments |
+|---|---|---|
+| trending-up/down | 90 | open -3, midday +5, power-hour -2 |
+| vol-expansion | 86 | same |
+| ranging | 93 | same |
+| chop | 97 | same |
+
+## Adaptive confluence pillars (minConfluencePillars function)
+| Regime | Min Pillars |
 |---|---|
-| strongUptrend + atrStr > 40 | +26 |
-| pullbackLong | +24 |
-| pullbackLong + EMA20 distance < 0.5% | +8 (precision bonus) |
-| vol.accumulation | +14 |
-| pa.bullish | +14 |
-| vwapReclaim | +14 |
-| structBull | +10 |
-| macdAccBull | +10 |
-| htfI === "bull" | +12 (via pillar count + reasons) |
-| sweepBull | +8 (supplemental only — not a gate trigger) |
-| cleanER (efI > 0.50) | +8 |
-| pullbackLong + pullbackVolOk | +7 |
-| RSI 38–56 | +12 |
-| regimeI === "trending-up" | +8 |
+| trending-up/down | 5 |
+| vol-expansion | 4 |
+| ranging | 5 |
+| chop | 6 |
 
-## Key score penalties (long side)
-| Condition | Points |
-|---|---|
-| isExhBull | −28 |
-| RSI ≥ 70 | −28 |
-| RSI 63–70 | −14 |
-| isVertBull (5-bar spike >2.5 ATR) | −30 |
-| farAboveEma (>1.5% above EMA20) | −18 (tightened from 1.8%) |
-| bearEmaAlign | −15 |
-| fakeBreakoutBull | −20 |
-| isDoji | −12 |
-| belowVwap | −6 |
-| weakER (efI < 0.17) | −6 |
-| pullbackLong + !pullbackVolOk | −5 |
+## Deduplication gap
+- 5m timeframe: 12 bars = 60 min (was 24 bars = 120 min)
+- 15m timeframe: 4 bars = 60 min
+- 60 min allows ~2× more signals vs old strict settings; re-entry after TP enabled via sequential filter
 
-## Calibrated thresholds (do not tune without n ≥ 100 samples)
-- RVOL floor: 0.80 (raised from 0.75)
-- EMA20 distance max: 1.5% (tightened from 1.8%)
-- RSI long cap: 75 (hard gate — not just penalty)
-- RSI short floor: 25 (hard gate)
-- ER hard skip: 0.12
-- SL ATR buffer: 0.25 ATR below swing low
-- SL max width: 1.8 ATR
-- Score floor: 97
-- Pillars required: 6 of 10
-- Dedup gap: 7200 sec (120 min) per side — do NOT reduce; sequential filter is the real enforcer
+## RVOL handling
+- Hard skip: < 0.55 (was 0.80)
+- Soft penalty: below 0.80: `score -= (0.80 - rvol) * 35` (proportional)
 
-**Why:** TSLA backtest 36.8% WR with n=19 at these thresholds. NVDA 16.7% WR is a macro-trend conflict issue (see nvda-macro-conflict.md), not a threshold issue.
+## RSI handling (trend-aware, NO hard cap)
+- `momentumLong = strongUptrend && (accumulation || breakoutVol || rvol > 1.5)`
+- If momentumLong: RSI 40-72 = +12, 72-82 = +4, 82-90 = -8, >90 = -18 (continuation mode)
+- Normal: RSI 38-56 = +12, 63-70 = -14, ≥70 = -28 (original discipline)
+
+## EMA distance (regime-aware, not ATR-relative)
+- `emaDistLim = (strongUptrend || strongDowntrend) ? 0.025 : 0.015`
+- 2.5% in strong trends (was fixed 1.5%) — allows wider momentum extension
+
+## Vertical move penalty (volume-qualified)
+- `if (isVertBull) bullScore -= (vol.rvol > 1.5 ? 8 : 22)`
+- High-volume verticals = institutional continuation (small penalty only)
+
+## Pullback detection
+- `pbTol = 1.003 + profile.pullbackAtrTol * 0.002`
+- TSLA: ~0.39% above EMA20, NVDA: ~0.42% (slightly wider for higher-vol)
+
+## Symbol profiles
+```ts
+TSLA: { slAtrMult: 1.0, momentumBonus: 0, pullbackAtrTol: 0.45 }
+NVDA: { slAtrMult: 1.1, momentumBonus: 5, pullbackAtrTol: 0.60 }
+SPY:  { slAtrMult: 0.9, momentumBonus: 0, pullbackAtrTol: 0.35 }
+QQQ:  { slAtrMult: 0.9, momentumBonus: 0, pullbackAtrTol: 0.35 }
+```
+
+## Backtest results (balanced-aggressive settings, 6-month period)
+| Symbol | Signals | WR | Notes |
+|---|---|---|---|
+| TSLA | 44 | 25% | shorts 30% A+ WR, longs 20% |
+| NVDA | 54 | 24% | macro downtrend conflict |
+
+## Critical calibration finding
+Both TSLA and NVDA spent much of the backtest period in macro downtrends.
+- Shorts (A+): 30% WR → ABOVE breakeven at 2.5R
+- Longs (A+): 20% WR → BELOW breakeven
+- Long A+ in trending-up/regular session: 0% WR (n=6) — bear rallies, not uptrends
+
+**Root cause**: No daily/weekly trend filter. The daily trend filter is the single most
+impactful improvement remaining (see nvda-macro-conflict.md).
+
+**Recommendation**: Forward-test at these settings. Backtest n<50 has ±15% WR CI;
+cannot meaningfully differentiate settings within that range. Add SPY/QQQ (less
+directional bias) to see higher signal quality.

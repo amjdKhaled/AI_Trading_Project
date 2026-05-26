@@ -1,0 +1,112 @@
+The engine became over-filtered and is now missing too many high-quality momentum opportunities, especially on volatile Nasdaq stocks like TSLA and NVDA.
+
+I do NOT want an ultra-defensive institutional engine with very low trade frequency.
+
+I want a balanced high-performance intraday engine that:
+- captures strong momentum moves
+- keeps reasonable trade frequency
+- maintains positive expectancy
+- adapts dynamically instead of hard-blocking trades
+
+Current issue:
+The combination of:
+- score floor 97
+- 6 confluence pillars
+- hard RSI blocks
+- RVOL hard skip
+- strict EMA distance
+- one-trade rule
+has reduced opportunity flow too aggressively.
+
+Main objective now:
+Increase opportunity capture WITHOUT returning to low-quality spam signals.
+
+Implement these changes:
+
+1. Replace hard filters with adaptive scoring
+- Do NOT hard reject RSI >75 or <25.
+- Instead apply dynamic penalties based on trend strength and volatility.
+- Strong trend + strong volume should override RSI exhaustion.
+
+2. Dynamic score threshold
+- Trending regime:
+  allow lower score threshold (88–92)
+- Choppy/range regime:
+  require higher threshold (95–98)
+
+3. Adaptive confluence requirement
+- Strong trend regime:
+  allow 4–5 pillars
+- Chop/range:
+  require 6+
+
+4. Replace strict RVOL hard skip
+Current RVOL >=0.80 is too restrictive.
+Use:
+- soft penalty below 0.8
+- hard reject only below 0.55
+
+5. Relax EMA distance logic
+Current 1.5% limit blocks valid momentum continuation.
+Use ATR-relative distance:
+- strong trend: allow wider extension
+- range/chop: require tighter pullback
+
+6. Remove excessive anti-momentum behavior
+The engine currently punishes strong vertical moves too aggressively.
+Do NOT block momentum continuation setups automatically.
+Instead:
+- distinguish between exhaustion and institutional continuation
+- use volume + candle structure + pullback quality
+
+7. Improve trend continuation entries
+Focus heavily on:
+- pullback continuation
+- breakout retest
+- liquidity sweep continuation
+- higher low / lower high structure
+
+These are the best-performing setups on TSLA/NVDA intraday.
+
+8. Modify one-trade rule
+Current one-trade-at-a-time logic is too restrictive.
+Allow:
+- pyramiding continuation entries
+OR
+- allow re-entry after partial TP / break-even protection
+
+9. Add market session awareness
+Increase aggressiveness during:
+- market open
+- power hour
+Reduce aggressiveness during midday chop.
+
+10. Add confidence scaling
+Instead of binary signal/no signal:
+- produce confidence tiers:
+  A+, A, B
+Only top tier gets full size.
+
+11. Build separate symbol profiles
+TSLA and NVDA behave differently.
+The engine should learn per-symbol behavior:
+- volatility profile
+- average impulse size
+- pullback behavior
+- trend persistence
+
+12. Prioritize expectancy over raw win rate
+Do NOT optimize only for win rate.
+Optimize for:
+- expectancy
+- profit factor
+- net R multiple
+- opportunity efficiency
+
+Target:
+A balanced aggressive-smart engine with:
+- higher opportunity flow
+- better trend participation
+- controlled drawdown
+- scalable intraday execution
+without becoming over-filtered.

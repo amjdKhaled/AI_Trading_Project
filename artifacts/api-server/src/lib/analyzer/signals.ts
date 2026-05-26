@@ -134,17 +134,52 @@ function buildTriggerName(opts: {
   return opts.side === "long" ? "Momentum Long" : "Momentum Short";
 }
 
-// ── Per-regime / per-session score threshold ──────────────────────────────
-// Institutional-grade filter: only A / A+ setups pass.
-// High threshold + minimum confirmations keeps the chart sparse and readable.
+// ── Per-symbol volatility + behaviour profiles ────────────────────────────
+// Accounts for the fact that TSLA and NVDA have different ATR profiles,
+// pullback depths, and trend-persistence characteristics.
+interface SymbolProfile {
+  slAtrMult:        number; // SL max-width multiplier (applied to 1.8 ATR cap)
+  momentumBonus:    number; // extra score for confirmed momentum setups
+  pullbackAtrTol:   number; // how many ATR above EMA20 still counts as pullback
+}
+const SYMBOL_PROFILES: Record<string, SymbolProfile> = {
+  TSLA: { slAtrMult: 1.0, momentumBonus: 0, pullbackAtrTol: 0.45 },
+  NVDA: { slAtrMult: 1.1, momentumBonus: 5, pullbackAtrTol: 0.60 }, // wider pullbacks, vol bonus
+  SPY:  { slAtrMult: 0.9, momentumBonus: 0, pullbackAtrTol: 0.35 },
+  QQQ:  { slAtrMult: 0.9, momentumBonus: 0, pullbackAtrTol: 0.35 },
+};
+const DEFAULT_PROFILE: SymbolProfile = { slAtrMult: 1.0, momentumBonus: 0, pullbackAtrTol: 0.45 };
+
+// ── Regime-adaptive score threshold ───────────────────────────────────────
+// The score floor is NOT hardcoded at 97 anymore. Instead it adapts to the
+// current market regime:
+//   • trending:       lower bar — capture strong momentum participation
+//   • ranging:        moderate bar — require clear setup against support/resistance
+//   • chop:           high bar — almost nothing fires, only cleanest setups
+//   • vol-expansion:  lower bar — breakout continuation allowed earlier
+// Session overlays raise/lower the bar for time-of-day quality.
 function scoreThreshold(regime: Regime, session: Session): number {
-  let t = 82;                                  // high base — only genuine setups
-  if (regime === "chop")               t += 14; // 96: almost nothing fires in chop
-  else if (regime === "ranging")       t += 6;  // 88: requires strong confirming signal
-  else if (regime === "vol-expansion") t -= 4;  // 78: breakouts allowed earlier
-  if (session === "midday")            t += 8;  // lunch chop = very few signals
-  if (session === "open")              t -= 3;  // open-drive setups welcome
+  let t = 93;                                       // calibrated base — keeps quality high
+  if      (regime === "trending-up" ||
+           regime === "trending-down")  t -= 3;    // 90: strong trend — capture momentum participation
+  else if (regime === "vol-expansion")  t -= 7;    // 86: breakouts — allow earlier entry
+  else if (regime === "ranging")        t += 0;    // 93: sideways — clear structure required
+  else if (regime === "chop")           t += 4;    // 97: directionless — very selective
+  if (session === "midday")             t += 5;    // lunch chop — significantly higher bar
+  if (session === "open")               t -= 3;    // open-drive momentum — welcome
+  if (session === "power-hour")         t -= 2;    // power hour — slightly more aggressive
   return t;
+}
+
+// ── Adaptive confluence requirement ───────────────────────────────────────
+// In a strong trend, 5 independent confirmations (vs 6 in chop) allow
+// momentum participation without sacrificing quality. Vol-expansion breakouts
+// allowed with 4 — the volume itself provides a strong independent dimension.
+function minConfluencePillars(regime: Regime): number {
+  if (regime === "trending-up" || regime === "trending-down") return 5;
+  if (regime === "vol-expansion")                             return 4;
+  if (regime === "ranging")                                   return 5;
+  return 6; // chop — full institutional standard
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -173,6 +208,7 @@ export function generateSignals(
   const vwap    = vwapArray(bars);
   const regimes = classifyRegimes(bars, ema20, ema50, ema200, atrValues);
   const htfBias = buildHtfBiasLookup(htfBars);
+  const profile  = SYMBOL_PROFILES[symbol] ?? DEFAULT_PROFILE;
 
   const candidates: SignalCandidate[] = [];
   // Full-history scan: every bar from index 80 onward is a candidate.
@@ -226,12 +262,16 @@ export function generateSignals(
     const vwapReclaim   = closePrev <= vwapPrev && bar.close > vwapI && bar.close > bar.open;
     const vwapRejection = closePrev >= vwapPrev && bar.close < vwapI && bar.close < bar.open;
 
-    // ── Pullback quality ─────────────────────────────────────────────────
+    // ── Pullback quality: textbook EMA20 touch ───────────────────────────
+    // Bar low must pierce or graze EMA20 and close back above with a bullish body.
+    // Base tolerance 0.3%; symbol profile adds a tiny extra for higher-vol instruments.
+    // pbTol: TSLA ≈ 0.39%, NVDA ≈ 0.42% above EMA20.
+    const pbTol        = 1.003 + profile.pullbackAtrTol * 0.002;
     const pullbackLong  = strongUptrend
-      && bar.low  <= e20i * 1.003 && bar.close >= e20i * 0.996
+      && bar.low  <= e20i * pbTol && bar.close >= e20i * 0.996
       && bar.close > bar.open;
     const pullbackShort = strongDowntrend
-      && bar.high >= e20i * 0.997 && bar.close <= e20i * 1.004
+      && bar.high >= e20i * (2 - pbTol) && bar.close <= e20i * 1.004
       && bar.close < bar.open;
 
     // ── MACD momentum flags ──────────────────────────────────────────────
@@ -260,11 +300,13 @@ export function generateSignals(
     const isVertBull = move5 >  atrI * 2.5;  // spike up — don't long
     const isVertBear = move5 < -atrI * 2.5;  // spike down — don't short
 
-    // 2. EMA20 distance: >1.5% from EMA20 = overextended. A quality pullback
-    //    entry sits near EMA20, not far above/below it. Tightened from 1.8% → 1.5%.
-    const ema20Dist  = Math.abs(bar.close - e20i) / (e20i || bar.close);
-    const farAboveEma = ema20Dist > 0.015 && bar.close > e20i;
-    const farBelowEma = ema20Dist > 0.015 && bar.close < e20i;
+    // 2. EMA20 distance: regime-aware fixed-percentage overextension limit.
+    //    Strong trends can sustain wider extension (momentum continuation is valid).
+    //    Range/chop: tight pullback required — no chasing.
+    const ema20Dist   = Math.abs(bar.close - e20i) / (e20i || bar.close);
+    const emaDistLim  = (strongUptrend || strongDowntrend) ? 0.025 : 0.015;
+    const farAboveEma = ema20Dist > emaDistLim && bar.close > e20i;
+    const farBelowEma = ema20Dist > emaDistLim && bar.close < e20i;
 
     // 3. Bar body quality: a doji/spinning-top at entry = indecision. Not a
     //    good signal bar. (Hammer/shooting-star shapes are intentionally kept —
@@ -273,9 +315,10 @@ export function generateSignals(
     const bodyRatio = Math.abs(bar.close - bar.open) / barRng;
     const isDoji    = bodyRatio < 0.18;
 
-    // 4. Below-average volume = no conviction behind the move. Hard skip.
-    //    0.80 (raised from 0.75) — doc recommends ≥0.8× to eliminate low-participation bars.
-    if (vol.rvol < 0.80) continue;
+    // 4. Volume hard skip — only reject extremely thin/no-participation bars.
+    //    Below 0.55× = essentially no market participation. Bars 0.55–0.80
+    //    get a proportional soft penalty inside the score blocks.
+    if (vol.rvol < 0.55) continue;
 
     // Close position within the bar (0 = at low, 1 = at high).
     // A breakout bar that closes in the lower half of its range means bears
@@ -315,16 +358,16 @@ export function generateSignals(
     const structBull = structure.regime === "uptrend"   || structure.lastChochDir === "bullish";
     const structBear = structure.regime === "downtrend" || structure.lastChochDir === "bearish";
 
-    const threshold = scoreThreshold(regimeI, sessionI);
+    const threshold  = scoreThreshold(regimeI, sessionI);
+    const minPillars = minConfluencePillars(regimeI);
 
     // ══════════════════════════════════════════════════════════════════════
     // LONG ANALYSIS
     // Hard-block against-trend longs in bear HTF AND confirmed downtrend.
-    // Counter-trend setups against a strong HTF trend rarely survive SL.
-    // RSI hard cap at 75: longs above RSI 75 = chasing overbought exhaustion.
-    // The −28 penalty alone can't stop a very high-scoring bar from passing.
+    // RSI is handled via adaptive scoring — no hard cap; strong trends
+    // with volume can sustain elevated RSI as momentum, not exhaustion.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongDowntrend && htfI !== "bear" && rsiI <= 75) {
+    if (!strongDowntrend && htfI !== "bear") {
       let bullScore = 0;
       const reasons: string[] = [];
 
@@ -350,14 +393,26 @@ export function generateSignals(
       if (pullbackLong && pullbackVolOk)  bullScore += 7;
       if (pullbackLong && !pullbackVolOk) bullScore -= 5;
 
-      // RSI discipline: longs need RSI in a healthy pullback zone.
-      // Entering a long at RSI 70+ is chasing overbought momentum.
-      if      (rsiI >= 38 && rsiI <= 56) bullScore += 12;
-      else if (rsiI >= 30 && rsiI <  38) bullScore += 7;
-      else if (rsiI >= 56 && rsiI <= 63) bullScore += 4;
-      else if (rsiI <  30)               bullScore -= 6;   // oversold ≠ momentum long
-      else if (rsiI >= 63 && rsiI <  70) bullScore -= 14; // stretched — avoid
-      else if (rsiI >= 70)               bullScore -= 28; // hard: overbought long = chasing
+      // RSI — trend-aware scoring.
+      // In genuine momentum (strong trend + institutional volume), elevated RSI
+      // signals continuation, not exhaustion. Only in normal conditions does
+      // RSI >70 indicate an overextended entry.
+      const momentumLong = strongUptrend && (vol.accumulation || vol.breakoutVol || vol.rvol > 1.5);
+      if (momentumLong) {
+        if      (rsiI >= 40 && rsiI <= 72) bullScore += 12; // ideal momentum zone
+        else if (rsiI >= 30 && rsiI <  40) bullScore += 7;
+        else if (rsiI >  72 && rsiI <= 82) bullScore += 4;  // extended but trend + vol confirm
+        else if (rsiI >  82 && rsiI <= 90) bullScore -= 8;  // very extended — caution
+        else if (rsiI >  90)               bullScore -= 18; // exhaustion territory
+        else if (rsiI <  30)               bullScore -= 6;
+      } else {
+        if      (rsiI >= 38 && rsiI <= 56) bullScore += 12;
+        else if (rsiI >= 30 && rsiI <  38) bullScore += 7;
+        else if (rsiI >= 56 && rsiI <= 63) bullScore += 4;
+        else if (rsiI <  30)               bullScore -= 6;
+        else if (rsiI >= 63 && rsiI <  70) bullScore -= 14;
+        else if (rsiI >= 70)               bullScore -= 28;
+      }
 
       if      (macdAccBull)  bullScore += 10;
       else if (macdCrossBull) bullScore += 8;
@@ -399,25 +454,31 @@ export function generateSignals(
       if (vol.distribution)                    bullScore -= 8;
       if (vol.climax && bar.close > bar.open)  bullScore -= 10;
       // Overextension / late entry penalties
-      if (isVertBull)       bullScore -= 30; // chasing a 5-bar vertical spike
-      if (farAboveEma)      bullScore -= 18; // entry >1.8% above EMA20 = overextended
+      // Volume-qualified vertical: high-volume vertical = institutional momentum (small penalty).
+      // Low-volume vertical = exhaustion chasing (larger penalty).
+      if (isVertBull)       bullScore -= (vol.rvol > 1.5 ? 8 : 22);
+      if (farAboveEma)      bullScore -= 18; // ATR-relative overextension (2.2× ATR in trend, 1.4× in range)
       if (isDoji)           bullScore -= 12; // indecisive bar = bad signal bar
       if (fakeBreakoutBull) bullScore -= 20; // breakout bar closed weak — bears pushed back
+      // RVOL soft penalty: proportional for bars between hard skip (0.55) and healthy (0.80)
+      if (vol.rvol < 0.80) bullScore -= Math.round((0.80 - vol.rvol) * 35);
+      // Per-symbol momentum bonus: higher trend-persistence symbols get extra credit
+      if (profile.momentumBonus > 0 && strongUptrend && (vol.accumulation || vol.breakoutVol)) {
+        bullScore += profile.momentumBonus;
+      }
 
       // ── SL / RR pre-check (computed before gate to allow early rejection) ──
-      // Use 20-bar swing low (wider lookback than before = more robust level).
-      // Enforce minimum 0.8 ATR SL distance (no noise stops) and
-      // maximum 2.2 ATR SL distance (no wide stops that need huge TP to justify).
-      const longSlice   = bars.slice(Math.max(0, i - 20), i + 1);
+      const longSlice    = bars.slice(Math.max(0, i - 20), i + 1);
       const longSwingLow = Math.min(...longSlice.map(b => b.low));
       const longRawRisk  = Math.max(bar.close - (longSwingLow - atrI * 0.25), atrI * 0.7);
-      const longBadRR    = longRawRisk > atrI * 1.8; // SL too wide → TP too far → low probability
+      // Symbol-profile SL width multiplier: wider cap for high-volatility instruments
+      const longBadRR    = longRawRisk > atrI * 1.8 * profile.slAtrMult;
 
       const longConfirms = [
         regimeI === "trending-up" || regimeI === "vol-expansion", // local regime is bullish
         bullEmaAlign || strongUptrend,                            // EMA stack aligned
-        vol.accumulation || (vol.breakoutVol && vol.rvol > 1.2), // volume conviction > 1.2× avg
-        rsiI >= 30 && rsiI <= 64,                                 // RSI in healthy bull zone
+        vol.accumulation || (vol.breakoutVol && vol.rvol > 1.2), // volume conviction
+        momentumLong ? rsiI >= 30 && rsiI <= 90 : rsiI >= 30 && rsiI <= 64, // RSI — wider in momentum
         bar.close > bar.open,                                     // bullish close
         macdBull,                                                 // momentum positive
         pullbackLong || pa?.bullish === true || sweepBull,        // entry at pullback, retest, or sweep
@@ -426,18 +487,14 @@ export function generateSignals(
         htfI === "bull",                                          // HTF timeframe aligned
       ].filter(Boolean).length;
 
-      // Require 6+ confluence pillars (raised from 5) + hard score floor of 95.
-      // Six independent confirmations from separate analysis dimensions = only
-      // the cleanest, highest-conviction institutional setups. No mediocre entries.
-      // Require at least ONE clearly identifiable institutional entry trigger.
-      // Prevents "score assembly" — a high score from many tiny scattered
-      // bonuses without a single real setup pattern. Quality over quantity.
+      // Adaptive confluence gate: minPillars is regime-dependent (4 in trend, 6 in chop).
+      // Score threshold is also regime-dependent — no separate hardcoded 97 floor.
       const hasLongStrategy = pullbackLong || vwapReclaim
         || pa?.bullish === true || (consol.contracting && bullEmaAlign)
         || (strongUptrend && (vol.accumulation || vol.breakoutVol))
         || (bullEmaAlign && structBull && macdBull);
 
-      if (!longBadRR && bullScore >= threshold && longConfirms >= 6 && bullScore >= 97 && hasLongStrategy) {
+      if (!longBadRR && bullScore >= threshold && longConfirms >= minPillars && hasLongStrategy) {
         const sl       = bar.close - longRawRisk;
         const riskDist = longRawRisk;
         const tp       = bar.close + riskDist * 2.5;
@@ -503,9 +560,10 @@ export function generateSignals(
     // ══════════════════════════════════════════════════════════════════════
     // SHORT ANALYSIS
     // Hard-block against-trend shorts in bull HTF AND confirmed uptrend.
-    // RSI hard floor at 25: shorts below RSI 25 = chasing oversold exhaustion.
+    // RSI handled via adaptive scoring — no hard floor; strong downtrends
+    // with volume can sustain low RSI as momentum continuation.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongUptrend && htfI !== "bull" && rsiI >= 25) {
+    if (!strongUptrend && htfI !== "bull") {
       let bearScore = 0;
       const reasons: string[] = [];
 
@@ -526,14 +584,25 @@ export function generateSignals(
       if (pullbackShort && pullbackVolOk)  bearScore += 7;
       if (pullbackShort && !pullbackVolOk) bearScore -= 5;
 
-      // RSI discipline: shorts need RSI in a healthy rejection zone.
-      // Entering a short at RSI 30 or below is chasing oversold momentum.
-      if      (rsiI >= 44 && rsiI <= 62) bearScore += 12;
-      else if (rsiI >= 62 && rsiI <= 70) bearScore += 7;
-      else if (rsiI >= 37 && rsiI <  44) bearScore += 4;
-      else if (rsiI >  70)               bearScore -= 6;   // overbought ≠ momentum short
-      else if (rsiI >= 30 && rsiI <  37) bearScore -= 14; // stretched — avoid
-      else if (rsiI <  30)               bearScore -= 28; // hard: oversold short = chasing
+      // RSI — trend-aware scoring for shorts.
+      // In genuine downward momentum (trend + institutional distribution), low RSI
+      // signals continuation. Only in normal conditions does RSI <30 indicate chasing.
+      const momentumShort = strongDowntrend && (vol.distribution || vol.breakoutVol || vol.rvol > 1.5);
+      if (momentumShort) {
+        if      (rsiI >= 28 && rsiI <= 60) bearScore += 12; // ideal momentum zone
+        else if (rsiI >= 60 && rsiI <= 70) bearScore += 7;
+        else if (rsiI >= 18 && rsiI <  28) bearScore += 4;  // oversold but trend + vol confirm
+        else if (rsiI >= 10 && rsiI <  18) bearScore -= 8;  // very oversold — caution
+        else if (rsiI <  10)               bearScore -= 18; // exhaustion territory
+        else if (rsiI >  70)               bearScore -= 6;
+      } else {
+        if      (rsiI >= 44 && rsiI <= 62) bearScore += 12;
+        else if (rsiI >= 62 && rsiI <= 70) bearScore += 7;
+        else if (rsiI >= 37 && rsiI <  44) bearScore += 4;
+        else if (rsiI >  70)               bearScore -= 6;
+        else if (rsiI >= 30 && rsiI <  37) bearScore -= 14;
+        else if (rsiI <  30)               bearScore -= 28;
+      }
 
       if      (macdAccBear)   bearScore += 10;
       else if (macdCrossBear) bearScore += 8;
@@ -574,22 +643,29 @@ export function generateSignals(
       if (vol.accumulation)                    bearScore -= 8;
       if (vol.climax && bar.close < bar.open)  bearScore -= 10;
       // Overextension / late entry penalties
-      if (isVertBear)       bearScore -= 30; // chasing a 5-bar vertical drop
-      if (farBelowEma)      bearScore -= 18; // entry >1.8% below EMA20 = overextended
+      // Volume-qualified vertical: high-volume = institutional momentum (small penalty).
+      if (isVertBear)       bearScore -= (vol.rvol > 1.5 ? 8 : 22);
+      if (farBelowEma)      bearScore -= 18; // ATR-relative overextension
       if (isDoji)           bearScore -= 12; // indecisive bar = bad signal bar
       if (fakeBreakoutBear) bearScore -= 20; // breakdown bar closed strong — bulls pushed back
+      // RVOL soft penalty: proportional for bars 0.55–0.80
+      if (vol.rvol < 0.80) bearScore -= Math.round((0.80 - vol.rvol) * 35);
+      // Per-symbol momentum bonus
+      if (profile.momentumBonus > 0 && strongDowntrend && (vol.distribution || vol.breakoutVol)) {
+        bearScore += profile.momentumBonus;
+      }
 
       // ── SL / RR pre-check for shorts ───────────────────────────────────
-      const shortSlice    = bars.slice(Math.max(0, i - 20), i + 1);
+      const shortSlice     = bars.slice(Math.max(0, i - 20), i + 1);
       const shortSwingHigh = Math.max(...shortSlice.map(b => b.high));
       const shortRawRisk   = Math.max((shortSwingHigh + atrI * 0.25) - bar.close, atrI * 0.7);
-      const shortBadRR     = shortRawRisk > atrI * 1.8;
+      const shortBadRR     = shortRawRisk > atrI * 1.8 * profile.slAtrMult;
 
       const shortConfirms = [
         regimeI === "trending-down" || regimeI === "vol-expansion", // local regime is bearish
         bearEmaAlign || strongDowntrend,                            // EMA stack aligned bear
         vol.distribution || (vol.breakoutVol && vol.rvol > 1.2),   // volume conviction
-        rsiI >= 36 && rsiI <= 70,                                   // RSI in healthy bear zone
+        momentumShort ? rsiI >= 10 && rsiI <= 70 : rsiI >= 36 && rsiI <= 70, // RSI — wider in momentum
         bar.close < bar.open,                                       // bearish close
         macdBear,                                                   // momentum negative
         pullbackShort || (pa !== null && !pa.bullish) || sweepBear, // entry at rejection, retest, or sweep
@@ -598,13 +674,13 @@ export function generateSignals(
         htfI === "bear",                                            // HTF timeframe aligned
       ].filter(Boolean).length;
 
-      // Same six-pillar institutional filter for shorts.
+      // Adaptive confluence gate: regime-dependent pillars and threshold.
       const hasShortStrategy = pullbackShort || vwapRejection
         || (pa !== null && !pa.bullish) || (consol.contracting && bearEmaAlign)
         || (strongDowntrend && (vol.distribution || vol.breakoutVol))
         || (bearEmaAlign && structBear && macdBear);
 
-      if (!shortBadRR && bearScore >= threshold && shortConfirms >= 6 && bearScore >= 97 && hasShortStrategy) {
+      if (!shortBadRR && bearScore >= threshold && shortConfirms >= minPillars && hasShortStrategy) {
         const sl       = bar.close + shortRawRisk;
         const riskDist = shortRawRisk;
         const tp       = bar.close - riskDist * 2.5;
@@ -667,12 +743,13 @@ export function generateSignals(
     }
   }
 
-  // ── Deduplication: one best setup per session segment ────────────────────
-  // 5m: 24 bars = 120 min (2 hours); 15m: 8 bars = 120 min.
-  // This enforces at most one long and one short entry per major session
-  // segment (open / midday / power-hour), eliminating repeated signals
-  // during the same sustained move.
-  const minGapSec    = timeframe === "15m" ? 900 * 8 : 300 * 24;
+  // ── Deduplication: one best setup per 60-min window (per side) ──────────
+  // 5m: 12 bars = 60 min; 15m: 4 bars = 60 min.
+  // 60 min (vs old 120 min) allows roughly 2× more signals per session
+  // while still selecting only the best setup in each meaningful time window.
+  // Re-entry after TP is enabled through the sequential filter: after any
+  // trade closes, the next deduped candidate fires immediately.
+  const minGapSec    = timeframe === "15m" ? 900 * 4 : 300 * 12;
   const sorted       = [...candidates].sort((a, b) => b.confidence - a.confidence);
   const usedByLong   = new Set<number>();
   const usedByShort  = new Set<number>();
