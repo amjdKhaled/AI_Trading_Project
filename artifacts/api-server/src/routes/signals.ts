@@ -85,6 +85,66 @@ router.get("/signals", async (req, res): Promise<void> => {
   res.json(ListSignalsResponse.parse(rows));
 });
 
+// ── POST /signals/regenerate ──────────────────────────────────
+// Wipes existing signals for symbol+timeframe and re-runs the analyzer
+// across the full history. Use after engine changes to refresh stored rows.
+router.post("/signals/regenerate", async (req, res): Promise<void> => {
+  const symbol    = typeof req.query.symbol === "string" ? req.query.symbol : "";
+  const timeframe = typeof req.query.timeframe === "string" && req.query.timeframe ? req.query.timeframe : "5m";
+  if (!symbol) { res.status(400).json({ error: "symbol query param required" }); return; }
+
+  try {
+    await db.delete(signalsTable).where(and(
+      eq(signalsTable.symbol,    symbol),
+      eq(signalsTable.timeframe, timeframe),
+    ));
+
+    const rawBars = await fetchHistory(symbol, timeframe);
+    const bars = rawBars as import("../lib/analyzer/types").OhlcvBar[];
+    if (bars.length < 50) {
+      res.json({ ok: true, symbol, timeframe, inserted: 0, reason: "not enough bars" });
+      return;
+    }
+
+    let htfBars: import("../lib/analyzer/types").OhlcvBar[] = [];
+    if (timeframe === "5m") {
+      try {
+        const htf = await fetchHistory(symbol, "15m");
+        htfBars = htf as import("../lib/analyzer/types").OhlcvBar[];
+      } catch { /* HTF optional */ }
+    }
+
+    const { signals } = generateSignals(bars, symbol, timeframe, htfBars);
+    let inserted = 0;
+    for (const sig of signals) {
+      try {
+        await db.insert(signalsTable).values({
+          signalId:       sig.id,
+          symbol:         sig.symbol,
+          timeframe:      sig.timeframe,
+          barTime:        new Date(sig.barTime * 1000),
+          side:           sig.side,
+          entryPrice:     sig.entryPrice,
+          slPrice:        sig.slPrice,
+          tpPrice:        sig.tpPrice,
+          currentSlPrice: sig.slPrice,
+          confidence:     sig.confidence,
+          riskTag:        sig.riskLevel,
+          state:          "active",
+          rrRatio:        Math.round(Math.abs(sig.tpPrice - sig.entryPrice) / (Math.abs(sig.entryPrice - sig.slPrice) || 0.001) * 100) / 100,
+          pattern:        sig.patterns[0] ?? "analysis_engine",
+          regime:         "trend_up",
+        });
+        inserted++;
+      } catch { /* duplicate — skip */ }
+    }
+    res.json({ ok: true, symbol, timeframe, bars: bars.length, htfBars: htfBars.length, inserted });
+  } catch (err) {
+    req.log?.warn({ err, symbol, timeframe }, "regenerate failed");
+    res.status(500).json({ error: "regenerate failed" });
+  }
+});
+
 // ── PATCH /signals/:signalId/state ────────────────────────────
 router.patch("/signals/:signalId/state", async (req, res): Promise<void> => {
   const { signalId } = req.params;
