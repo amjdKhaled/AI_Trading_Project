@@ -1,9 +1,9 @@
 ---
 name: Engine scoring calibration
-description: Current hard gates, bonus/penalty values, and calibrated thresholds in signals.ts — balanced-aggressive version.
+description: Current hard gates, bonus/penalty values, and calibrated thresholds in signals.ts — aggressive-smart v3.
 ---
 
-# Engine Scoring Calibration (balanced-aggressive, current state)
+# Engine Scoring Calibration (aggressive-smart v3, current state)
 
 ## Hard gates (cause `continue` before scoring)
 - `atrPct < 0.0005` → skip bar (illiquid / blended daily artefact)
@@ -11,80 +11,87 @@ description: Current hard gates, bonus/penalty values, and calibrated thresholds
 - `vol.rvol < 0.55` → skip bar (hard reject — essentially no participation)
 - `longRawRisk > atrI * 1.8 * profile.slAtrMult` → reject long (SL too wide)
 
-## Long analysis entry gate (all must be true)
-- `!strongDowntrend && htfI !== "bear"` (RSI cap removed — handled via adaptive scoring)
-
-## Signal acceptance gate (inside long block)
-- `bullScore >= threshold` (regime-/session-adjusted, no separate hardcoded floor)
-- `longConfirms >= minPillars` (regime-adaptive: 5 trending, 6 chop)
-- `hasLongStrategy` (at least one identifiable entry trigger)
-- `!longBadRR` (raw risk ≤ 1.8 ATR × profile.slAtrMult)
-
 ## Regime-adaptive thresholds (scoreThreshold function)
-| Regime | Base | Session adjustments |
+| Regime | Score | Session adjustments |
 |---|---|---|
-| trending-up/down | 90 | open -3, midday +5, power-hour -2 |
-| vol-expansion | 86 | same |
-| ranging | 93 | same |
-| chop | 97 | same |
+| trending-up/down | 87 (base 91 − 4) | open −3, midday +4, power-hour −2 |
+| vol-expansion | 83 (base 91 − 8) | same |
+| ranging | 93 (base 91 + 2) | same |
+| chop | 97 (base 91 + 6) | same |
 
 ## Adaptive confluence pillars (minConfluencePillars function)
 | Regime | Min Pillars |
 |---|---|
-| trending-up/down | 5 |
+| trending-up/down | 4 |
 | vol-expansion | 4 |
 | ranging | 5 |
 | chop | 6 |
 
 ## Deduplication gap
-- 5m timeframe: 12 bars = 60 min (was 24 bars = 120 min)
+- 5m timeframe: 12 bars = 60 min
 - 15m timeframe: 4 bars = 60 min
-- 60 min allows ~2× more signals vs old strict settings; re-entry after TP enabled via sequential filter
 
 ## RVOL handling
-- Hard skip: < 0.55 (was 0.80)
-- Soft penalty: below 0.80: `score -= (0.80 - rvol) * 35` (proportional)
+- Hard skip: < 0.55
+- Soft penalty below 0.80: `score -= (0.80 - rvol) * 35`
 
 ## RSI handling (trend-aware, NO hard cap)
-- `momentumLong = strongUptrend && (accumulation || breakoutVol || rvol > 1.5)`
-- If momentumLong: RSI 40-72 = +12, 72-82 = +4, 82-90 = -8, >90 = -18 (continuation mode)
-- Normal: RSI 38-56 = +12, 63-70 = -14, ≥70 = -28 (original discipline)
+**Momentum mode** (strongUptrend + vol.accumulation/breakoutVol/rvol>1.5):
+- RSI 40–72: +12, 30–40: +7, 72–82: +4, 82–90: −8, >90: −18, <30: −6
 
-## EMA distance (regime-aware, not ATR-relative)
-- `emaDistLim = (strongUptrend || strongDowntrend) ? 0.025 : 0.015`
-- 2.5% in strong trends (was fixed 1.5%) — allows wider momentum extension
+**Normal mode** (softened from original):
+- RSI 38–56: +12, 30–38: +7, 56–63: +4, <30: −6
+- RSI 63–70: −10 (was −14), 70–78: −20 (was −28), >78: −30
+
+## Exhaustion flags (raised bar — less blocking)
+- `isExhBull = rsiI > 85 && atrStr > 65` (was rsiI>80 && atrStr>55)
+- `isExhBear = rsiI < 15 && atrStr > 65` (was rsiI<20 && atrStr>55)
+
+## EMA overextension (ATR-relative)
+```ts
+const ema20AtrDist = Math.abs(bar.close - e20i) / atrI;
+const extLimit     = (strongUptrend || strongDowntrend) ? 1.8 : 1.0;
+const farAboveEma  = ema20AtrDist > extLimit && bar.close > e20i;
+```
+Strong trends: 1.8 ATR limit. Range/chop: 1.0 ATR limit.
+
+## Pullback detection (ATR-relative)
+```ts
+// TSLA pullbackAtrTol=0.45: within 0.45 ATR above EMA20
+const pullbackLong = strongUptrend
+  && bar.low  <= e20i + atrI * profile.pullbackAtrTol
+  && bar.close >= e20i - atrI * 0.2 && bar.close > bar.open;
+```
+
+## New continuation patterns (v3)
+- **EMA Reclaim** (bull): `closePrev < e20i && bar.close > e20i*1.001 && bullish close` → +18 score
+- **Higher Low** (bull): in uptrend, `bar.low > priorSwingLow(5) && bullish close` → +10 score
+- **EMA Rejection** (bear): mirror of reclaim → +18
+- **Lower High** (bear): mirror of higher low → +10
+All four added to `hasLongStrategy` / `hasShortStrategy` gates.
 
 ## Vertical move penalty (volume-qualified)
 - `if (isVertBull) bullScore -= (vol.rvol > 1.5 ? 8 : 22)`
-- High-volume verticals = institutional continuation (small penalty only)
-
-## Pullback detection
-- `pbTol = 1.003 + profile.pullbackAtrTol * 0.002`
-- TSLA: ~0.39% above EMA20, NVDA: ~0.42% (slightly wider for higher-vol)
 
 ## Symbol profiles
 ```ts
 TSLA: { slAtrMult: 1.0, momentumBonus: 0, pullbackAtrTol: 0.45 }
-NVDA: { slAtrMult: 1.1, momentumBonus: 5, pullbackAtrTol: 0.60 }
+NVDA: { slAtrMult: 1.1, momentumBonus: 5, pullbackAtrTol: 0.60 } // 0.60 ATR = ~1.3% at NVDA prices
 SPY:  { slAtrMult: 0.9, momentumBonus: 0, pullbackAtrTol: 0.35 }
 QQQ:  { slAtrMult: 0.9, momentumBonus: 0, pullbackAtrTol: 0.35 }
 ```
 
-## Backtest results (balanced-aggressive settings, 6-month period)
-| Symbol | Signals | WR | Notes |
-|---|---|---|---|
-| TSLA | 44 | 25% | shorts 30% A+ WR, longs 20% |
-| NVDA | 54 | 24% | macro downtrend conflict |
+## Backtest results across engine versions
+| Version | TSLA signals | TSLA WR | NVDA signals | NVDA WR | Notes |
+|---|---|---|---|---|---|
+| Strict (97/6/RSI-cap/RVOL-0.80/120min) | 19 | 36.8% | 24 | 25% | Positive EV |
+| v1 balanced (90/5/RVOL-0.55/60min) | 44 | 25% | 54 | 24% | Negative EV |
+| v3 aggressive-smart (87/4/ATR-rel/60min) | 35 | 28.6% | 46 | 20.5% | TSLA ≈ breakeven |
 
-## Critical calibration finding
-Both TSLA and NVDA spent much of the backtest period in macro downtrends.
-- Shorts (A+): 30% WR → ABOVE breakeven at 2.5R
-- Longs (A+): 20% WR → BELOW breakeven
-- Long A+ in trending-up/regular session: 0% WR (n=6) — bear rallies, not uptrends
-
-**Root cause**: No daily/weekly trend filter. The daily trend filter is the single most
-impactful improvement remaining (see nvda-macro-conflict.md).
-
-**Recommendation**: Forward-test at these settings. Backtest n<50 has ±15% WR CI;
-cannot meaningfully differentiate settings within that range. Add SPY/QQQ (less
-directional bias) to see higher signal quality.
+## Key structural finding (confirmed across all versions)
+TSLA/NVDA macro downtrend during backtest dominates ALL results.
+- TSLA shorts: consistently 37–42% WR (above breakeven)
+- TSLA longs: consistently 19–23% WR (below breakeven)
+- NVDA: all versions negative or barely-breakeven EV
+- Fix: daily bias filter (only take longs in bullish daily trend)
+- Recommended: add SPY/QQQ to get less directionally-biased backtest signal

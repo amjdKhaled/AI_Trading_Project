@@ -159,24 +159,25 @@ const DEFAULT_PROFILE: SymbolProfile = { slAtrMult: 1.0, momentumBonus: 0, pullb
 //   • vol-expansion:  lower bar — breakout continuation allowed earlier
 // Session overlays raise/lower the bar for time-of-day quality.
 function scoreThreshold(regime: Regime, session: Session): number {
-  let t = 93;                                       // calibrated base — keeps quality high
+  let t = 91;                                       // base calibrated for momentum participation
   if      (regime === "trending-up" ||
-           regime === "trending-down")  t -= 3;    // 90: strong trend — capture momentum participation
-  else if (regime === "vol-expansion")  t -= 7;    // 86: breakouts — allow earlier entry
-  else if (regime === "ranging")        t += 0;    // 93: sideways — clear structure required
-  else if (regime === "chop")           t += 4;    // 97: directionless — very selective
-  if (session === "midday")             t += 5;    // lunch chop — significantly higher bar
+           regime === "trending-down")  t -= 4;    // 87: trend regime — aggressive momentum entry
+  else if (regime === "vol-expansion")  t -= 8;    // 83: breakout regime — enter early
+  else if (regime === "ranging")        t += 2;    // 93: sideways — require clear structure
+  else if (regime === "chop")           t += 6;    // 97: directionless — very selective
+  if (session === "midday")             t += 4;    // lunch chop — raise bar (but not as much)
   if (session === "open")               t -= 3;    // open-drive momentum — welcome
-  if (session === "power-hour")         t -= 2;    // power hour — slightly more aggressive
+  if (session === "power-hour")         t -= 2;    // power hour — aggressive
   return t;
 }
 
 // ── Adaptive confluence requirement ───────────────────────────────────────
-// In a strong trend, 5 independent confirmations (vs 6 in chop) allow
-// momentum participation without sacrificing quality. Vol-expansion breakouts
-// allowed with 4 — the volume itself provides a strong independent dimension.
+// Strong trends: 4 confirmations capture momentum participation.
+// Pullback continuation in a trend is the highest-probability setup —
+// it doesn't need 6 independent dimensions; 4 aligned confirmations suffice.
+// Chop reversals: keep strict at 6+ — too many false signals in directionless tape.
 function minConfluencePillars(regime: Regime): number {
-  if (regime === "trending-up" || regime === "trending-down") return 5;
+  if (regime === "trending-up" || regime === "trending-down") return 4;
   if (regime === "vol-expansion")                             return 4;
   if (regime === "ranging")                                   return 5;
   return 6; // chop — full institutional standard
@@ -262,17 +263,37 @@ export function generateSignals(
     const vwapReclaim   = closePrev <= vwapPrev && bar.close > vwapI && bar.close > bar.open;
     const vwapRejection = closePrev >= vwapPrev && bar.close < vwapI && bar.close < bar.open;
 
-    // ── Pullback quality: textbook EMA20 touch ───────────────────────────
-    // Bar low must pierce or graze EMA20 and close back above with a bullish body.
-    // Base tolerance 0.3%; symbol profile adds a tiny extra for higher-vol instruments.
-    // pbTol: TSLA ≈ 0.39%, NVDA ≈ 0.42% above EMA20.
-    const pbTol        = 1.003 + profile.pullbackAtrTol * 0.002;
+    // ── Pullback quality: ATR-relative EMA20 proximity ──────────────────
+    // A professional momentum trader enters when price APPROACHES EMA20 in a trend,
+    // not only when it touches it exactly. "Near EMA20" = within profile.pullbackAtrTol
+    // ATR of it — adapts to each symbol's volatility.
+    // TSLA (ATR ~$4): within $1.80 above EMA20. NVDA (ATR ~$22): within $13.
     const pullbackLong  = strongUptrend
-      && bar.low  <= e20i * pbTol && bar.close >= e20i * 0.996
+      && bar.low  <= e20i + atrI * profile.pullbackAtrTol
+      && bar.close >= e20i - atrI * 0.2
       && bar.close > bar.open;
     const pullbackShort = strongDowntrend
-      && bar.high >= e20i * (2 - pbTol) && bar.close <= e20i * 1.004
+      && bar.high >= e20i - atrI * profile.pullbackAtrTol
+      && bar.close <= e20i + atrI * 0.2
       && bar.close < bar.open;
+
+    // ── Trend continuation patterns ───────────────────────────────────────
+    // Higher low (bull): in uptrend, this bar's low exceeds the prior 5-bar swing low —
+    // the classic "staircase" structure of a healthy uptrend.
+    const prior5Lows    = bars.slice(Math.max(0, i - 5), i).map(b => b.low);
+    const priorSwingLow = prior5Lows.length > 0 ? Math.min(...prior5Lows) : bar.low;
+    const higherLowBull = strongUptrend && bar.low > priorSwingLow && bar.close > bar.open;
+
+    // Lower high (bear): in downtrend, this bar's high is below the prior 5-bar swing high.
+    const prior5Highs    = bars.slice(Math.max(0, i - 5), i).map(b => b.high);
+    const priorSwingHigh = prior5Highs.length > 0 ? Math.max(...prior5Highs) : bar.high;
+    const lowerHighBear  = strongDowntrend && bar.high < priorSwingHigh && bar.close < bar.open;
+
+    // EMA reclaim (bull): price closed below EMA20 last bar, reclaims it this bar.
+    // This is a high-probability continuation trigger: the mean acted as support.
+    const emaReclaimBull = closePrev < e20i && bar.close > e20i * 1.001 && bar.close > bar.open;
+    // EMA rejection (bear): price closed above EMA20 last bar, loses it this bar.
+    const emaRejectionBear = closePrev > e20i && bar.close < e20i * 0.999 && bar.close < bar.open;
 
     // ── MACD momentum flags ──────────────────────────────────────────────
     const macdCrossBull  = macdPrevI <= 0 && macdI > 0;
@@ -283,9 +304,11 @@ export function generateSignals(
     const macdBear       = macdI < 0 || macdCrossBear;
 
     // ── Exhaustion ───────────────────────────────────────────────────────
+    // Only flag exhaustion when BOTH RSI is extreme AND price is very far from EMA.
+    // Raised bar vs old (80→85, 55→65) so strong momentum doesn't get killed early.
     const atrStr      = Math.min(100, (Math.abs(bar.close - e20i) / atrI) * 30);
-    const isExhBull   = rsiI > 80 && atrStr > 55;
-    const isExhBear   = rsiI < 20 && atrStr > 55;
+    const isExhBull   = rsiI > 85 && atrStr > 65;
+    const isExhBear   = rsiI < 15 && atrStr > 65;
 
     // ── Context ──────────────────────────────────────────────────────────
     const vol    = analyzeVolume(bars, i);
@@ -300,13 +323,16 @@ export function generateSignals(
     const isVertBull = move5 >  atrI * 2.5;  // spike up — don't long
     const isVertBear = move5 < -atrI * 2.5;  // spike down — don't short
 
-    // 2. EMA20 distance: regime-aware fixed-percentage overextension limit.
-    //    Strong trends can sustain wider extension (momentum continuation is valid).
-    //    Range/chop: tight pullback required — no chasing.
-    const ema20Dist   = Math.abs(bar.close - e20i) / (e20i || bar.close);
-    const emaDistLim  = (strongUptrend || strongDowntrend) ? 0.025 : 0.015;
-    const farAboveEma = ema20Dist > emaDistLim && bar.close > e20i;
-    const farBelowEma = ema20Dist > emaDistLim && bar.close < e20i;
+    // 2. EMA20 overextension: ATR-relative limit.
+    //    High-ATR symbols (NVDA) naturally swing further from EMA — percentage-based
+    //    limits are too strict for them. 1.8 ATR in a strong trend is the extension
+    //    limit; momentum continuation setups above that have very low hit rates.
+    //    Range/chop: 1.0 ATR (tighter — no chasing in directionless tape).
+    const ema20Dist    = Math.abs(bar.close - e20i) / (e20i || bar.close);
+    const ema20AtrDist = Math.abs(bar.close - e20i) / (atrI || bar.close * 0.01);
+    const extLimit     = (strongUptrend || strongDowntrend) ? 1.8 : 1.0;
+    const farAboveEma  = ema20AtrDist > extLimit && bar.close > e20i;
+    const farBelowEma  = ema20AtrDist > extLimit && bar.close < e20i;
 
     // 3. Bar body quality: a doji/spinning-top at entry = indecision. Not a
     //    good signal bar. (Hammer/shooting-star shapes are intentionally kept —
@@ -380,6 +406,8 @@ export function generateSignals(
 
       if (pullbackLong)        bullScore += 24;
       if (pullbackLong && ema20Dist < 0.005) bullScore += 8; // textbook EMA20 touch = precision bonus
+      if (emaReclaimBull)    { bullScore += 18; reasons.push("EMA Reclaim"); }
+      if (higherLowBull)       bullScore += 10; // trend staircase structure
 
       // ── Advanced quality factors ────────────────────────────────────────
       // Liquidity sweep: genuine stop hunt with ATR-scaled breach + recovery.
@@ -410,8 +438,9 @@ export function generateSignals(
         else if (rsiI >= 30 && rsiI <  38) bullScore += 7;
         else if (rsiI >= 56 && rsiI <= 63) bullScore += 4;
         else if (rsiI <  30)               bullScore -= 6;
-        else if (rsiI >= 63 && rsiI <  70) bullScore -= 14;
-        else if (rsiI >= 70)               bullScore -= 28;
+        else if (rsiI >= 63 && rsiI <  70) bullScore -= 10; // softened: was -14
+        else if (rsiI >= 70 && rsiI <= 78) bullScore -= 20; // softened: was -28
+        else if (rsiI >  78)               bullScore -= 30; // keep heavy penalty for extreme RSI
       }
 
       if      (macdAccBull)  bullScore += 10;
@@ -489,7 +518,7 @@ export function generateSignals(
 
       // Adaptive confluence gate: minPillars is regime-dependent (4 in trend, 6 in chop).
       // Score threshold is also regime-dependent — no separate hardcoded 97 floor.
-      const hasLongStrategy = pullbackLong || vwapReclaim
+      const hasLongStrategy = pullbackLong || vwapReclaim || emaReclaimBull || higherLowBull
         || pa?.bullish === true || (consol.contracting && bullEmaAlign)
         || (strongUptrend && (vol.accumulation || vol.breakoutVol))
         || (bullEmaAlign && structBull && macdBull);
@@ -576,6 +605,8 @@ export function generateSignals(
 
       if (pullbackShort)        bearScore += 24;
       if (pullbackShort && ema20Dist < 0.005) bearScore += 8; // textbook EMA20 touch = precision bonus
+      if (emaRejectionBear)  { bearScore += 18; reasons.push("EMA Rejection"); }
+      if (lowerHighBear)       bearScore += 10; // trend staircase structure
 
       // ── Advanced quality factors ────────────────────────────────────────
       if (sweepBear)                       bearScore += 8;  // stop hunt then rejection — supplemental bonus
@@ -600,8 +631,9 @@ export function generateSignals(
         else if (rsiI >= 62 && rsiI <= 70) bearScore += 7;
         else if (rsiI >= 37 && rsiI <  44) bearScore += 4;
         else if (rsiI >  70)               bearScore -= 6;
-        else if (rsiI >= 30 && rsiI <  37) bearScore -= 14;
-        else if (rsiI <  30)               bearScore -= 28;
+        else if (rsiI >= 22 && rsiI <  37) bearScore -= 10; // softened: was -14
+        else if (rsiI >= 14 && rsiI <  22) bearScore -= 20; // softened: was -28
+        else if (rsiI <  14)               bearScore -= 30; // keep heavy penalty for extreme RSI
       }
 
       if      (macdAccBear)   bearScore += 10;
@@ -675,7 +707,7 @@ export function generateSignals(
       ].filter(Boolean).length;
 
       // Adaptive confluence gate: regime-dependent pillars and threshold.
-      const hasShortStrategy = pullbackShort || vwapRejection
+      const hasShortStrategy = pullbackShort || vwapRejection || emaRejectionBear || lowerHighBear
         || (pa !== null && !pa.bullish) || (consol.contracting && bearEmaAlign)
         || (strongDowntrend && (vol.distribution || vol.breakoutVol))
         || (bearEmaAlign && structBear && macdBear);

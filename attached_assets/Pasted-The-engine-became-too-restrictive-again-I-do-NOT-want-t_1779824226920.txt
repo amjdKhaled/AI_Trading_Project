@@ -1,0 +1,139 @@
+The engine became too restrictive again.
+
+I do NOT want the system to wait for near-perfect 95–100% institutional-grade setups only.
+
+I want a smarter balance between:
+- opportunity frequency
+- signal quality
+- momentum participation
+- expectancy
+
+Current issue:
+The engine is filtering out too many valid trades and missing strong trend continuation opportunities.
+
+I want MORE trades than the current version, but without returning to noisy spam signals.
+
+Target behavior:
+- high-quality intraday momentum engine
+- aggressive-smart
+- adaptive
+- context-aware
+- active participation in trends
+- not ultra-defensive
+
+Implement these changes:
+
+1. Lower the global score floor
+Current:
+97
+
+New:
+Dynamic range:
+- trending regime: 84–90
+- normal regime: 90–93
+- chop/ranging: 95+
+
+Do NOT use one static threshold.
+
+2. Reduce confluence strictness
+Current:
+6+ pillars
+
+New:
+- strong trend: 4–5 confirmations enough
+- pullback continuation: 4 enough
+- breakout retest: 5 enough
+- chop/range reversals: keep strict (6+)
+
+3. Stop over-penalizing momentum
+The engine currently rejects too many strong continuation moves.
+
+Modify:
+- vertical move penalty
+- EMA extension penalty
+- RSI exhaustion penalty
+
+to become CONTEXTUAL.
+
+Example:
+If:
+- strong volume
+- strong trend structure
+- high momentum persistence
+- clean breakout
+
+then:
+ALLOW continuation entries even if RSI is high.
+
+4. Trend continuation should become priority
+The engine should aggressively look for:
+- pullback continuation
+- higher low continuation
+- EMA reclaim continuation
+- breakout retest continuation
+- liquidity sweep continuation
+
+These should produce the MOST signals.
+
+5. Adaptive RSI logic
+Do NOT hard reject:
+RSI > 75
+or
+RSI < 25
+
+Instead:
+- strong trend + strong volume can override RSI extremes
+- only reject if exhaustion behavior is confirmed
+
+6. Relax EMA distance filtering
+Current EMA distance logic is too strict.
+
+Use:
+- ATR-relative dynamic extension
+instead of fixed % distance.
+
+Strong trends should tolerate wider extension.
+
+7. Increase opportunity flow intentionally
+Goal:
+- more participation
+- more valid setups
+- more trend entries
+
+NOT:
+- perfect sniper-only trading
+
+8. Keep the important protections
+DO NOT remove:
+- one-trade lifecycle logic
+- fake breakout rejection
+- liquidity sweep analysis
+- HTF alignment
+- regime detection
+- SL/TP lifecycle
+- risk management
+
+9. Prioritize expectancy over win rate alone
+I do NOT care about artificially maximizing win rate by killing trade frequency.
+
+I care about:
+- net profitability
+- trend participation
+- opportunity efficiency
+- scalable intraday execution
+
+10. Desired final behavior
+The engine should feel like:
+- a professional momentum trader
+- not an over-filtered backtesting robot
+
+It should:
+- participate in strong moves
+- catch trend continuations
+- enter pullbacks confidently
+- adapt to volatility
+- adapt to symbol personality
+- adapt to market regime
+
+Goal:
+Increase the number of high-quality opportunities significantly while keeping the system intelligent and profitable.
