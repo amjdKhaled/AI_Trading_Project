@@ -1,0 +1,167 @@
+Yes, proceed with all four additions.
+
+But I also want major improvements to the visual signal system and historical signal analysis behavior.
+
+IMPORTANT:
+This platform is NOT a broker.
+This is NOT for auto trading.
+
+The goal is:
+
+* full chart analysis
+* historical setup analysis
+* signal visualization
+* trade replay understanding
+* AI-assisted market reading
+
+Right now the engine only shows signals near the latest candles.
+
+I want the engine to analyze the ENTIRE chart history from the first candle to the latest candle and render ALL historical valid signals across the chart.
+
+I want to visually inspect:
+
+* whether the engine correctly identified entries
+* whether signals make sense
+* where the engine failed
+* where the engine succeeded
+* how the engine behaves in different market conditions
+
+====================================================
+FULL HISTORICAL SIGNAL SCANNING
+===============================
+
+The engine must:
+
+* scan all historical candles
+* evaluate every historical setup
+* generate historical LONG/SHORT signals
+* display them directly on the chart
+
+I do NOT want signals only near the most recent candles.
+
+I want to see:
+
+* historical entries
+* historical exits
+* historical stop losses
+* historical take profits
+
+across the FULL chart history.
+
+====================================================
+VISUAL SIGNAL SYSTEM IMPROVEMENTS
+=================================
+
+The current signals are too subtle and unclear.
+
+Improve signal visualization significantly.
+
+I want very clear chart overlays for:
+
+* LONG entries
+* SHORT entries
+* EXIT signals
+* Stop Loss
+* Take Profit
+
+====================================================
+SIGNAL VISUAL STYLE
+===================
+
+Use:
+
+LONG:
+
+* strong green arrows
+* clear BUY labels
+* confidence %
+* optional glowing marker
+
+SHORT:
+
+* strong red arrows
+* clear SELL labels
+* confidence %
+* optional glowing marker
+
+EXIT:
+
+* yellow/orange markers
+* clear EXIT labels
+
+STOP LOSS:
+
+* red dashed horizontal line
+
+TAKE PROFIT:
+
+* green dashed horizontal line
+
+ENTRY:
+
+* blue or white horizontal entry line
+
+====================================================
+TRADE VISUALIZATION
+===================
+
+For every signal:
+
+* visually connect entry to TP/SL
+* show risk/reward zone
+* make winning vs losing trades obvious
+
+I want the chart to visually explain:
+
+* why the signal happened
+* where the entry was
+* where the stop was
+* where profit target was
+
+====================================================
+SIGNAL LABEL DETAILS
+====================
+
+Every signal marker should optionally include:
+
+* confidence %
+* setup grade (A+, A, B)
+* signal type
+* key reasons
+
+Example:
+BUY A+
+92%
+VWAP reclaim
+Bullish engulfing
+15m trend aligned
+
+====================================================
+IMPORTANT
+=========
+
+Do NOT optimize this platform for brokerage execution.
+
+Optimize it for:
+
+* analysis
+* visualization
+* AI learning
+* historical review
+* setup quality inspection
+* trader understanding
+
+The chart itself should become an educational visual analysis system.
+
+====================================================
+BACKTEST VISUALIZATION
+======================
+
+I also want the architecture prepared for:
+
+* future backtesting
+* win/loss replay
+* setup statistics
+* signal performance review
+
+So historical signals must persist and be reviewable across the entire chart history.

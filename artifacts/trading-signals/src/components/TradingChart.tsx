@@ -13,6 +13,7 @@ interface Bar { time: number; open: number; high: number; low: number; close: nu
 interface MarkerPos {
   x: number; y: number; isLong: boolean;
   confidence: number; key: string; isActive: boolean;
+  grade?: "A+" | "A" | "B" | "Weak";
 }
 interface ExitPos { x: number; y: number; isWin: boolean; }
 
@@ -119,14 +120,26 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     const trade = activeTradeRef.current;
     const tr    = tradeResultRef.current;
 
-    const nearestBar = (targetSec: number) => {
-      let best: Bar | undefined;
-      let minD = Infinity;
-      for (const b of snap) {
-        const d = Math.abs(b.time - targetSec);
-        if (d < minD) { minD = d; best = b; }
+    // Bars are time-sorted on the same interval grid as signal barTimes,
+    // so an O(1) Map lookup keyed on the bucket start works for almost every
+    // signal. Falls back to binary search for any signal whose timestamp
+    // happens to land between buckets (legacy data, DST seam, etc.).
+    const byTime = new Map<number, Bar>();
+    for (const b of snap) byTime.set(b.time, b);
+    const nearestBar = (targetSec: number): Bar | undefined => {
+      const hit = byTime.get(targetSec);
+      if (hit) return hit;
+      // binary search for nearest
+      let lo = 0, hi = snap.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (snap[mid].time < targetSec) lo = mid + 1; else hi = mid;
       }
-      return best;
+      const cand = snap[lo];
+      if (!cand) return undefined;
+      const prev = snap[lo - 1];
+      if (prev && Math.abs(prev.time - targetSec) < Math.abs(cand.time - targetSec)) return prev;
+      return cand;
     };
 
     const toCoords = (b: Bar, isLong: boolean) => {
@@ -138,10 +151,10 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
       return { x, y: isLong ? y + 5 : y - 5 };
     };
 
-    // Which signals to show markers for
-    const sigList = trade
-      ? signalsRef.current.filter((s) => s.signalId === trade.signalId)
-      : signalsRef.current.slice(0, 5);
+    // Render markers for ALL historical signals across the full chart.
+    // toCoords returns null for off-viewport signals, so they're skipped
+    // automatically; the SVG only paints what's currently visible.
+    const sigList = signalsRef.current;
 
     const positions: MarkerPos[] = [];
     for (const sig of sigList) {
@@ -154,6 +167,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
         ...coords,
         isLong: sig.side === "long",
         confidence: sig.confidence,
+        grade: sig.grade,
         key: sig.signalId,
         isActive: !!trade && sig.signalId === trade.signalId,
       });
@@ -493,24 +507,45 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             </filter>
           </defs>
 
-          {/* Signal entry markers */}
+          {/* Signal entry markers — rendered for every historical signal in view */}
           {markers.map((m) => {
-            const col = m.isLong ? "#26a69a" : "#ef5350";
-            const flt = m.isLong ? "url(#gGreen)" : "url(#gRed)";
-            const mW  = m.isActive ? 11 : 8;
-            const mH  = m.isActive ? 16 : 11;
-            const pts = m.isLong
+            const col   = m.isLong ? "#26a69a" : "#ef5350";
+            const flt   = m.isActive ? (m.isLong ? "url(#gGreen)" : "url(#gRed)") : undefined;
+            const mW    = m.isActive ? 12 : 9;
+            const mH    = m.isActive ? 18 : 13;
+            const pts   = m.isLong
               ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
               : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
-            const labelY = m.isLong ? m.y + 15 : m.y - mH - 4;
+            // Label block: BUY/SELL line + grade + confidence stacked on the
+            // outer side of the arrow.
+            const labelGap = m.isLong ? 12 : -6;
+            const lineH    = 10;
+            const sideText = m.isLong ? "BUY" : "SELL";
+            const grade    = m.grade && m.grade !== "Weak" ? m.grade : "";
+
+            const y0 = m.isLong ? m.y + mH + labelGap          : m.y - mH + labelGap;
+            const y1 = m.isLong ? m.y + mH + labelGap + lineH  : m.y - mH + labelGap - lineH;
 
             return (
               <g key={m.key}>
-                <polygon points={pts} fill={col} opacity={m.isActive ? 1 : 0.72} filter={flt} />
-                <text x={m.x} y={labelY} textAnchor="middle" fill={col}
+                <polygon
+                  points={pts}
+                  fill={col}
+                  opacity={m.isActive ? 1 : 0.85}
+                  stroke={col}
+                  strokeWidth={m.isActive ? 1.2 : 0.6}
+                  filter={flt}
+                />
+                <text x={m.x} y={y0} textAnchor="middle" fill={col}
+                  fontSize={m.isActive ? 10 : 9}
+                  fontFamily="'JetBrains Mono',Menlo,monospace"
+                  fontWeight="800" opacity={0.95}>
+                  {sideText}{grade ? ` ${grade}` : ""}
+                </text>
+                <text x={m.x} y={y1} textAnchor="middle" fill={col}
                   fontSize={m.isActive ? 9 : 7.5}
                   fontFamily="'JetBrains Mono',Menlo,monospace"
-                  fontWeight="700" opacity={0.9}>
+                  fontWeight="600" opacity={0.85}>
                   {m.confidence}%
                 </text>
               </g>

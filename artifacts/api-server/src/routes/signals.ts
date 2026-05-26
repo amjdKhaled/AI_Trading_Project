@@ -24,20 +24,32 @@ router.get("/signals", async (req, res): Promise<void> => {
   if (symbol)    conditions.push(eq(signalsTable.symbol,    symbol));
   if (timeframe) conditions.push(eq(signalsTable.timeframe, timeframe));
 
+  // Default raised: full historical scan can produce 100s of signals; we want
+  // the chart to render all of them across the entire history.
+  const effectiveLimit = limit ?? 500;
+
   const base = db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt));
   const rows = await (
     conditions.length === 0 ? base :
     conditions.length === 1 ? base.where(conditions[0]) :
     base.where(and(...conditions))
-  ).limit(limit ?? 50);
+  ).limit(effectiveLimit);
 
   // Seed once if empty for this symbol+timeframe
   if (rows.length === 0 && symbol) {
     try {
       const rawBars = await fetchHistory(symbol, timeframe);
       const bars = rawBars as import("../lib/analyzer/types").OhlcvBar[];
+      // For 5m signals, also fetch 15m bars so the engine can apply higher-timeframe bias.
+      let htfBars: import("../lib/analyzer/types").OhlcvBar[] = [];
+      if (timeframe === "5m") {
+        try {
+          const htf = await fetchHistory(symbol, "15m");
+          htfBars = htf as import("../lib/analyzer/types").OhlcvBar[];
+        } catch { /* HTF optional */ }
+      }
       if (bars.length >= 50) {
-        const { signals } = generateSignals(bars, symbol, timeframe);
+        const { signals } = generateSignals(bars, symbol, timeframe, htfBars);
         for (const sig of signals) {
           try {
             await db.insert(signalsTable).values({
@@ -63,7 +75,7 @@ router.get("/signals", async (req, res): Promise<void> => {
           conditions.length === 0 ? db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt)) :
           conditions.length === 1 ? db.select().from(signalsTable).where(conditions[0]).orderBy(desc(signalsTable.createdAt)) :
           db.select().from(signalsTable).where(and(...conditions)).orderBy(desc(signalsTable.createdAt))
-        ).limit(limit ?? 50);
+        ).limit(effectiveLimit);
         res.json(ListSignalsResponse.parse(seeded));
         return;
       }

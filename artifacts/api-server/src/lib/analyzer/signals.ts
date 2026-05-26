@@ -5,9 +5,9 @@
 //  1. Regime filter: LONG only when not in strong downtrend, SHORT only when not in strong uptrend
 //  2. Pullback entries: best longs = price touches EMA20 from above in uptrend; vice versa for shorts
 //  3. Per-bar indicators: every EMA/RSI/MACD value uses the bar's own index
-//  4. Minimum 3 confirmations required before a signal fires
-//  5. Threshold 82 + A+/A grade only = fewer, higher-quality signals
-//  6. Descriptive trigger names so every signal has a readable label
+//  4. Minimum confirmations required before a signal fires
+//  5. VWAP, Multi-timeframe bias, Market Regime, and Session Awareness modulate score & threshold
+//  6. Full historical scan: every deduped candidate is returned (no top-N truncation)
 // ============================================================
 
 import type { OhlcvBar, SignalCandidate, TradingSignal } from "./types";
@@ -15,7 +15,10 @@ import { detectAllPatterns } from "./candlestick";
 import { detectChartPatterns } from "./patterns";
 import { analyzeStructure } from "./structure";
 import { analyzeVolume } from "./volume";
-import { analyzeTrendMomentumVolatility } from "./trend";
+import { analyzeTrendMomentumVolatility, emaArray } from "./trend";
+import { vwapArray } from "./vwap";
+import { classifyRegimes, type Regime } from "./regime";
+import { sessionFor, type Session } from "./session";
 
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function genId(): string {
@@ -56,6 +59,39 @@ function detectConsolidation(bars: OhlcvBar[], i: number) {
   return { contracting: lR < eR * 0.65, expanding: lR > eR * 1.5 };
 }
 
+// ── HTF Bias Builder ──────────────────────────────────────────────────────
+// Builds a function that, given a 5m bar's epoch-seconds time, returns the
+// 15m bias active at that time: "bull" | "bear" | "neutral".
+//
+// Bias is computed once per 15m bar from its own EMA stack:
+//   bull    → close > e20 > e50 > e200
+//   bear    → close < e20 < e50 < e200
+//   neutral → mixed
+function buildHtfBiasLookup(htfBars: OhlcvBar[]): (tSec: number) => "bull" | "bear" | "neutral" {
+  if (htfBars.length === 0) return () => "neutral";
+  const closes = htfBars.map(b => b.close);
+  const e20    = emaArray(closes, 20);
+  const e50    = emaArray(closes, 50);
+  const e200   = emaArray(closes, 200);
+  const bias: ("bull" | "bear" | "neutral")[] = htfBars.map((_, i) => {
+    const c = closes[i];
+    if (c > e20[i] && e20[i] > e50[i] && e50[i] > e200[i]) return "bull";
+    if (c < e20[i] && e20[i] < e50[i] && e50[i] < e200[i]) return "bear";
+    return "neutral";
+  });
+
+  // Binary search: find the most recent htfBar with time <= tSec
+  return (tSec: number) => {
+    let lo = 0, hi = htfBars.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (htfBars[mid].time <= tSec) { ans = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    return ans >= 0 ? bias[ans] : "neutral";
+  };
+}
+
 // ── Descriptive trigger name (when no candlestick pattern fires) ───────────
 function buildTriggerName(opts: {
   pullback: boolean;
@@ -66,8 +102,10 @@ function buildTriggerName(opts: {
   macdCross: boolean;
   emaAlignment: boolean;
   structConfirm: boolean;
+  vwapReclaim: boolean;
   side: "long" | "short";
 }): string {
+  if (opts.vwapReclaim)  return opts.side === "long" ? "VWAP Reclaim" : "VWAP Rejection";
   if (opts.pullback)     return opts.side === "long" ? "EMA20 Pullback" : "EMA20 Rejection";
   if (opts.breakout)     return opts.side === "long" ? "Breakout Candle" : "Breakdown Candle";
   if (opts.retest)       return opts.side === "long" ? "Support Retest"  : "Resistance Retest";
@@ -78,6 +116,18 @@ function buildTriggerName(opts: {
   return opts.side === "long" ? "Momentum Long" : "Momentum Short";
 }
 
+// ── Per-regime / per-session score threshold ──────────────────────────────
+// Adaptive entry bar: chop and lunch require stronger setups.
+function scoreThreshold(regime: Regime, session: Session): number {
+  let t = 75;
+  if (regime === "chop")            t += 12; // 87
+  else if (regime === "ranging")    t += 4;  // 79
+  else if (regime === "vol-expansion") t -= 2; // 73 (breakouts wanted)
+  if (session === "midday")         t += 6;
+  if (session === "open")           t -= 2;
+  return t;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Main Signal Generator
 // ══════════════════════════════════════════════════════════════════════════
@@ -85,6 +135,9 @@ export function generateSignals(
   bars: OhlcvBar[],
   symbol: string,
   timeframe: string,
+  /** Higher-timeframe bars for multi-timeframe confirmation (e.g. 15m bars
+   *  when generating 5m signals). Pass empty array or omit to disable HTF bias. */
+  htfBars: OhlcvBar[] = [],
 ): { signals: TradingSignal[]; candidates: SignalCandidate[] } {
 
   if (bars.length < 80) return { signals: [], candidates: [] };
@@ -97,10 +150,15 @@ export function generateSignals(
   const { ema20, ema50, ema200, atrValues, rsiValues, macdHist } =
     analyzeTrendMomentumVolatility(bars);
 
+  // ── New analyzers ────────────────────────────────────────────────────
+  const vwap    = vwapArray(bars);
+  const regimes = classifyRegimes(bars, ema20, ema50, ema200, atrValues);
+  const htfBias = buildHtfBiasLookup(htfBars);
+
   const candidates: SignalCandidate[] = [];
-  // 2000-bar lookback ≈ 4 trading weeks on 5m; captures enough structure for full session analysis
-  const lookback  = Math.min(bars.length - 2, 2000);
-  const startIdx  = bars.length - lookback;
+  // Full-history scan: every bar from index 80 onward is a candidate.
+  // Earlier engine versions capped at 2000 bars; user wants ALL historical signals.
+  const startIdx = 80;
 
   for (let i = startIdx; i < bars.length - 1; i++) {
     const bar = bars[i];
@@ -113,6 +171,12 @@ export function generateSignals(
     const rsiI      = rsiValues[i] ?? 50;
     const macdI     = macdHist[i]     ?? 0;
     const macdPrevI = macdHist[i - 1] ?? 0;
+    const vwapI     = vwap[i]      ?? bar.close;
+    const vwapPrev  = vwap[i - 1]  ?? vwapI;
+    const closePrev = bars[i - 1]?.close ?? bar.close;
+    const regimeI   = regimes[i];
+    const sessionI  = sessionFor(bar.time);
+    const htfI      = htfBias(bar.time);
 
     // Skip bars with negligible range (illiquid / blended daily artefacts)
     const atrPct = atrI / (bar.close || 1);
@@ -128,12 +192,16 @@ export function generateSignals(
     const bullEmaAlign = aboveEma20 && aboveEma50;
     const bearEmaAlign = belowEma20 && belowEma50;
 
+    // ── VWAP flags ───────────────────────────────────────────────────────
+    const aboveVwap     = bar.close > vwapI;
+    const belowVwap     = bar.close < vwapI;
+    const vwapReclaim   = closePrev <= vwapPrev && bar.close > vwapI && bar.close > bar.open;
+    const vwapRejection = closePrev >= vwapPrev && bar.close < vwapI && bar.close < bar.open;
+
     // ── Pullback quality ─────────────────────────────────────────────────
-    // Prime long entry: uptrend + price tags EMA20 from above + bullish close
     const pullbackLong  = strongUptrend
       && bar.low  <= e20i * 1.003 && bar.close >= e20i * 0.996
       && bar.close > bar.open;
-    // Prime short entry: downtrend + price bounces up to EMA20 + bearish close
     const pullbackShort = strongDowntrend
       && bar.high >= e20i * 0.997 && bar.close <= e20i * 1.004
       && bar.close < bar.open;
@@ -162,60 +230,70 @@ export function generateSignals(
     const structBull = structure.regime === "uptrend"   || structure.lastChochDir === "bullish";
     const structBear = structure.regime === "downtrend" || structure.lastChochDir === "bearish";
 
+    const threshold = scoreThreshold(regimeI, sessionI);
+
     // ══════════════════════════════════════════════════════════════════════
     // LONG ANALYSIS — skip entirely only in confirmed strong downtrend
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongDowntrend) {
+    if (!strongDowntrend && htfI !== "bear") {
       let bullScore = 0;
+      const reasons: string[] = [];
 
-      // Candle patterns
       bullP.forEach(p => { bullScore += p.confidence * 0.30; });
 
-      // EMA trend alignment
-      if      (strongUptrend)  bullScore += atrStr > 40 ? 26 : 16;
-      else if (bullEmaAlign)   bullScore += atrStr > 40 ? 18 : 10;
-      else if (aboveEma50)     bullScore += 6;
+      if      (strongUptrend)  { bullScore += atrStr > 40 ? 26 : 16; }
+      else if (bullEmaAlign)   { bullScore += atrStr > 40 ? 18 : 10; }
+      else if (aboveEma50)     { bullScore += 6; }
       if (bar.close > e200i)   bullScore += 5;
 
-      // Pullback entry bonus
       if (pullbackLong)        bullScore += 24;
 
-      // RSI zone
       if      (rsiI >= 40 && rsiI <= 58) bullScore += 12;
       else if (rsiI >= 30 && rsiI <  40) bullScore += 7;
       else if (rsiI >= 58 && rsiI <= 68) bullScore += 5;
       else if (rsiI <  30)               bullScore += 4;
       else if (rsiI >  68)               bullScore -= 10;
 
-      // MACD
       if      (macdAccBull)  bullScore += 10;
       else if (macdCrossBull) bullScore += 8;
       else if (macdBull)     bullScore += 5;
       else                   bullScore -= 5;
 
-      // Volume
       if      (vol.accumulation)                        bullScore += 14;
       else if (vol.breakoutVol && bar.close > bar.open) bullScore += 12;
       else if (vol.spike && bar.close > bar.open)       bullScore += 7;
       if (vol.rvol > 2.0)                               bullScore += 4;
 
-      // Consolidation / expansion
       if (consol.contracting)               bullScore += 6;
       if (consol.expanding && bullEmaAlign) bullScore += 7;
 
-      // Breakout / retest
       if (pa?.bullish)   bullScore += 14;
-
-      // Structure
       if (structBull)    bullScore += 10;
 
-      // Penalties
+      // ── VWAP bonuses ──────────────────────────────────────────────────
+      if (vwapReclaim) { bullScore += 14; reasons.push("VWAP Reclaim"); }
+      else if (aboveVwap) bullScore += 4;
+      else if (belowVwap) bullScore -= 6;
+
+      // ── HTF bias ──────────────────────────────────────────────────────
+      if (htfI === "bull") { bullScore += 12; reasons.push("15m Bull Aligned"); }
+
+      // ── Regime / session modifiers ────────────────────────────────────
+      if (regimeI === "trending-up")       { bullScore += 8;  reasons.push("Trending"); }
+      else if (regimeI === "vol-expansion" && pa?.bullish) { bullScore += 6; reasons.push("Vol Expansion"); }
+      else if (regimeI === "chop")         bullScore -= 6;
+
+      if (sessionI === "power-hour" && (strongUptrend || pa?.bullish)) {
+        bullScore += 5; reasons.push("Power Hour");
+      }
+      if (sessionI === "open" && pa?.bullish) { bullScore += 4; reasons.push("Open Drive"); }
+
+      // ── Penalties ─────────────────────────────────────────────────────
       if (isExhBull)                           bullScore -= 28;
       if (bearEmaAlign)                        bullScore -= 15;
       if (vol.distribution)                    bullScore -= 8;
       if (vol.climax && bar.close > bar.open)  bullScore -= 10;
 
-      // Minimum confirmations gate
       const longConfirms = [
         structBull,
         bullEmaAlign || strongUptrend,
@@ -225,9 +303,11 @@ export function generateSignals(
         macdBull,
         pullbackLong || pa?.bullish === true,
         bullP.length > 0,
+        aboveVwap || vwapReclaim,
+        htfI === "bull",
       ].filter(Boolean).length;
 
-      if (bullScore >= 75 && longConfirms >= 2) {
+      if (bullScore >= threshold && longConfirms >= 3) {
         const slice    = bars.slice(Math.max(0, i - 14), i + 1);
         const swingLow = Math.min(...slice.map(b => b.low));
         const sl       = swingLow - atrI * 0.3;
@@ -247,8 +327,11 @@ export function generateSignals(
             macdCross: macdCrossBull,
             emaAlignment: bullEmaAlign || strongUptrend,
             structConfirm: structBull,
+            vwapReclaim,
           }));
         }
+        // Append regime/session/htf reasons after the primary trigger name
+        patternNames.push(...reasons);
 
         candidates.push({
           side: "long", barIndex: i, time: bar.time,
@@ -271,14 +354,15 @@ export function generateSignals(
     // ══════════════════════════════════════════════════════════════════════
     // SHORT ANALYSIS — skip entirely only in confirmed strong uptrend
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongUptrend) {
+    if (!strongUptrend && htfI !== "bull") {
       let bearScore = 0;
+      const reasons: string[] = [];
 
       bearP.forEach(p => { bearScore += p.confidence * 0.30; });
 
-      if      (strongDowntrend) bearScore += atrStr > 40 ? 26 : 16;
-      else if (bearEmaAlign)    bearScore += atrStr > 40 ? 18 : 10;
-      else if (belowEma50)      bearScore += 6;
+      if      (strongDowntrend) { bearScore += atrStr > 40 ? 26 : 16; }
+      else if (bearEmaAlign)    { bearScore += atrStr > 40 ? 18 : 10; }
+      else if (belowEma50)      { bearScore += 6; }
       if (bar.close < e200i)    bearScore += 5;
 
       if (pullbackShort)        bearScore += 24;
@@ -305,6 +389,24 @@ export function generateSignals(
       if (pa && !pa.bullish)  bearScore += 14;
       if (structBear)         bearScore += 10;
 
+      // VWAP
+      if (vwapRejection) { bearScore += 14; reasons.push("VWAP Rejection"); }
+      else if (belowVwap) bearScore += 4;
+      else if (aboveVwap) bearScore -= 6;
+
+      // HTF
+      if (htfI === "bear") { bearScore += 12; reasons.push("15m Bear Aligned"); }
+
+      // Regime / session
+      if (regimeI === "trending-down")     { bearScore += 8;  reasons.push("Trending"); }
+      else if (regimeI === "vol-expansion" && pa && !pa.bullish) { bearScore += 6; reasons.push("Vol Expansion"); }
+      else if (regimeI === "chop")         bearScore -= 6;
+
+      if (sessionI === "power-hour" && (strongDowntrend || (pa && !pa.bullish))) {
+        bearScore += 5; reasons.push("Power Hour");
+      }
+      if (sessionI === "open" && pa && !pa.bullish) { bearScore += 4; reasons.push("Open Drive"); }
+
       if (isExhBear)                           bearScore -= 28;
       if (bullEmaAlign)                        bearScore -= 15;
       if (vol.accumulation)                    bearScore -= 8;
@@ -319,9 +421,11 @@ export function generateSignals(
         macdBear,
         pullbackShort || (pa !== null && !pa.bullish),
         bearP.length > 0,
+        belowVwap || vwapRejection,
+        htfI === "bear",
       ].filter(Boolean).length;
 
-      if (bearScore >= 75 && shortConfirms >= 2) {
+      if (bearScore >= threshold && shortConfirms >= 3) {
         const slice     = bars.slice(Math.max(0, i - 14), i + 1);
         const swingHigh = Math.max(...slice.map(b => b.high));
         const sl        = swingHigh + atrI * 0.3;
@@ -341,8 +445,10 @@ export function generateSignals(
             macdCross: macdCrossBear,
             emaAlignment: bearEmaAlign || strongDowntrend,
             structConfirm: structBear,
+            vwapReclaim: vwapRejection,
           }));
         }
+        patternNames.push(...reasons);
 
         candidates.push({
           side: "short", barIndex: i, time: bar.time,
@@ -380,12 +486,11 @@ export function generateSignals(
     if (!tooClose) { used.add(c.time); deduped.push(c); }
   }
 
-  // Keep the 20 best signals (A+, A, or B grade), sorted most-recent-first
-  const bestCandidates = deduped
-    .sort((a, b) => b.time - a.time)
-    .slice(0, 20);
+  // Full history: return ALL deduped signals (no slice cap).
+  // The caller / DB can apply its own limit if it wants only the recent N.
+  const allDeduped = deduped.sort((a, b) => a.time - b.time);
 
-  const signals: TradingSignal[] = bestCandidates.map(c => ({
+  const signals: TradingSignal[] = allDeduped.map(c => ({
     id:         genId(),
     side:       c.side,
     symbol,
@@ -397,10 +502,10 @@ export function generateSignals(
     confidence: Math.round(c.confidence),
     grade:      c.grade,
     riskLevel:  c.riskLevel,
-    patterns:   c.patterns.slice(0, 4),
+    patterns:   c.patterns.slice(0, 6),
     state:      "active",
     createdAt:  new Date().toISOString(),
   }));
 
-  return { signals, candidates: deduped };
+  return { signals, candidates: allDeduped };
 }
