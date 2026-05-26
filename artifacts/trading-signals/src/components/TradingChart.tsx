@@ -541,111 +541,54 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             </filter>
           </defs>
 
-          {/* Signal entry markers — rendered for every historical signal in view */}
+          {/* Signal entry markers — clean institutional style.
+               Historical signals: entry arrow + grade label only.
+               No lifecycle lines, no exit circles, no expired clutter.
+               Active trade uses larger glowing arrow. */}
           {markers.map((m) => {
-            const col   = m.isLong ? "#26a69a" : "#ef5350";
-            const flt   = m.isActive ? (m.isLong ? "url(#gGreen)" : "url(#gRed)") : undefined;
-            const mW    = m.isActive ? 12 : 9;
-            const mH    = m.isActive ? 18 : 13;
-            const pts   = m.isLong
+            const col      = m.isLong ? "#26a69a" : "#ef5350";
+            const flt      = m.isActive ? (m.isLong ? "url(#gGreen)" : "url(#gRed)") : undefined;
+            const mW       = m.isActive ? 12 : 8;
+            const mH       = m.isActive ? 18 : 12;
+            const pts      = m.isLong
               ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
               : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
-            // Label block: BUY/SELL line + grade + confidence stacked on the
-            // outer side of the arrow.
-            const labelGap = m.isLong ? 12 : -6;
+
+            const labelGap = m.isLong ? 11 : -5;
             const lineH    = 10;
             const sideText = m.isLong ? "BUY" : "SELL";
-            const grade    = m.grade && m.grade !== "Weak" ? m.grade : "";
+            // Only show grade badge for A / A+ — skip on plain B signals to reduce noise.
+            const grade    = m.grade === "A+" || m.grade === "A" ? m.grade : "";
 
-            const y0 = m.isLong ? m.y + mH + labelGap          : m.y - mH + labelGap;
-            const y1 = m.isLong ? m.y + mH + labelGap + lineH  : m.y - mH + labelGap - lineH;
-
-            // Exit-trade visualization: thin connecting line + exit marker.
-            // Colored by outcome: green for TP hit, red for SL hit, amber for expired.
-            const hasExit = m.exitX !== undefined && m.exitY !== undefined && m.outcome;
-            const exitCol =
-              m.outcome === "tp_hit"  ? "#26a69a" :
-              m.outcome === "sl_hit"  ? "#ef5350" :
-              m.outcome === "expired" ? "#eab308" : col;
-            const exitGlyph =
-              m.outcome === "tp_hit"  ? "✓" :
-              m.outcome === "sl_hit"  ? "✗" : "○";
-            // R-multiple label: gain/loss in risk units (always ±2.5R for hits given the engine's RR target,
-            // but computed live in case future logic adjusts SL/TP per-signal).
-            let rText = "";
-            if (hasExit && m.entryPrice != null && m.exitPrice != null) {
-              // For long: profit = exit - entry; risk per share = entry - SL.  The
-              // sign of the R-multiple matches outcome.  We don't have SL here so
-              // we infer 2.5R for TP and -1R for SL by convention; expired uses raw %.
-              if (m.outcome === "tp_hit") rText = "+2.5R";
-              else if (m.outcome === "sl_hit") rText = "−1R";
-              else {
-                const pct = ((m.exitPrice - m.entryPrice) / m.entryPrice) * (m.isLong ? 100 : -100);
-                rText = `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
-              }
-            }
+            const y0 = m.isLong ? m.y + mH + labelGap         : m.y - mH + labelGap;
+            const y1 = m.isLong ? m.y + mH + labelGap + lineH : m.y - mH + labelGap - lineH;
 
             return (
               <g key={m.key}>
-                {/* Entry → Exit connector */}
-                {hasExit && (
-                  <line
-                    x1={m.x} y1={m.y}
-                    x2={m.exitX!} y2={m.exitY!}
-                    stroke={exitCol}
-                    strokeWidth={1}
-                    strokeDasharray="3 2"
-                    opacity={0.55}
-                  />
-                )}
-
                 {/* Entry arrow */}
                 <polygon
                   points={pts}
                   fill={col}
-                  opacity={m.isActive ? 1 : 0.85}
+                  opacity={m.isActive ? 1 : 0.82}
                   stroke={col}
-                  strokeWidth={m.isActive ? 1.2 : 0.6}
+                  strokeWidth={m.isActive ? 1.2 : 0.5}
                   filter={flt}
                 />
+                {/* BUY / SELL + grade */}
                 <text x={m.x} y={y0} textAnchor="middle" fill={col}
-                  fontSize={m.isActive ? 10 : 9}
+                  fontSize={m.isActive ? 10 : 8.5}
                   fontFamily="'JetBrains Mono',Menlo,monospace"
                   fontWeight="800" opacity={0.95}>
                   {sideText}{grade ? ` ${grade}` : ""}
                 </text>
-                <text x={m.x} y={y1} textAnchor="middle" fill={col}
-                  fontSize={m.isActive ? 9 : 7.5}
-                  fontFamily="'JetBrains Mono',Menlo,monospace"
-                  fontWeight="600" opacity={0.85}>
-                  {m.confidence}%
-                </text>
-
-                {/* Exit marker (circle + outcome glyph + R-multiple label) */}
-                {hasExit && (
-                  <g>
-                    <circle
-                      cx={m.exitX!} cy={m.exitY!} r={6}
-                      fill={`${exitCol}22`}
-                      stroke={exitCol}
-                      strokeWidth={1.1}
-                    />
-                    <text x={m.exitX!} y={m.exitY! + 3} textAnchor="middle"
-                      fill={exitCol}
-                      fontSize={8}
-                      fontFamily="'JetBrains Mono',Menlo,monospace"
-                      fontWeight="800">
-                      {exitGlyph}
-                    </text>
-                    <text x={m.exitX!} y={m.exitY! - 9} textAnchor="middle"
-                      fill={exitCol}
-                      fontSize={7.5}
-                      fontFamily="'JetBrains Mono',Menlo,monospace"
-                      fontWeight="700"
-                      opacity={0.9}>
-                      {rText}
-                    </text>
-                  </g>
+                {/* Confidence % — only show for active trade to cut label density */}
+                {m.isActive && (
+                  <text x={m.x} y={y1} textAnchor="middle" fill={col}
+                    fontSize={9}
+                    fontFamily="'JetBrains Mono',Menlo,monospace"
+                    fontWeight="600" opacity={0.85}>
+                    {m.confidence}%
+                  </text>
                 )}
               </g>
             );

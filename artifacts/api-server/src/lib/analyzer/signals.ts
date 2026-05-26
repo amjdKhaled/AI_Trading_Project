@@ -117,15 +117,15 @@ function buildTriggerName(opts: {
 }
 
 // ── Per-regime / per-session score threshold ──────────────────────────────
-// Adaptive entry bar: chop / midday require stronger setups, but not so
-// strict that virtually no signals pass. Historical analysis needs breadth.
+// Institutional-grade filter: only A / A+ setups pass.
+// High threshold + minimum confirmations keeps the chart sparse and readable.
 function scoreThreshold(regime: Regime, session: Session): number {
-  let t = 68;                                  // base (was 75 — too few signals historically)
-  if (regime === "chop")               t += 6; // 74 (was +12 / 87 — over-filtered)
-  else if (regime === "ranging")       t += 2; // 70 (was +4 / 79)
-  else if (regime === "vol-expansion") t -= 3; // 65 (breakouts; was -2)
-  if (session === "midday")            t += 3; // +3 (was +6)
-  if (session === "open")              t -= 2; // same
+  let t = 82;                                  // high base — only genuine setups
+  if (regime === "chop")               t += 14; // 96: almost nothing fires in chop
+  else if (regime === "ranging")       t += 6;  // 88: requires strong confirming signal
+  else if (regime === "vol-expansion") t -= 4;  // 78: breakouts allowed earlier
+  if (session === "midday")            t += 8;  // lunch chop = very few signals
+  if (session === "open")              t -= 3;  // open-drive setups welcome
   return t;
 }
 
@@ -234,11 +234,11 @@ export function generateSignals(
     const threshold = scoreThreshold(regimeI, sessionI);
 
     // ══════════════════════════════════════════════════════════════════════
-    // LONG ANALYSIS — skip entirely only in confirmed strong downtrend
-    // HTF bear bias is already a score penalty below; don't hard-block here
-    // or we lose too many valid counter-trend setups in historical analysis.
+    // LONG ANALYSIS
+    // Hard-block against-trend longs in bear HTF AND confirmed downtrend.
+    // Counter-trend setups against a strong HTF trend rarely survive SL.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongDowntrend) {
+    if (!strongDowntrend && htfI !== "bear") {
       let bullScore = 0;
       const reasons: string[] = [];
 
@@ -310,7 +310,9 @@ export function generateSignals(
         htfI === "bull",
       ].filter(Boolean).length;
 
-      if (bullScore >= threshold && longConfirms >= 2) {
+      // Require 4+ confluence pillars + grade A minimum (score ≥ 88 = grade A).
+      // This is the institutional filter — only clear, multi-factor setups fire.
+      if (bullScore >= threshold && longConfirms >= 4 && bullScore >= 88) {
         const slice    = bars.slice(Math.max(0, i - 14), i + 1);
         const swingLow = Math.min(...slice.map(b => b.low));
         const sl       = swingLow - atrI * 0.3;
@@ -355,10 +357,10 @@ export function generateSignals(
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // SHORT ANALYSIS — skip entirely only in confirmed strong uptrend
-    // HTF bull bias is already a score penalty below; don't hard-block here.
+    // SHORT ANALYSIS
+    // Hard-block against-trend shorts in bull HTF AND confirmed uptrend.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongUptrend) {
+    if (!strongUptrend && htfI !== "bull") {
       let bearScore = 0;
       const reasons: string[] = [];
 
@@ -429,7 +431,8 @@ export function generateSignals(
         htfI === "bear",
       ].filter(Boolean).length;
 
-      if (bearScore >= threshold && shortConfirms >= 2) {
+      // Same institutional filter for shorts.
+      if (bearScore >= threshold && shortConfirms >= 4 && bearScore >= 88) {
         const slice     = bars.slice(Math.max(0, i - 14), i + 1);
         const swingHigh = Math.max(...slice.map(b => b.high));
         const sl        = swingHigh + atrI * 0.3;
@@ -473,10 +476,11 @@ export function generateSignals(
     }
   }
 
-  // ── Deduplication: enforce minimum gap between same-side signals ─────────
-  // 5m: 3 bars = 15 min minimum gap; 15m: 3 bars = 45 min minimum gap
-  // (Reduced from 6/4 bars — tighter windows mean more historical coverage)
-  const minGapSec    = timeframe === "15m" ? 900 * 3 : 300 * 3;
+  // ── Deduplication: wide gap = one best setup per impulse leg ─────────────
+  // 5m: 10 bars = 50 min; 15m: 6 bars = 90 min.
+  // Within any trending leg or consolidation, only the highest-score signal
+  // survives — this prevents marker pileups on the same move.
+  const minGapSec    = timeframe === "15m" ? 900 * 6 : 300 * 10;
   const sorted       = [...candidates].sort((a, b) => b.confidence - a.confidence);
   const usedByLong   = new Set<number>();
   const usedByShort  = new Set<number>();

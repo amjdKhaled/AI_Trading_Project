@@ -1,0 +1,142 @@
+The chart is now heavily overcrowded and visually noisy.
+
+I do NOT want thousands of low-quality signals.
+
+I want the engine to become much more selective and institutional-grade.
+
+====================================================
+MAIN GOAL
+=========
+
+Reduce signal quantity significantly.
+
+Only show:
+
+* high probability setups
+* high quality trades
+* clean institutional entries
+
+I prefer:
+
+* fewer signals
+* much higher win rate
+* cleaner chart
+* better visual clarity
+
+====================================================
+REMOVE VISUAL NOISE
+===================
+
+The current chart is cluttered with:
+
+* too many markers
+* too many overlapping labels
+* too many lifecycle lines
+
+Especially:
+
+* yellow expired trade markers
+* overlapping SELL labels
+* overlapping lifecycle paths
+
+This makes the chart unreadable.
+
+====================================================
+NEW SIGNAL PHILOSOPHY
+=====================
+
+The engine should behave more like:
+
+* a professional discretionary trader
+* a smart institutional scanner
+
+NOT:
+
+* a hyperactive scalping bot
+
+====================================================
+STRICTER QUALITY FILTERS
+========================
+
+Increase setup quality requirements again.
+
+Prefer:
+
+* A+ setups
+* A setups
+
+Reduce:
+
+* B setups
+* weak setups
+* low-confluence trades
+
+====================================================
+ONLY ALLOW SIGNALS WITH STRONG CONFLUENCE
+=========================================
+
+Require stronger alignment between:
+
+* trend
+* structure
+* VWAP
+* EMA alignment
+* volume confirmation
+* momentum
+* higher timeframe confirmation
+
+====================================================
+REDUCE DUPLICATES
+=================
+
+Do not generate multiple same-direction signals during:
+
+* same consolidation
+* same impulse leg
+* same trend continuation wave
+
+Generate only the BEST setup inside a local move.
+
+====================================================
+VISUAL CLEANUP
+==============
+
+REMOVE:
+
+* yellow expired trade lines
+* noisy dashed lifecycle clutter
+* overlapping labels
+
+Keep visuals minimal and clean.
+
+====================================================
+VISUAL STYLE
+============
+
+Only show:
+
+* strong BUY markers
+* strong SELL markers
+* optional TP/SL for active trade only
+
+Historical trades should be:
+
+* clean
+* readable
+* sparse
+* high quality
+
+====================================================
+TARGET
+======
+
+I want the chart to look:
+
+* professional
+* clean
+* confident
+* high signal quality
+
+not like a spammed backtesting chart.
+
+Target fewer but significantly better signals.
