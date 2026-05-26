@@ -1,0 +1,108 @@
+====================================================
+ADVANCED PROFESSIONAL FEATURES
+==============================
+
+Implement advanced institutional-style analysis features.
+
+====================================================
+MARKET REGIME DETECTION
+=======================
+
+Detect current market conditions:
+
+* trending market
+* ranging market
+* high volatility
+* low volatility
+* momentum expansion
+* choppy/noisy market
+
+The signal engine must adapt behavior based on market regime.
+
+====================================================
+MULTI-TIMEFRAME CONFIRMATION
+============================
+
+Use:
+
+* 15m timeframe as higher timeframe bias
+* 5m timeframe as execution timeframe
+
+Example:
+
+* bullish 15m trend
+* bullish 5m setup
+  = stronger LONG signal
+
+Avoid trading strongly against higher timeframe structure.
+
+====================================================
+SESSION AWARENESS
+=================
+
+Analyze market sessions:
+
+* market open
+* midday/lunch consolidation
+* power hour
+* after-hours behavior
+
+The engine should understand that market behavior changes during different sessions.
+
+====================================================
+RISK MANAGEMENT ENGINE
+======================
+
+Implement professional risk filtering.
+
+Reject trades when:
+
+* risk/reward is poor
+* volatility is too high
+* setup quality is weak
+* confirmation count is too low
+
+Use:
+
+* ATR-based stop losses
+* dynamic take profit
+* minimum RR thresholds
+
+====================================================
+SIGNAL QUALITY GRADING
+======================
+
+Grade setups:
+
+* A+
+* A
+* B
+* Avoid
+
+Only display high-quality setups prominently.
+
+====================================================
+TRADE COOLDOWN SYSTEM
+=====================
+
+Prevent overtrading.
+
+Examples:
+
+* cooldown after stop loss
+* cooldown after failed breakout
+* avoid multiple signals in same consolidation zone
+
+====================================================
+BACKTESTING SUPPORT
+===================
+
+Build the signal engine so it can later support:
+
+* historical replay
+* backtesting
+* winrate analysis
+* profit factor analysis
+* drawdown analysis
+
+The architecture must be scalable for future strategy optimization.

@@ -1,0 +1,383 @@
+I want you to build a professional rule-based market analysis and signal engine for my AI-powered trading analysis platform.
+
+IMPORTANT:
+This is NOT a broker platform.
+This is NOT automated trading.
+
+This is a personal AI-powered chart analysis platform focused on:
+
+* market analysis
+* technical analysis
+* signal generation
+* entry/exit detection
+* realtime chart intelligence
+
+The system should think like a professional intraday trader and continuously analyze the chart in the background.
+
+====================================================
+MAIN GOAL
+=========
+
+Build a professional signal engine that continuously analyzes:
+
+* historical candles
+* realtime candles
+* market structure
+* volume
+* momentum
+* volatility
+* trend
+
+Then generate:
+
+* LONG signals
+* SHORT signals
+* EXIT signals
+* Stop Loss
+* Take Profit
+* Confidence score
+
+Signals should appear directly on the chart.
+
+====================================================
+IMPORTANT ARCHITECTURE
+======================
+
+Do NOT start with AI hallucination-style predictions.
+
+The foundation MUST be:
+
+* rule-based analysis
+* quant-style analysis
+* deterministic signal logic
+
+AI will later become an enhancement layer on top.
+
+====================================================
+SUPPORTED TIMEFRAMES
+====================
+
+Focus ONLY on:
+
+* 5 minute timeframe
+* 15 minute timeframe
+
+This platform is optimized for:
+
+* scalping
+* intraday trading
+* momentum trading
+
+====================================================
+TECHNICAL ANALYSIS ENGINE
+=========================
+
+Build a full technical analysis engine.
+
+The engine must continuously analyze:
+
+====================================================
+PRICE ACTION ANALYSIS
+=====================
+
+Detect and analyze:
+
+* breakout
+* fake breakout
+* consolidation
+* trend continuation
+* reversal
+* pullback
+* momentum expansion
+* trend exhaustion
+* range compression
+* volatility expansion
+* support/resistance interaction
+* rejection candles
+* liquidity sweeps
+
+====================================================
+CANDLESTICK PATTERN ENGINE
+==========================
+
+Detect:
+
+* bullish engulfing
+* bearish engulfing
+* hammer
+* inverted hammer
+* shooting star
+* doji
+* dragonfly doji
+* gravestone doji
+* morning star
+* evening star
+* spinning top
+* marubozu
+* inside bar
+* outside bar
+* pin bar
+
+The system should:
+
+* score pattern quality
+* evaluate context
+* reject weak patterns
+* avoid naive pattern detection
+
+Pattern detection must consider:
+
+* trend context
+* volume
+* volatility
+* nearby support/resistance
+* momentum
+
+====================================================
+INDICATORS ENGINE
+=================
+
+Implement:
+
+* RSI
+* EMA
+* VWAP
+* MACD
+* ATR
+* Volume analysis
+
+====================================================
+RSI ANALYSIS
+============
+
+Analyze:
+
+* overbought/oversold
+* divergence
+* RSI trend
+* RSI momentum
+* RSI failure swings
+
+====================================================
+EMA ANALYSIS
+============
+
+Use:
+
+* EMA 9
+* EMA 20
+* EMA 50
+* EMA 200
+
+Analyze:
+
+* crossovers
+* trend alignment
+* dynamic support/resistance
+* trend strength
+
+====================================================
+VWAP ANALYSIS
+=============
+
+Analyze:
+
+* price above/below VWAP
+* VWAP reclaim
+* VWAP rejection
+* VWAP trend bias
+
+====================================================
+MACD ANALYSIS
+=============
+
+Analyze:
+
+* bullish crossovers
+* bearish crossovers
+* histogram momentum
+* divergence
+* trend momentum
+
+====================================================
+ATR ANALYSIS
+============
+
+Use ATR for:
+
+* volatility analysis
+* stop loss sizing
+* breakout validation
+* trend expansion detection
+
+====================================================
+VOLUME ANALYSIS
+===============
+
+Analyze:
+
+* volume spikes
+* abnormal volume
+* breakout confirmation
+* climax volume
+* weak participation
+* accumulation/distribution
+
+====================================================
+MARKET STRUCTURE ENGINE
+=======================
+
+Build a smart market structure engine.
+
+Detect:
+
+* higher highs
+* higher lows
+* lower highs
+* lower lows
+* break of structure (BOS)
+* change of character (CHOCH)
+* liquidity zones
+* equal highs/lows
+* trend shifts
+* consolidation ranges
+* expansion phases
+
+====================================================
+SIGNAL SCORING SYSTEM
+=====================
+
+Build a weighted scoring engine.
+
+Each category contributes to a final score:
+
+Example:
+
+* trend strength
+* momentum
+* volume confirmation
+* candle quality
+* market structure
+* volatility conditions
+* breakout quality
+* support/resistance context
+
+Generate:
+
+* confidence score
+* setup quality score
+* risk/reward quality
+
+====================================================
+SIGNAL GENERATION
+=================
+
+Generate signals ONLY when:
+
+* enough confirmations exist
+* market conditions are favorable
+* confidence threshold is met
+
+Avoid:
+
+* overtrading
+* low-quality setups
+* noisy signals
+* random entries
+
+====================================================
+SIGNAL OUTPUT
+=============
+
+Each signal should include:
+
+{
+signalType,
+confidence,
+entry,
+stopLoss,
+takeProfit,
+riskReward,
+timeframe,
+reasons[],
+marketContext
+}
+
+====================================================
+CHART OVERLAYS
+==============
+
+Render directly on chart:
+
+* LONG markers
+* SHORT markers
+* EXIT markers
+* Stop Loss lines
+* Take Profit lines
+
+Keep overlays clean and professional.
+
+Do NOT clutter the chart.
+
+====================================================
+BACKGROUND ANALYSIS ENGINE
+==========================
+
+The engine should continuously analyze:
+
+* full historical candle history
+* realtime candles
+* ongoing market conditions
+
+The analysis runs in the background continuously.
+
+====================================================
+PERFORMANCE REQUIREMENTS
+========================
+
+The system must:
+
+* handle large historical datasets
+* support realtime updates
+* avoid blocking rendering
+* process signals efficiently
+* maintain stable performance
+
+====================================================
+IMPORTANT
+=========
+
+Do NOT build a fake AI prediction system.
+
+Build:
+
+* a real quant-style signal engine
+* structured technical analysis
+* professional signal filtering
+* deterministic analysis logic
+
+AI integration will come later as an enhancement layer.
+
+====================================================
+FINAL GOAL
+==========
+
+I want a professional AI-assisted market analysis platform that behaves like a real institutional intraday analysis system.
+
+The platform should:
+
+* analyze the chart continuously
+* understand market structure
+* understand momentum
+* understand trend
+* understand volume
+* detect high-quality setups
+* generate intelligent entry/exit signals
+
+Focus on:
+
+* signal quality
+* clean architecture
+* realtime performance
+* professional technical analysis
+* stability
