@@ -1,3 +1,4 @@
 - [Live candle architecture](live-candle-architecture.md) — server is pure price relay; client's CandleStateManager is sole writer to candleSeries.update().
 - [Candle rendering precision](candle-rendering-precision.md) — priceFormat minMove + autoscaleInfoProvider stop consolidation bars from collapsing to dashes in lightweight-charts.
 - [Polygon.io data source](polygon-data-source.md) — SIP intraday from Polygon (matches TradingView). Free-tier: 5 req/min, paginated, no WS — design backoff + cap windows + capability broadcast.
+- [Sequential trade filter](sequential-trade-filter.md) — one-active-trade rule lives as a post-dedup pass in signals.ts; Polygon fetch timeout must be 55 s+ for cold-cache regenerate.

@@ -546,7 +546,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
                No lifecycle lines, no exit circles, no expired clutter.
                Active trade uses larger glowing arrow. */}
           {markers.map((m) => {
-            const col      = m.isLong ? "#26a69a" : "#ef5350";
+            const col      = m.isLong ? "#22d3ee" : "#ef5350";
             const flt      = m.isActive ? (m.isLong ? "url(#gGreen)" : "url(#gRed)") : undefined;
             const mW       = m.isActive ? 12 : 8;
             const mH       = m.isActive ? 18 : 12;
@@ -563,12 +563,12 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             const y0 = m.isLong ? m.y + mH + labelGap         : m.y - mH + labelGap;
             const y1 = m.isLong ? m.y + mH + labelGap + lineH : m.y - mH + labelGap - lineH;
 
-            // Exit outcome dot — only for TP/SL hits, never expired.
-            // No connector line; just a small circle with glyph at exit bar.
+            // Exit outcome dot — TP = neon green, SL = bright red, larger and obvious.
             const showExit = (m.outcome === "tp_hit" || m.outcome === "sl_hit")
               && m.exitX !== undefined && m.exitY !== undefined;
-            const exitCol  = m.outcome === "tp_hit" ? "#26a69a" : "#ef5350";
-            const exitGlyph = m.outcome === "tp_hit" ? "✓" : "✗";
+            const isTP     = m.outcome === "tp_hit";
+            const exitCol  = isTP ? "#00ff88" : "#ff3333";
+            const exitGlyph = isTP ? "✓" : "✗";
 
             return (
               <g key={m.key}>
@@ -597,24 +597,35 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
                     {m.confidence}%
                   </text>
                 )}
-                {/* TP / SL outcome dot — small, clean, no connector line */}
+                {/* TP / SL exit marker — large, glowing, unmissable */}
                 {showExit && (
                   <g>
+                    {/* outer glow ring */}
                     <circle
-                      cx={m.exitX!} cy={m.exitY!} r={5}
-                      fill={`${exitCol}18`}
+                      cx={m.exitX!} cy={m.exitY!} r={11}
+                      fill="none"
                       stroke={exitCol}
                       strokeWidth={1}
-                      opacity={0.85}
+                      opacity={0.25}
                     />
+                    {/* filled circle */}
+                    <circle
+                      cx={m.exitX!} cy={m.exitY!} r={8}
+                      fill={`${exitCol}28`}
+                      stroke={exitCol}
+                      strokeWidth={1.8}
+                      filter={isTP ? "url(#gGreen)" : "url(#gRed)"}
+                      opacity={0.95}
+                    />
+                    {/* glyph */}
                     <text
-                      x={m.exitX!} y={m.exitY! + 3.5}
+                      x={m.exitX!} y={m.exitY! + 4.5}
                       textAnchor="middle"
                       fill={exitCol}
-                      fontSize={7}
+                      fontSize={9}
                       fontFamily="'JetBrains Mono',Menlo,monospace"
                       fontWeight="900"
-                      opacity={0.9}>
+                      opacity={1}>
                       {exitGlyph}
                     </text>
                   </g>

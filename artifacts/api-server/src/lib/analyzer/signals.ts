@@ -11,6 +11,7 @@
 // ============================================================
 
 import type { OhlcvBar, SignalCandidate, TradingSignal } from "./types";
+import { simulateLifecycle, MAX_HOLD_BARS } from "./lifecycle";
 import { detectAllPatterns } from "./candlestick";
 import { detectChartPatterns } from "./patterns";
 import { analyzeStructure } from "./structure";
@@ -497,9 +498,46 @@ export function generateSignals(
     if (!tooClose) { used.add(c.time); deduped.push(c); }
   }
 
-  // Full history: return ALL deduped signals (no slice cap).
-  // The caller / DB can apply its own limit if it wants only the recent N.
-  const allDeduped = deduped.sort((a, b) => a.time - b.time);
+  // ── Sequential one-trade-at-a-time filter ─────────────────────────────
+  // A professional trader never stacks entries while a trade is still open.
+  // Walk the deduped candidates in chronological order; once a trade fires,
+  // simulate its lifecycle and skip all candidates until that trade resolves.
+  //
+  // This is the most important filter for realistic trade simulation:
+  //   ENTRY → trade active → TP/SL/expiry → next entry allowed
+  //
+  const barSec     = timeframe === "15m" ? 900 : 300;
+  const maxHoldSec = MAX_HOLD_BARS * barSec;
+
+  // O(1) bar lookup by time (bars are unique-per-time on OHLCV grids).
+  const barTimeToIdx = new Map<number, number>();
+  bars.forEach((b, i) => barTimeToIdx.set(b.time, i));
+
+  const chronological = deduped.sort((a, b) => a.time - b.time);
+  const sequential: typeof chronological = [];
+  let nextAllowedTime = 0; // epoch-seconds; 0 = no active trade
+
+  for (const c of chronological) {
+    if (c.time < nextAllowedTime) continue; // current trade still open
+
+    sequential.push(c);
+
+    // Simulate this trade's lifecycle to find when it closes.
+    const entryIdx = barTimeToIdx.get(c.time) ?? -1;
+    if (entryIdx >= 0) {
+      const lc = simulateLifecycle(
+        bars, entryIdx, c.side as "long" | "short",
+        c.entryPrice, c.slPrice, c.tpPrice,
+      );
+      // Block all new entries until one bar AFTER exit.
+      // For unresolved (active) trades, block for the full hold window.
+      nextAllowedTime = lc.exitBarTime
+        ? lc.exitBarTime + barSec
+        : c.time + maxHoldSec + barSec;
+    }
+  }
+
+  const allDeduped = sequential; // rename for clarity below
 
   const signals: TradingSignal[] = allDeduped.map(c => ({
     id:         genId(),

@@ -27,7 +27,7 @@ export interface LifecycleResult {
   barsHeld:     number;
 }
 
-const MAX_HOLD_BARS = 50;
+export const MAX_HOLD_BARS = 50;
 
 export function simulateLifecycle(
   bars: OhlcvBar[],

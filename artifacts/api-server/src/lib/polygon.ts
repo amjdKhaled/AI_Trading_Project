@@ -88,7 +88,7 @@ async function polygonFetch(url: string, maxRetries = 3): Promise<unknown> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch(finalUrl, {
       headers: { Accept: "application/json" },
-      signal:  AbortSignal.timeout(25_000),
+      signal:  AbortSignal.timeout(55_000),
     });
 
     if (res.status === 429 && attempt < maxRetries) {

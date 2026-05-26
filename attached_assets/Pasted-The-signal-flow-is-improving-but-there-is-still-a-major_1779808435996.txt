@@ -1,0 +1,118 @@
+The signal flow is improving, but there is still a major logical problem in trade management.
+
+====================================================
+CRITICAL FIX
+============
+
+The engine should NOT open a new trade while the previous trade is still active.
+
+Right now I can see:
+
+* multiple BUY entries during the same active long
+* multiple SELL entries during the same active short
+
+This is incorrect behavior.
+
+====================================================
+ONE ACTIVE TRADE RULE
+=====================
+
+Implement strict trade state management.
+
+Rules:
+
+* if LONG trade is active:
+  -> do NOT generate another LONG
+  -> do NOT generate another SHORT
+  until the current trade is resolved
+
+A trade is resolved ONLY when:
+
+* TP hit
+* SL hit
+* manual exit condition triggered
+* expiration condition triggered
+
+====================================================
+SEQUENTIAL TRADE LOGIC
+======================
+
+Trade flow should behave like this:
+
+ENTRY
+→ trade active
+→ no more entries allowed
+→ EXIT / TP / SL
+→ only then allow next signal
+
+This should create a much cleaner and more realistic chart.
+
+====================================================
+EXIT VISUAL IMPROVEMENT
+=======================
+
+Exit markers are still not visually clear enough.
+
+Make exits much easier to distinguish from entries.
+
+====================================================
+NEW EXIT COLORS
+===============
+
+TP HIT:
+
+* bright neon green
+* larger target icon
+* very obvious visually
+
+SL HIT:
+
+* bright red
+* strong stop icon
+
+EXIT / MANUAL CLOSE:
+
+* bright yellow or orange
+* distinct shape
+
+====================================================
+ENTRY COLORS
+============
+
+BUY:
+
+* cyan or blue-green
+
+SELL:
+
+* red
+
+Keep entries visually separate from exits.
+
+====================================================
+VISUAL CLARITY
+==============
+
+Right now some markers still visually blend together.
+
+I want:
+
+* clean trade flow
+* obvious trade lifecycle
+* easy-to-read sequence:
+  ENTRY → ACTIVE → EXIT
+
+====================================================
+IMPORTANT
+=========
+
+The chart should simulate realistic trading behavior.
+
+A professional trader does NOT stack 5 entries simultaneously during one active position.
+
+The engine should behave like:
+
+* one position at a time
+* disciplined execution
+* clear lifecycle management
+* institutional-style signal flow
