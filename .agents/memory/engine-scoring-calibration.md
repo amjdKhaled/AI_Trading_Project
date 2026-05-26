@@ -1,38 +1,71 @@
 ---
 name: Engine scoring calibration
-description: Current bonus/penalty values in signals.ts and the reasoning behind them.
+description: Current hard gates, bonus/penalty values, and calibrated thresholds in signals.ts.
 ---
 
-# Engine Scoring Calibration
+# Engine Scoring Calibration (current state)
 
-## Hard gates (cause `continue` or signal rejection)
-- `efI < 0.12` → skip bar (extreme chop only; 5m bars normally sit 0.15–0.35)
-- `atrPct < 0.0005` → skip bar (illiquid / blended artefact)
-- `bullScore < 97` → no signal
-- `longConfirms < 6` → no signal (out of 10 possible pillars)
-- `!hasLongStrategy` → no signal (must have at least one identifiable trigger)
-- `longBadRR` → no signal (raw risk > 1.8 ATR)
+## Hard gates (cause `continue` or signal rejection before scoring)
+- `atrPct < 0.0005` → skip bar (illiquid / blended daily artefact)
+- `efI < 0.12` → skip bar (ER hard skip — extreme chop only)
+- `vol.rvol < 0.80` → skip bar (below 80% of 20-bar average volume = no conviction)
+- `rsiI > 75` → skip **LONG** analysis (overbought; hard cap — −28 penalty alone insufficient on high-scoring bars)
+- `rsiI < 25` → skip **SHORT** analysis (oversold; hard cap — same reason)
+- `longRawRisk > atrI * 1.8` → reject long (SL too wide → TP too far → low probability)
+
+## Long analysis entry gate (all must be true)
+- `!strongDowntrend && htfI !== "bear" && rsiI <= 75`
+
+## Signal acceptance gate (inside long block)
+- `bullScore >= threshold` (regime-/session-adjusted floor)
+- `longConfirms >= 6` (6 of 10 independent pillar confirmations)
+- `bullScore >= 97` (hard score floor)
+- `hasLongStrategy` (at least one identifiable institutional trigger)
+- `!longBadRR` (raw risk ≤ 1.8 ATR)
 
 ## Score bonuses (long side; short is symmetric)
 | Condition | Points |
 |---|---|
+| strongUptrend + atrStr > 40 | +26 |
 | pullbackLong | +24 |
-| pullbackLong + EMA20 distance < 0.5% | +8 |
-| sweepBull | +8 (supplemental — enhances, doesn't gate) |
+| pullbackLong + EMA20 distance < 0.5% | +8 (precision bonus) |
+| vol.accumulation | +14 |
+| pa.bullish | +14 |
+| vwapReclaim | +14 |
+| structBull | +10 |
+| macdAccBull | +10 |
+| htfI === "bull" | +12 (via pillar count + reasons) |
+| sweepBull | +8 (supplemental only — not a gate trigger) |
 | cleanER (efI > 0.50) | +8 |
 | pullbackLong + pullbackVolOk | +7 |
-| HTF aligned (htfI === "bull") | +12 (via confirmations count) |
+| RSI 38–56 | +12 |
+| regimeI === "trending-up" | +8 |
 
-## Score penalties (long side)
+## Key score penalties (long side)
 | Condition | Points |
 |---|---|
+| isExhBull | −28 |
+| RSI ≥ 70 | −28 |
+| RSI 63–70 | −14 |
+| isVertBull (5-bar spike >2.5 ATR) | −30 |
+| farAboveEma (>1.5% above EMA20) | −18 (tightened from 1.8%) |
+| bearEmaAlign | −15 |
+| fakeBreakoutBull | −20 |
+| isDoji | −12 |
+| belowVwap | −6 |
 | weakER (efI < 0.17) | −6 |
 | pullbackLong + !pullbackVolOk | −5 |
-| RSI ≥ 70 on long | large negative (RSI gate) |
 
-## What NOT to do
-- Do not tune bonus/penalty values based on WR from n<100 samples — the CI is ±15–20%
-- Do not raise the sweep bonus above +8 without validating on 100+ swept signals; the +22 value caused 12.5% WR sweeps to pass the threshold
-- Do not remove the ER hard skip (0.12) — it raises signal count to 70+ without improving WR
+## Calibrated thresholds (do not tune without n ≥ 100 samples)
+- RVOL floor: 0.80 (raised from 0.75)
+- EMA20 distance max: 1.5% (tightened from 1.8%)
+- RSI long cap: 75 (hard gate — not just penalty)
+- RSI short floor: 25 (hard gate)
+- ER hard skip: 0.12
+- SL ATR buffer: 0.25 ATR below swing low
+- SL max width: 1.8 ATR
+- Score floor: 97
+- Pillars required: 6 of 10
+- Dedup gap: 7200 sec (120 min) per side — do NOT reduce; sequential filter is the real enforcer
 
-**Why:** These values were arrived at through multiple calibration iterations on TSLA/NVDA free-tier Polygon data. The score threshold of 97 was raised from 95 in a prior session to improve selectivity.
+**Why:** TSLA backtest 36.8% WR with n=19 at these thresholds. NVDA 16.7% WR is a macro-trend conflict issue (see nvda-macro-conflict.md), not a threshold issue.

@@ -260,11 +260,11 @@ export function generateSignals(
     const isVertBull = move5 >  atrI * 2.5;  // spike up — don't long
     const isVertBear = move5 < -atrI * 2.5;  // spike down — don't short
 
-    // 2. EMA20 distance: >1.8% from EMA20 = overextended. A quality pullback
-    //    entry sits near EMA20, not far above/below it.
+    // 2. EMA20 distance: >1.5% from EMA20 = overextended. A quality pullback
+    //    entry sits near EMA20, not far above/below it. Tightened from 1.8% → 1.5%.
     const ema20Dist  = Math.abs(bar.close - e20i) / (e20i || bar.close);
-    const farAboveEma = ema20Dist > 0.018 && bar.close > e20i;
-    const farBelowEma = ema20Dist > 0.018 && bar.close < e20i;
+    const farAboveEma = ema20Dist > 0.015 && bar.close > e20i;
+    const farBelowEma = ema20Dist > 0.015 && bar.close < e20i;
 
     // 3. Bar body quality: a doji/spinning-top at entry = indecision. Not a
     //    good signal bar. (Hammer/shooting-star shapes are intentionally kept —
@@ -274,7 +274,8 @@ export function generateSignals(
     const isDoji    = bodyRatio < 0.18;
 
     // 4. Below-average volume = no conviction behind the move. Hard skip.
-    if (vol.rvol < 0.75) continue;
+    //    0.80 (raised from 0.75) — doc recommends ≥0.8× to eliminate low-participation bars.
+    if (vol.rvol < 0.80) continue;
 
     // Close position within the bar (0 = at low, 1 = at high).
     // A breakout bar that closes in the lower half of its range means bears
@@ -320,8 +321,10 @@ export function generateSignals(
     // LONG ANALYSIS
     // Hard-block against-trend longs in bear HTF AND confirmed downtrend.
     // Counter-trend setups against a strong HTF trend rarely survive SL.
+    // RSI hard cap at 75: longs above RSI 75 = chasing overbought exhaustion.
+    // The −28 penalty alone can't stop a very high-scoring bar from passing.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongDowntrend && htfI !== "bear") {
+    if (!strongDowntrend && htfI !== "bear" && rsiI <= 75) {
       let bullScore = 0;
       const reasons: string[] = [];
 
@@ -500,8 +503,9 @@ export function generateSignals(
     // ══════════════════════════════════════════════════════════════════════
     // SHORT ANALYSIS
     // Hard-block against-trend shorts in bull HTF AND confirmed uptrend.
+    // RSI hard floor at 25: shorts below RSI 25 = chasing oversold exhaustion.
     // ══════════════════════════════════════════════════════════════════════
-    if (!strongUptrend && htfI !== "bull") {
+    if (!strongUptrend && htfI !== "bull" && rsiI >= 25) {
       let bearScore = 0;
       const reasons: string[] = [];
 

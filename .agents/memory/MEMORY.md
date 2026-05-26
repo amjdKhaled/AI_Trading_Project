@@ -2,6 +2,7 @@
 - [Candle rendering precision](candle-rendering-precision.md) — priceFormat minMove + autoscaleInfoProvider stop consolidation bars from collapsing to dashes in lightweight-charts.
 - [Polygon.io data source](polygon-data-source.md) — SIP intraday from Polygon (matches TradingView). Free-tier: 5 req/min, paginated, no WS — design backoff + cap windows + capability broadcast.
 - [Sequential trade filter](sequential-trade-filter.md) — one-active-trade rule lives as a post-dedup pass in signals.ts; Polygon fetch timeout must be 55 s+ for cold-cache regenerate.
-- [Engine scoring calibration](engine-scoring-calibration.md) — current thresholds, bonus/penalty values, and what NOT to tune without larger samples.
+- [Engine scoring calibration](engine-scoring-calibration.md) — all current thresholds, hard gates, bonus/penalty values; do not tune without n ≥ 100 samples.
 - [WR measurement limits](wr-measurement-limits.md) — n<50 signals gives ±15–20% CI; never tune engine based on WR comparisons below n=100.
 - [Sweep detection design](sweep-detection-design.md) — 15-bar swingLow is not a significant level; ATR-scaled breach + volume required; sweeps should enhance but not gate signals.
+- [NVDA macro conflict](nvda-macro-conflict.md) — NVDA 16.7% WR vs TSLA 36.8% WR: same engine, macro regime conflict. Fix: add daily bias filter. Run TSLA-only until fixed.
