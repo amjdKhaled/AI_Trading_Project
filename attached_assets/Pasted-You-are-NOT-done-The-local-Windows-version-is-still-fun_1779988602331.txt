@@ -1,0 +1,218 @@
+You are NOT done. The local Windows version is still fundamentally broken and behaviorally different from the current Replit preview.
+
+This is now a FULL parity + architecture stabilization task.
+
+CRITICAL:
+Do NOT assume something is fixed because TypeScript passes or because one screenshot looks correct.
+You must VERIFY behavior end-to-end locally on Windows and compare against the current Replit preview behavior.
+
+====================================================
+CURRENT REAL PROBLEMS (STILL BROKEN)
+====================================================
+
+1. WATCHLIST SYMBOL SWITCHING STILL BROKEN
+- Clicking NVDA/AAPL/AMD/MSFT/TSLA/QQQ in the left watchlist does NOT reliably switch the chart locally.
+- Sometimes the UI highlights the symbol but the chart still shows old candles.
+- Sometimes old markers/signals remain.
+- Sometimes Generate uses the previous symbol.
+- Sometimes switching works once then breaks.
+
+This MUST become 100% deterministic.
+
+====================================================
+
+2. LOCAL VERSION DOES NOT MATCH REPLIT PREVIEW
+The Replit preview has:
+- right-side stats panel
+- signal cards
+- working generate
+- stable markers
+- stable symbol switching
+- consistent signal rendering
+- AI integration behavior
+
+The local Windows build still behaves differently.
+
+I need TRUE parity:
+LOCAL WINDOWS BUILD == REPLIT PREVIEW
+
+====================================================
+
+3. POLYGON API STILL BROKEN
+The app STILL shows:
+
+HTTP 500 - Polygon 429
+
+even after previous “fixes”.
+
+This means the architecture is STILL wrong.
+
+The issue is NOT solved.
+
+Possible remaining causes:
+- duplicate fetches
+- websocket duplicate subscriptions
+- generate endpoint refetch loops
+- react-query invalidation storms
+- signal generation triggering extra history calls
+- polling overlap
+- stale cache invalidation
+- frontend retries multiplying requests
+
+You MUST trace ALL Polygon requests end-to-end and prove:
+- one symbol load = one history request
+- generate does not duplicate history fetches
+- switching symbols cancels all previous requests
+- websocket reconnects do not multiply requests
+- no infinite loops exist
+
+====================================================
+
+4. AI ENGINE IS STILL BROKEN
+The AI engine is unstable and inconsistent locally.
+
+Requirements:
+- AI MUST always use CURRENT active symbol
+- AI MUST use current chart timeframe
+- AI MUST NOT use stale symbol context
+- AI MUST work after symbol switching
+- AI MUST gracefully handle Polygon failures
+- AI MUST gracefully handle Ollama timeouts
+- AI MUST show loading/error/success states correctly
+- AI MUST NEVER silently fail
+
+Current Ollama setup:
+
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:14b
+
+This is LOCAL ONLY.
+Do NOT build cloud assumptions.
+Do NOT build Replit-hosted Ollama assumptions.
+
+====================================================
+
+5. SIGNAL ENGINE QUALITY IS BAD
+The current local signal engine is producing:
+- marker spam
+- too many entries
+- unrealistic frequency
+- low-quality overfitted signals
+
+Especially visible on NVDA.
+
+I want:
+- fewer signals
+- higher quality
+- professional scalp/swing entries
+- realistic trade frequency
+- institutional-style confirmations
+
+The chart should resemble:
+TradingView + prop firm signal overlays
+
+NOT:
+retail indicator spam.
+
+====================================================
+
+6. CHART STATE STILL LEAKS
+Potential remaining issues:
+- stale lightweight-chart state
+- stale refs
+- stale markers
+- stale websocket events
+- stale signal arrays
+- stale react-query cache
+
+I need FULL lifecycle cleanup on:
+- symbol switch
+- timeframe switch
+- page navigation
+- generate
+- websocket reconnect
+
+====================================================
+
+7. LOCAL WINDOWS ENVIRONMENT MUST BE FIRST-CLASS
+The app MUST work properly on:
+- Windows 11
+- Node 22
+- pnpm
+- PostgreSQL local
+- Ollama local
+
+Do NOT optimize only for Replit.
+
+====================================================
+NEW API KEY
+====================================================
+
+Use this Polygon API key:
+
+POLYGON_API_KEY=4MgF3TYxKdYXuRQVeqo7Rkspt91bae81
+
+Replace all old keys.
+Verify the backend is actually using THIS key.
+Verify env loading works correctly on Windows.
+
+====================================================
+MANDATORY DEBUGGING REQUIREMENTS
+====================================================
+
+I do NOT want theoretical fixes anymore.
+
+You MUST:
+
+1. Instrument the app deeply
+- log every history request
+- log every generate request
+- log every symbol switch
+- log every websocket subscribe/unsubscribe
+- log cache hits/misses
+- log AI requests
+- log query invalidations
+
+2. Reproduce the bugs locally on Windows
+
+3. Verify each fix manually
+
+4. Compare local behavior against current Replit preview
+
+5. Do full end-to-end testing
+
+====================================================
+REQUIRED FINAL RESULT
+====================================================
+
+After your fixes:
+
+- watchlist switching is instant and stable
+- no stale candles ever appear
+- no stale signals ever appear
+- generate always uses current symbol
+- Polygon 429 errors are eliminated
+- AI engine works consistently
+- chart markers are high quality
+- local Windows build behaves IDENTICALLY to Replit preview
+- no race conditions
+- no stale state leaks
+- no websocket duplication
+- no marker duplication
+- no query storms
+
+====================================================
+IMPORTANT
+====================================================
+
+Do NOT stop after code edits.
+
+You must:
+- run the app
+- test manually
+- verify behavior
+- confirm parity
+- prove the bugs are gone
+
+Do not give theoretical explanations.
+Deliver a truly working local Windows build.
