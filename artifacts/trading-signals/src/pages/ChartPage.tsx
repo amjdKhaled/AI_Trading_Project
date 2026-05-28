@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { WatchlistPanel } from "@/components/WatchlistPanel";
 import { TradingChart } from "@/components/TradingChart";
 import { SignalPanel } from "@/components/SignalPanel";
@@ -33,6 +33,42 @@ export interface TradeResult {
   exitTime: number;
 }
 
+// DEV only: synthetic signals from bar data to verify the rendering layer without
+// requiring a seeded database or Polygon quota.
+function makeMockSignals(bars: OhlcvBar[], symbol: string): SignalNew[] {
+  if (bars.length < 30) return [];
+  const signals: SignalNew[] = [];
+  let i = 30;
+  while (i < bars.length) {
+    const bar = bars[i];
+    const prev = bars.slice(Math.max(0, i - 14), i);
+    const atr = prev.reduce((s, b) => s + (b.high - b.low), 0) / (prev.length || 1);
+    if (atr > 0) {
+      const isLong = bar.close > bars[Math.max(0, i - 5)].close;
+      signals.push({
+        type:        "signal.new" as const,
+        signalId:    `dev-${symbol}-${i}`,
+        symbol,
+        side:        isLong ? "long" : "short",
+        entryPrice:  bar.close,
+        slPrice:     isLong ? bar.close - atr * 1.5 : bar.close + atr * 1.5,
+        tpPrice:     isLong ? bar.close + atr * 3.0 : bar.close - atr * 3.0,
+        confidence:  65 + (i % 25),
+        riskTag:     "Medium",
+        barTime:     new Date(bar.time * 1000).toISOString(),
+        grade:       (i % 3 === 0 ? "A" : "B") as "A" | "B",
+        patterns:    undefined,
+        state:       "active",
+        exitPrice:   null,
+        exitBarTime: null,
+        exitReason:  null,
+      });
+    }
+    i += 30 + (i % 20);
+  }
+  return signals;
+}
+
 function useHistoryBars(symbol: string | null, interval: Timeframe) {
   const [bars, setBars]     = useState<OhlcvBar[]>([]);
   const [loading, setLoad]  = useState(false);
@@ -64,6 +100,10 @@ export default function ChartPage() {
   const [restSignals, setRestSignals]   = useState<SignalNew[]>([]);
   const [activeTrade, setActiveTrade]   = useState<ActiveTrade | null>(null);
   const [tradeResult, setTradeResult]   = useState<TradeResult | null>(null);
+  const [refetchKey,  setRefetchKey]    = useState(0);
+  const [generating,  setGenerating]    = useState(false);
+  const [genMsg,      setGenMsg]        = useState<string | null>(null);
+  const [devMock,     setDevMock]       = useState(false);
 
   const { bars, loading, error } = useHistoryBars(activeSymbol, timeframe);
   const { connected, lastPrice, isMarketOpen, realtimeAvailable, newSignals: wsSignals } = useMarketSocket(activeSymbol);
@@ -101,7 +141,8 @@ export default function ChartPage() {
         setRestSignals(mapped);
       })
       .catch(() => setRestSignals([]));
-  }, [activeSymbol, timeframe]);
+  // refetchKey bumps after a successful /regenerate call to trigger a fresh fetch
+  }, [activeSymbol, timeframe, refetchKey]);
 
   // Clear active trade on symbol/timeframe switch
   useEffect(() => {
@@ -159,10 +200,58 @@ export default function ChartPage() {
     }).catch(() => {});
   }, [activeTrade]);
 
-  // Deduplicate signals by signalId (WS + REST merged).
-  // Also filter by activeSymbol so stale WS signals from a previously viewed
-  // symbol don't bleed onto the new symbol's chart after switching.
-  const allSignals: SignalNew[] = [...wsSignals, ...restSignals]
+  const handleGenerate = useCallback(async () => {
+    if (!activeSymbol || generating) return;
+    setGenerating(true);
+    setGenMsg(null);
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    try {
+      const r = await fetch(
+        `${base}/api/signals/regenerate?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(timeframe)}`,
+        { method: "POST" }
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json() as { ok: boolean; inserted?: number; backtest?: { winRate?: number | null }; error?: string };
+      if (data.ok) {
+        const wr = data.backtest?.winRate != null ? ` · ${data.backtest.winRate}% WR` : "";
+        setGenMsg(`✓ ${data.inserted ?? 0} signals${wr}`);
+        setRefetchKey((k) => k + 1);
+      } else {
+        setGenMsg(`✗ ${data.error ?? "failed"}`);
+      }
+    } catch (e) {
+      setGenMsg(`✗ ${String(e)} — Polygon 429? Wait ~60s then retry`);
+    } finally {
+      setGenerating(false);
+    }
+  }, [activeSymbol, timeframe, generating]);
+
+  // DEV: log the full signal pipeline on each meaningful state change so the
+  // browser console reveals exactly where the pipeline is broken.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.groupCollapsed(
+      `%c[TradingPipeline] ${activeSymbol ?? "–"} ${timeframe} | bars=${bars.length} rest=${restSignals.length} ws=${wsSignals.length}`,
+      "color:#22d3ee;font-weight:bold"
+    );
+    console.log("WS connected:", connected, "| isMarketOpen:", isMarketOpen, "| realtimeAvailable:", realtimeAvailable);
+    if (restSignals.length === 0 && bars.length > 0) {
+      console.warn("⚠ No signals in DB — click ⚡ Generate to seed them (Polygon rate limit may apply)");
+    }
+    console.groupEnd();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bars.length, restSignals.length, wsSignals.length, connected]);
+
+  // DEV: synthetic signals for rendering-layer verification (toggle via MOCK button)
+  const mockSignals = useMemo(
+    () => (import.meta.env.DEV && devMock && activeSymbol ? makeMockSignals(bars, activeSymbol) : []),
+    [devMock, bars, activeSymbol]
+  );
+
+  // Deduplicate signals by signalId (WS + REST + optional mock merged).
+  // Filter by activeSymbol so stale WS signals from a previously viewed
+  // symbol can't bleed onto the new symbol's chart after switching.
+  const allSignals: SignalNew[] = [...wsSignals, ...restSignals, ...mockSignals]
     .filter((sig) => !activeSymbol || sig.symbol === activeSymbol)
     .filter((sig, idx, arr) => arr.findIndex((s) => s.signalId === sig.signalId) === idx);
 
@@ -188,6 +277,34 @@ export default function ChartPage() {
               {tf}
             </button>
           ))}
+
+          {/* Signal generation controls */}
+          <div className="flex items-center gap-1.5 ml-2">
+            <button
+              onClick={handleGenerate}
+              disabled={generating || !activeSymbol}
+              className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors disabled:opacity-40"
+              title="Run the signal engine against Polygon history for this symbol+timeframe"
+            >
+              {generating
+                ? <><span className="inline-block w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />  Gen…</>
+                : "⚡ Generate"}
+            </button>
+            {genMsg && (
+              <span className={`text-[10px] font-mono ${genMsg.startsWith("✓") ? "text-emerald-400" : "text-amber-400"}`}>
+                {genMsg}
+              </span>
+            )}
+            {import.meta.env.DEV && (
+              <button
+                onClick={() => setDevMock((v) => !v)}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-colors ${devMock ? "border-amber-500/50 text-amber-400 bg-amber-500/10" : "border-white/10 text-muted-foreground hover:text-foreground"}`}
+                title="Toggle synthetic mock signals to verify the rendering layer (DEV only — never stored in DB)"
+              >
+                MOCK
+              </button>
+            )}
+          </div>
 
           {/* Active trade badge */}
           {activeTrade && (
@@ -259,6 +376,8 @@ export default function ChartPage() {
           activeTrade={activeTrade}
           onActivateTrade={handleActivateTrade}
           onCloseTrade={handleCloseTrade}
+          onGenerate={handleGenerate}
+          generating={generating}
         />
       </div>
     </div>

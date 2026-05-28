@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
-  createChart, CrosshairMode, CandlestickSeries, HistogramSeries,
+  createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type CandlestickData,
   type HistogramData, type Time, type AutoscaleInfo, type IPriceLine,
 } from "lightweight-charts";
@@ -62,11 +62,42 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
+function computeEma(bars: Bar[], period: number): { time: number; value: number }[] {
+  if (bars.length < period) return [];
+  const k = 2 / (period + 1);
+  const out: { time: number; value: number }[] = [];
+  let ema = bars.slice(0, period).reduce((s, b) => s + b.close, 0) / period;
+  out.push({ time: bars[period - 1].time, value: ema });
+  for (let i = period; i < bars.length; i++) {
+    ema = bars[i].close * k + ema * (1 - k);
+    out.push({ time: bars[i].time, value: ema });
+  }
+  return out;
+}
+
+function computeVwap(bars: Bar[]): { time: number; value: number }[] {
+  if (bars.length === 0) return [];
+  const out: { time: number; value: number }[] = [];
+  let cumTPV = 0, cumVol = 0, prevDay = -1;
+  for (const b of bars) {
+    const day = Math.floor(b.time / 86400);
+    if (day !== prevDay) { cumTPV = 0; cumVol = 0; prevDay = day; }
+    const tp = (b.high + b.low + b.close) / 3;
+    cumTPV += tp * b.volume;
+    cumVol += b.volume;
+    out.push({ time: b.time, value: cumVol > 0 ? cumTPV / cumVol : tp });
+  }
+  return out;
+}
+
 export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef    = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const ema20Ref     = useRef<ISeriesApi<"Line"> | null>(null);
+  const ema50Ref     = useRef<ISeriesApi<"Line"> | null>(null);
+  const vwapRef      = useRef<ISeriesApi<"Line"> | null>(null);
   const slRef        = useRef<IPriceLine | null>(null);
   const tpRef        = useRef<IPriceLine | null>(null);
   const entryLineRef = useRef<IPriceLine | null>(null);
@@ -80,6 +111,9 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
   // interval state machine, finalization, and telemetry.
   const csmRef = useRef<CandleStateManager | null>(null);
   const [telemetry, setTelemetry] = useState<CSMTelemetry | null>(null);
+  const [showEma20, setShowEma20] = useState(true);
+  const [showEma50, setShowEma50] = useState(true);
+  const [showVwap,  setShowVwap]  = useState(true);
   // Telemetry display is throttled — re-rendering the full chart on every tick
   // would defeat the purpose of the chart engine's incremental update path.
   const telemetryLastPushMs   = useRef<number>(0);
@@ -321,6 +355,23 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     candleRef.current = candle;
     volumeRef.current = volume;
 
+    // EMA 20, EMA 50, VWAP — share the candle price scale (no explicit priceScaleId)
+    const ema20s = chart.addSeries(LineSeries, {
+      color: "#22d3ee77", lineWidth: 1,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    });
+    const ema50s = chart.addSeries(LineSeries, {
+      color: "#f59e0b77", lineWidth: 1,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    });
+    const vwaps = chart.addSeries(LineSeries, {
+      color: "#a855f777", lineWidth: 1, lineStyle: LineStyle.Dashed,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    });
+    ema20Ref.current = ema20s;
+    ema50Ref.current = ema50s;
+    vwapRef.current  = vwaps;
+
     // Build the CandleStateManager and attach it to the candle series.
     // From this point on it is the SOLE writer to candle.update().
     const csm = new CandleStateManager({
@@ -351,6 +402,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
       csmRef.current = null;
       chart.remove();
       chartRef.current = candleRef.current = volumeRef.current = null;
+      ema20Ref.current = ema50Ref.current = vwapRef.current = null;
     };
   }, [computeMarkers, removeSLTP]);
 
@@ -384,6 +436,9 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
       time: b.time as Time, value: b.volume,
       color: b.close >= b.open ? "#26a69a28" : "#ef535028",
     })));
+    ema20Ref.current?.setData(computeEma(validBars, 20).map((p) => ({ time: p.time as Time, value: p.value })));
+    ema50Ref.current?.setData(computeEma(validBars, 50).map((p) => ({ time: p.time as Time, value: p.value })));
+    vwapRef.current?.setData(computeVwap(validBars).map((p) => ({ time: p.time as Time, value: p.value })));
 
     // Default view: last 78 bars = exactly one NYSE session (9:30–16:00 = 78 × 5m bars).
     const defaultBars = 78;
@@ -448,6 +503,11 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
 
+  // Indicator visibility toggles — apply immediately when the toggle changes
+  useEffect(() => { ema20Ref.current?.applyOptions({ visible: showEma20 }); }, [showEma20]);
+  useEffect(() => { ema50Ref.current?.applyOptions({ visible: showEma50 }); }, [showEma50]);
+  useEffect(() => { vwapRef.current?.applyOptions({ visible: showVwap  }); }, [showVwap]);
+
   // ── Live tick ingestion ────────────────────────────────────────────────────
   //
   // The CandleStateManager owns OHLC construction, validation, the interval state
@@ -488,6 +548,12 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
           </span>
         )}
         <div className="flex-1" />
+        {/* Indicator overlays toggle */}
+        <div className="flex items-center gap-1 mr-1">
+          <button onClick={() => setShowEma20((v) => !v)} className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-opacity ${showEma20 ? "opacity-90" : "opacity-25"}`} style={{ color: "#22d3ee", borderColor: "#22d3ee55" }}>EMA20</button>
+          <button onClick={() => setShowEma50((v) => !v)} className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-opacity ${showEma50 ? "opacity-90" : "opacity-25"}`} style={{ color: "#f59e0b", borderColor: "#f59e0b55" }}>EMA50</button>
+          <button onClick={() => setShowVwap((v) => !v)}  className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-opacity ${showVwap  ? "opacity-90" : "opacity-25"}`} style={{ color: "#a855f7", borderColor: "#a855f755" }}>VWAP</button>
+        </div>
         {telemetry && telemetry.ticksAccepted + telemetry.ticksRejected > 0 && (
           <span
             className="text-[10px] text-muted-foreground/60 font-mono hidden lg:inline"

@@ -11,6 +11,8 @@ interface Props {
   activeTrade: ActiveTrade | null;
   onActivateTrade: (trade: ActiveTrade) => void;
   onCloseTrade: () => void;
+  onGenerate?: () => void;
+  generating?: boolean;
 }
 
 function confidenceColor(c: number) {
@@ -43,7 +45,7 @@ function timeAgo(dateStr: string) {
 
 function formatP(p: number) { return p.toFixed(2); }
 
-export function SignalPanel({ symbol, newSignals, activeTrade, onActivateTrade, onCloseTrade }: Props) {
+export function SignalPanel({ symbol, newSignals, activeTrade, onActivateTrade, onCloseTrade, onGenerate, generating }: Props) {
   const queryClient = useQueryClient();
 
   const { data: rawSignals, isLoading } = useListSignals(
@@ -147,8 +149,22 @@ export function SignalPanel({ symbol, newSignals, activeTrade, onActivateTrade, 
           </div>
         ) : signals.length === 0 ? (
           <div className="px-3 py-6 text-center">
-            <Target size={18} className="text-muted-foreground mx-auto mb-2" />
-            <p className="text-xs text-muted-foreground">No signals yet</p>
+            <Target size={18} className="text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-xs text-muted-foreground mb-1">No signals for {symbol ?? "this symbol"}</p>
+            <p className="text-[10px] text-muted-foreground/60 leading-relaxed mb-3 px-2">
+              Run the signal engine via ⚡ Generate in the toolbar, or click below.
+            </p>
+            {onGenerate && (
+              <button
+                onClick={onGenerate}
+                disabled={generating}
+                className="px-3 py-1 rounded text-[11px] font-mono font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors disabled:opacity-50 flex items-center gap-1.5 mx-auto"
+              >
+                {generating
+                  ? <><span className="inline-block w-2 h-2 border border-current border-t-transparent rounded-full animate-spin" /> Generating…</>
+                  : "⚡ Generate Signals"}
+              </button>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-border">

@@ -1,0 +1,93 @@
+The fixes improved stability, but the actual signal engine is still not functioning correctly.
+
+Current problems still visible locally:
+
+1. No signals are being generated
+
+* The Signals panel says:
+  "No signals yet"
+* Even after switching symbols/timeframes and waiting for updates.
+* The chart has zero BUY/SELL markers, BOS, CHOCH, liquidity sweeps, or AI trade setups.
+
+2. The signal pipeline appears disconnected
+   Please verify the full flow:
+
+market data
+→ indicator calculations
+→ signal engine
+→ signal store/state
+→ chart overlays
+→ Signals panel rendering
+
+Something in this chain is failing silently.
+
+3. Add debugging visibility
+   Temporarily add:
+
+* console logs
+* websocket connection logs
+* signal-engine logs
+* AI inference logs
+* polygon request logs
+
+I need to see:
+
+* whether signals are actually being generated
+* whether they reach frontend state
+* whether overlays fail to render
+* or whether the backend returns empty arrays
+
+4. Add fallback mock signals for testing
+   Add a temporary development mode:
+
+* generate fake LONG/SHORT signals every X candles
+* render them visually on chart
+* show them inside Signals panel
+
+This confirms whether the rendering layer itself works.
+
+5. Verify websocket live updates
+   The chart updates, but signals do not.
+   Check:
+
+* websocket subscriptions
+* symbol-specific channels
+* event dispatching
+* stale closures
+* state synchronization
+
+6. Add visual trading overlays
+   Currently the chart is visually empty.
+   Please add and verify rendering for:
+
+* BUY / SELL markers
+* BOS / CHOCH labels
+* support & resistance
+* EMA 20 / EMA 50
+* VWAP
+* liquidity zones
+* entry / stop / target boxes
+* AI reasoning annotations
+
+7. Verify AI engine is actually running locally
+   The project must use:
+
+* local Ollama
+* qwen2.5:14b
+* localhost:11434
+
+Please confirm:
+
+* successful Ollama connection
+* inference requests succeed
+* responses are parsed correctly
+* AI-generated signals reach frontend
+
+8. Improve UX
+
+* Add loading states instead of empty panels
+* Add reconnect indicators for websocket/API
+* Add visible symbol/timeframe active states
+* Add error toast if signal engine fails
+
+Right now the platform loads charts correctly, but behaves more like a static viewer than a real AI trading terminal. The signal generation/rendering pipeline still needs to be fully wired and debugged.
