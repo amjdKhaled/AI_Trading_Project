@@ -49,6 +49,18 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    // On Replit, the shared reverse proxy routes /api to the API server.
+    // Locally, Vite must forward /api/* to the Express server at port 5000
+    // otherwise the SPA fallback returns HTML for API requests, which causes
+    // component crashes when the app tries to parse HTML as JSON.
+    ...(process.env.REPL_ID === undefined && {
+      proxy: {
+        "/api": {
+          target: `http://localhost:${process.env.API_PORT ?? "5000"}`,
+          changeOrigin: true,
+        },
+      },
+    }),
   },
   preview: {
     port,

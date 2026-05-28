@@ -46,14 +46,28 @@ function formatP(p: number) { return p.toFixed(2); }
 export function SignalPanel({ symbol, newSignals, activeTrade, onActivateTrade, onCloseTrade }: Props) {
   const queryClient = useQueryClient();
 
-  const { data: signals = [], isLoading } = useListSignals(
+  const { data: rawSignals, isLoading } = useListSignals(
     symbol ? { symbol, limit: 20 } : { limit: 20 },
     { query: { queryKey: getListSignalsQueryKey(symbol ? { symbol, limit: 20 } : { limit: 20 }) } }
   );
-  const { data: stats } = useGetSignalStats(
+  // Guard: the API might return null or an error object when the server is
+  // unreachable or the DB is empty — always fall back to an empty array.
+  const signals = Array.isArray(rawSignals) ? rawSignals : [];
+
+  const { data: rawStats } = useGetSignalStats(
     symbol ? { symbol } : {},
     { query: { queryKey: getGetSignalStatsQueryKey(symbol ? { symbol } : {}) } }
   );
+  // Guard: coerce each numeric field so .toFixed() never runs on undefined/null.
+  const stats = rawStats && typeof rawStats === "object" && "total" in rawStats
+    ? {
+        ...rawStats,
+        winRate:       Number(rawStats.winRate       ?? 0),
+        avgRR:         Number(rawStats.avgRR         ?? 0),
+        avgConfidence: Number(rawStats.avgConfidence ?? 0),
+        active:        rawStats.active               ?? 0,
+      }
+    : null;
 
   useEffect(() => {
     if (newSignals.length > 0) {
