@@ -28,6 +28,11 @@ pnpm install
 $env:DATABASE_URL = "postgresql://user:password@localhost:5432/trading_signals"
 $env:POLYGON_API_KEY = "your_polygon_api_key"
 $env:SESSION_SECRET = "any_random_string_for_dev"
+
+# 4. CREATE THE DATABASE SCHEMA — must run once before starting the server.
+#    Without this step every API call returns "relation does not exist" 500s.
+#    The server will now print a clear error + this exact command if skipped.
+pnpm --filter @workspace/db run push
 ```
 
 ### Run services (open separate terminals for each)
