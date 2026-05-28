@@ -70,28 +70,60 @@ function makeMockSignals(bars: OhlcvBar[], symbol: string): SignalNew[] {
 }
 
 function useHistoryBars(symbol: string | null, interval: Timeframe) {
-  const [bars, setBars]     = useState<OhlcvBar[]>([]);
-  const [loading, setLoad]  = useState(false);
-  const [error, setError]   = useState<string | null>(null);
+  const [bars, setBars]         = useState<OhlcvBar[]>([]);
+  const [loading, setLoad]      = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  // Track which symbol+interval the bars in state belong to.
+  // This detects the one-frame gap between a symbol change and the useEffect firing,
+  // during which React would otherwise render TradingChart with stale bars.
+  const [fetchedFor, setFetchedFor] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  const requestKey = symbol ? `${symbol}:${interval}` : null;
+
   useEffect(() => {
-    if (!symbol) return;
+    if (!symbol) {
+      setBars([]); setLoad(false); setError(null); setFetchedFor(null);
+      return;
+    }
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    // Clear stale bars and enter loading state atomically.
+    // fetchedFor is deliberately NOT updated here — it remains the old symbol
+    // so the staleness check below correctly returns loading=true on this render.
     setBars([]); setLoad(true); setError(null);
 
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    fetch(`${base}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`, { signal: ctrl.signal })
+    fetch(
+      `${base}/api/history?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
+      { signal: ctrl.signal, cache: "no-cache" }
+    )
       .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<OhlcvBar[]>; })
-      .then((d) => { if (!ctrl.signal.aborted) { setBars(Array.isArray(d) ? d : []); setLoad(false); } })
-      .catch((e) => { if (e.name === "AbortError") return; setError(e.message); setLoad(false); });
+      .then((d) => {
+        if (ctrl.signal.aborted) return;
+        setBars(Array.isArray(d) ? d : []);
+        setLoad(false);
+        setFetchedFor(`${symbol}:${interval}`);
+      })
+      .catch((e) => {
+        if (e.name === "AbortError") return;
+        setError(e.message);
+        setLoad(false);
+      });
 
     return () => ctrl.abort();
   }, [symbol, interval]);
 
-  return { bars, loading, error };
+  // If the bars in state belong to a different symbol/interval than currently
+  // requested, treat the component as loading to prevent a stale-data flash
+  // on the first render after a symbol switch (before the useEffect fires).
+  const stale = requestKey !== null && fetchedFor !== requestKey;
+  return {
+    bars:    stale ? [] : bars,
+    loading: loading || stale,
+    error:   stale ? null : error,
+  };
 }
 
 export default function ChartPage() {
@@ -102,6 +134,7 @@ export default function ChartPage() {
   const [tradeResult, setTradeResult]   = useState<TradeResult | null>(null);
   const [refetchKey,  setRefetchKey]    = useState(0);
   const [generating,  setGenerating]    = useState(false);
+  const signalFetchAbort = useRef<AbortController | null>(null);
   const [genMsg,      setGenMsg]        = useState<string | null>(null);
   const [devMock,     setDevMock]       = useState(false);
 
@@ -110,15 +143,29 @@ export default function ChartPage() {
 
   // Fetch historical signals
   useEffect(() => {
+    // Cancel any in-flight fetch for the previous symbol/timeframe to prevent
+    // a slow NVDA response from overwriting TSLA's restSignals after a switch.
+    signalFetchAbort.current?.abort();
+    const ctrl = new AbortController();
+    signalFetchAbort.current = ctrl;
+
     if (!activeSymbol) { setRestSignals([]); return; }
+
+    // Immediately clear stale signals from the previous symbol so the panel
+    // shows the loading skeleton instead of the old symbol's data.
+    setRestSignals([]);
+
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
     // Fetch up to 3000 signals — the backtested engine generates 1k–3k signals
     // across full intraday history. Viewport culling in TradingChart keeps
     // rendering fast regardless of how many signals are loaded.
-    // cache: 'no-cache' forces a fresh response after every regenerate.
-    fetch(`${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=3000`, { cache: "no-cache" })
+    fetch(
+      `${base}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=3000`,
+      { cache: "no-cache", signal: ctrl.signal }
+    )
       .then((r) => r.json())
       .then((data: unknown) => {
+        if (ctrl.signal.aborted) return;
         if (!Array.isArray(data)) { setRestSignals([]); return; }
         const mapped: SignalNew[] = (data as Record<string, unknown>[]).map((s) => ({
           type: "signal.new" as const,
@@ -140,7 +187,7 @@ export default function ChartPage() {
         }));
         setRestSignals(mapped);
       })
-      .catch(() => setRestSignals([]));
+      .catch((e) => { if ((e as Error).name !== "AbortError") setRestSignals([]); });
   // refetchKey bumps after a successful /regenerate call to trigger a fresh fetch
   }, [activeSymbol, timeframe, refetchKey]);
 
@@ -351,6 +398,7 @@ export default function ChartPage() {
           </div>
         ) : activeSymbol ? (
           <TradingChart
+            key={`${activeSymbol}-${timeframe}`}
             bars={bars}
             signals={allSignals}
             activeTrade={activeTrade}

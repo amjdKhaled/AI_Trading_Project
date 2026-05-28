@@ -184,6 +184,14 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
     };
   }, [connect]);
 
+  // Clear accumulated signal arrays when the symbol changes so stale events
+  // from the previous symbol never bleed into the new one's chart/panel.
+  useEffect(() => {
+    setNewSignals([]);
+    setSlUpdates([]);
+    setSignalExits([]);
+  }, [symbol]);
+
   return {
     connected,
     lastPrice,
