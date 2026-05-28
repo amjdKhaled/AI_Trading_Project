@@ -9,3 +9,4 @@
 - [Sweep detection design](sweep-detection-design.md) — 15-bar swingLow is not a significant level; ATR-scaled breach + volume required; sweeps should enhance but not gate signals.
 - [NVDA macro conflict](nvda-macro-conflict.md) — TSLA/NVDA both in macro downtrends during backtest. Longs fail (20% WR), shorts succeed (30% WR). Fix: daily bias filter. SPY/QQQ expected to perform better.
 - [Backtest calibration traps](backtest-calibration-traps.md) — ATR-relative pullback/EMA distance broke quality; regime-aware fixed % is correct. Dedup 30 min → signal flood; 60 min is the right balance.
+- [Bar cache architecture](bar-cache-architecture.md) — root cause of 429 bursts is concurrent cold-cache requests; fix is in-flight dedup + 24h TTL + disk persistence. BarProvider abstraction lives in polygon.ts.

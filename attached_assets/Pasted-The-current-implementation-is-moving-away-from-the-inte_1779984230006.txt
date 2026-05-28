@@ -1,0 +1,113 @@
+The current implementation is moving away from the intended UX.
+
+I do NOT want visible EMA/VWAP indicator lines cluttering the chart.
+
+The indicators should still be calculated internally in the signal engine, BUT:
+
+* EMA20
+* EMA50
+* VWAP
+* RSI
+* ATR
+* trend filters
+* momentum filters
+
+should all run invisibly in the background.
+
+The chart itself should stay visually clean and professional like a real trading terminal.
+
+What I actually want rendered visually:
+
+1. Entry markers only
+
+* BUY markers
+* SELL markers
+* optional LONG / SHORT labels
+
+2. Exit markers
+
+* TP hit
+* SL hit
+* exit labels
+
+3. Optional minimal overlays only
+
+* small support/resistance zones
+* liquidity sweep markers
+* BOS/CHOCH labels
+* but very lightweight/minimal
+
+Do NOT draw indicator spaghetti lines all over the chart.
+
+The current version became visually noisy compared to the original clean chart.
+
+---
+
+There is also still a major issue with Generate Signals:
+
+Current problem:
+
+* Generate sometimes fails
+* Polygon API returns:
+  HTTP 500 / Polygon 429
+* Then no signals appear
+
+I need you to properly solve this architecture issue instead of just showing an error.
+
+Required fixes:
+
+1. Add request throttling/rate limiting
+
+* prevent hitting Polygon too aggressively
+
+2. Add candle caching
+
+* cache recent historical candles locally
+* avoid refetching identical ranges repeatedly
+
+3. Add retry queue
+
+* exponential backoff retries after 429
+
+4. Add offline/local signal generation mode
+
+* if Polygon fails,
+  the signal engine should still generate signals from cached/local candles
+
+5. Add fallback market data provider abstraction
+   Structure the backend so Polygon is only one provider.
+   Later I may add:
+
+* Alpaca
+* Binance
+* TwelveData
+* Yahoo
+* local CSV replay
+
+6. Keep Generate responsive
+
+* loading spinner
+* progress state
+* no frozen UI
+
+7. Improve signal quality
+   Signals should feel like:
+
+* professional scalping entries
+* smart-money style
+* momentum continuation
+* pullback entries
+* breakout confirmations
+
+Not random EMA crossover spam.
+
+8. IMPORTANT:
+   The AI should calculate indicators internally and ONLY render:
+
+* clean entries
+* exits
+* AI trade decisions
+
+The UI goal is:
+TradingView + prop firm terminal style
+NOT indicator overload.

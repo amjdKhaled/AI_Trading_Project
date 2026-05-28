@@ -1,31 +1,120 @@
 import { Router, type IRouter } from "express";
 import { spawn } from "child_process";
 import path from "path";
+import fs from "fs/promises";
 import { fetchPolygonBars } from "../lib/polygon";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
 const PYTHON_SCRIPT = path.join(process.cwd(), "src", "yfinance_fetch.py");
 
 // Daily / weekly / monthly intervals remain on yfinance (max history)
-const DAILY_CONFIG: Record<string, { yf: string; period: string; cacheTtl: number }> = {
-  "1h":  { yf: "60m", period: "max", cacheTtl:  300_000 },
-  "1d":  { yf: "1d",  period: "max", cacheTtl: 3_600_000 },
-  "1w":  { yf: "1wk", period: "max", cacheTtl: 3_600_000 },
-  "1M":  { yf: "1mo", period: "max", cacheTtl: 3_600_000 },
+const DAILY_CONFIG: Record<string, { yf: string; period: string; memTtlMs: number }> = {
+  "1h":  { yf: "60m", period: "max", memTtlMs:    300_000 },
+  "1d":  { yf: "1d",  period: "max", memTtlMs:  3_600_000 },
+  "1w":  { yf: "1wk", period: "max", memTtlMs:  3_600_000 },
+  "1M":  { yf: "1mo", period: "max", memTtlMs:  3_600_000 },
 };
 
 const INTRADAY_INTERVALS = new Set(["5m", "15m"]);
 
 // Per-interval lookback windows sized to fit in a single Polygon response
-// (free tier returns ~10k bars per page; paginating costs 13s per page on the
-// 5-req/min rate limit, so we keep the cold-cache fetch fast by default).
-// 5m: 78 bars/trading day × 250 days ≈ 19.5k → cap at 180 days (≈14k bars)
-// 15m: 26 bars/trading day × 540 days ≈ 14k bars
 const INTRADAY_DAYS: Record<string, number> = { "5m": 180, "15m": 540 };
 
-// Cache shared by all interval types
-const cache = new Map<string, { data: unknown[]; expiresAt: number }>();
+// ── In-memory cache ───────────────────────────────────────────────────────────
+// Keeps fetched bars alive for MEM_TTL_MS without re-hitting the provider.
+// Historical intraday bars don't change — 24 h is safe; only today's trailing
+// bars are live, and the engine re-generates signals explicitly via /regenerate.
+const MEM_TTL_INTRADAY = 24 * 60 * 60 * 1_000; // 24 h — historical bars are immutable
+const memCache = new Map<string, { data: unknown[]; fetchedAt: number; expiresAt: number }>();
+
+// ── In-flight deduplication ───────────────────────────────────────────────────
+// The root cause of Polygon 429 bursts: /api/history and /api/signals both fire
+// on page load, both see a cold cache at the same instant, and both start their
+// own independent Polygon fetch.  We collapse concurrent requests for the same
+// key into a single shared Promise, so only ONE Polygon call is ever made.
+const inflight = new Map<string, Promise<unknown[]>>();
+
+// ── Disk cache ────────────────────────────────────────────────────────────────
+// JSON files in data/barcache/ survive server restarts.  The disk layer is the
+// sole "offline fallback" — if Polygon is unreachable we return stale disk data
+// rather than an empty array, so signal generation still works.
+const DISK_DIR  = path.join(process.cwd(), "data", "barcache");
+const DISK_TTL  = 24 * 60 * 60 * 1_000; // 24 h disk freshness before re-fetching
+
+function diskPath(key: string): string {
+  const safe = key.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(DISK_DIR, `${safe}.json`);
+}
+
+async function readDisk(key: string): Promise<{ data: unknown[]; fetchedAt: number } | null> {
+  try {
+    const raw = await fs.readFile(diskPath(key), "utf-8");
+    return JSON.parse(raw) as { data: unknown[]; fetchedAt: number };
+  } catch { return null; }
+}
+
+async function writeDisk(key: string, data: unknown[]): Promise<void> {
+  try {
+    await fs.mkdir(DISK_DIR, { recursive: true });
+    await fs.writeFile(diskPath(key), JSON.stringify({ data, fetchedAt: Date.now() }));
+  } catch { /* best-effort */ }
+}
+
+// ── Core cache+fetch function ─────────────────────────────────────────────────
+/**
+ * Fetch bars for `key` using the supplied `fetcher`, applying:
+ *   1. Memory cache (returns immediately if fresh)
+ *   2. In-flight deduplication (concurrent requests share one Promise)
+ *   3. Disk cache (populates memory without hitting the provider on restarts)
+ *   4. Stale-on-error fallback (returns cached data if the provider throws)
+ */
+async function fetchWithCache(
+  key: string,
+  memTtlMs: number,
+  fetcher: () => Promise<unknown[]>,
+): Promise<unknown[]> {
+  // 1. Memory hit — fastest path
+  const mem = memCache.get(key);
+  if (mem && mem.expiresAt > Date.now()) return mem.data;
+
+  // 2. In-flight dedup — collapse concurrent callers into one fetch
+  const existing = inflight.get(key);
+  if (existing) return existing;
+
+  // 3. Kick off a single fetch that all concurrent callers will await
+  const promise: Promise<unknown[]> = (async () => {
+    // 3a. Disk cache — avoids Polygon on server restarts / short outages
+    const disk = await readDisk(key);
+    if (disk && Date.now() - disk.fetchedAt < DISK_TTL) {
+      memCache.set(key, { data: disk.data, fetchedAt: disk.fetchedAt, expiresAt: Date.now() + memTtlMs });
+      return disk.data;
+    }
+
+    // 3b. Provider fetch
+    try {
+      const data = await fetcher();
+      const entry = { data, fetchedAt: Date.now(), expiresAt: Date.now() + memTtlMs };
+      memCache.set(key, entry);
+      writeDisk(key, data).catch(() => {}); // fire-and-forget
+      return data;
+    } catch (err) {
+      // 3c. Stale fallback — return whatever we have rather than an empty array
+      const stale = disk ?? (mem ? { data: mem.data } : null);
+      if (stale) {
+        logger.warn({ key, err: String(err) }, "bar provider fetch failed — serving stale cache");
+        // Short TTL so the next request retries the provider soon
+        memCache.set(key, { data: stale.data, fetchedAt: Date.now(), expiresAt: Date.now() + 60_000 });
+        return stale.data;
+      }
+      throw err; // Nothing cached at all — surface the error
+    }
+  })().finally(() => inflight.delete(key));
+
+  inflight.set(key, promise);
+  return promise;
+}
 
 // ── yfinance (daily/long-term) ───────────────────────────────────────────────
 
@@ -55,27 +144,24 @@ function runPython(symbol: string, yf_interval: string, period: string, timeoutM
   });
 }
 
-// ── fetchHistory — exported for signal seeding ────────────────────────────
-// Uses the SAME in-process cache as the HTTP route so regenerate calls never
-// hit Polygon fresh when bars are already loaded in memory (avoids 429s).
+// ── fetchHistory — exported for signal seeding ────────────────────────────────
+// Uses the SAME cache/dedup layer as the HTTP route so regenerate calls never
+// trigger a fresh Polygon fetch when bars are already in-flight or cached.
 export async function fetchHistory(symbol: string, interval: string): Promise<unknown[]> {
-  const sym = symbol.toUpperCase().trim();
+  const sym        = symbol.toUpperCase().trim();
   const isIntraday = INTRADAY_INTERVALS.has(interval);
   const dailyConf  = DAILY_CONFIG[interval];
 
   if (!isIntraday && !dailyConf) return [];
 
-  const cacheKey = `${sym}:${interval}${isIntraday ? ":polygon-sip" : ""}`;
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  const cacheKey = `${sym}:${interval}${isIntraday ? ":polygon" : ":yfinance"}`;
+  const memTtl   = isIntraday ? MEM_TTL_INTRADAY : dailyConf!.memTtlMs;
 
-  const cacheTtl = isIntraday ? 300_000 : dailyConf!.cacheTtl;
-  const bars = isIntraday
-    ? await fetchPolygonBars(sym, interval, INTRADAY_DAYS[interval] ?? 180)
-    : await runPython(sym, dailyConf!.yf, dailyConf!.period);
-
-  cache.set(cacheKey, { data: bars, expiresAt: Date.now() + cacheTtl });
-  return bars;
+  return fetchWithCache(cacheKey, memTtl, () =>
+    isIntraday
+      ? fetchPolygonBars(sym, interval, INTRADAY_DAYS[interval] ?? 180)
+      : runPython(sym, dailyConf!.yf, dailyConf!.period)
+  );
 }
 
 // ── HTTP route ────────────────────────────────────────────────────────────────
@@ -98,26 +184,10 @@ router.get("/history", async (req, res): Promise<void> => {
     }); return;
   }
 
-  const cacheKey = `${rawSymbol}:${rawInterval}${isIntraday ? ":polygon-sip" : ""}`;
-  const cacheTtl = isIntraday ? 300_000 : dailyConf!.cacheTtl;
-
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    res.setHeader("X-Cache", "HIT");
-    res.json(cached.data);
-    return;
-  }
-
   try {
-    const bars = isIntraday
-      // Polygon SIP intraday — consolidated tape, matches TradingView OHLCV.
-      // Window is sized to fit in one Polygon response so first paint is fast
-      // even on the free tier's 5-req/min budget.
-      ? await fetchPolygonBars(rawSymbol, rawInterval, INTRADAY_DAYS[rawInterval] ?? 180)
-      : await runPython(rawSymbol, dailyConf!.yf, dailyConf!.period);
-
-    cache.set(cacheKey, { data: bars, expiresAt: Date.now() + cacheTtl });
-    res.setHeader("X-Cache", "MISS");
+    const bars = await fetchHistory(rawSymbol, rawInterval);
+    const mem  = memCache.get(`${rawSymbol}:${rawInterval}${isIntraday ? ":polygon" : ":yfinance"}`);
+    res.setHeader("X-Cache", mem ? "HIT" : "MISS");
     res.json(bars);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

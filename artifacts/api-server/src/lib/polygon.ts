@@ -8,6 +8,15 @@
  * so OHLCV values match TradingView, ThinkOrSwim, and institutional terminals.
  */
 
+// ── Provider abstraction ─────────────────────────────────────────────────────
+// Polygon is the default intraday provider, but the fetch layer is behind this
+// interface so future providers (Alpaca, TwelveData, Binance, CSV replay…) can
+// be dropped in without touching route logic.
+export interface BarProvider {
+  readonly name: string;
+  fetchBars(symbol: string, interval: string, days: number): Promise<Bar[]>;
+}
+
 const REST_BASE = "https://api.polygon.io";
 
 const apiKey = () => process.env.POLYGON_API_KEY ?? "";
@@ -217,6 +226,18 @@ export async function fetchPolygonSnapshot(symbol: string): Promise<PolygonSnaps
     return null;
   }
 }
+
+// ── PolygonBarProvider ────────────────────────────────────────────────────────
+// Concrete implementation of BarProvider backed by Polygon.io SIP data.
+// Swap `activeBarProvider` in history.ts to switch data sources globally.
+export class PolygonBarProvider implements BarProvider {
+  readonly name = "polygon";
+  fetchBars(symbol: string, interval: string, days: number): Promise<Bar[]> {
+    return fetchPolygonBars(symbol, interval, days);
+  }
+}
+
+export const polygonProvider: BarProvider = new PolygonBarProvider();
 
 // ── Market hours (NYSE) ───────────────────────────────────────────────────────
 
