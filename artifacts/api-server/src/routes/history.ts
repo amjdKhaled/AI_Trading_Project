@@ -185,14 +185,35 @@ router.get("/history", async (req, res): Promise<void> => {
   }
 
   try {
-    const bars = await fetchHistory(rawSymbol, rawInterval);
-    const mem  = memCache.get(`${rawSymbol}:${rawInterval}${isIntraday ? ":polygon" : ":yfinance"}`);
-    res.setHeader("X-Cache", mem ? "HIT" : "MISS");
+    // Cache-hit semantics must honor the in-memory TTL — a present-but-expired
+    // entry is NOT a hit; the underlying fetchWithCache will refetch in that
+    // case. Reporting "HIT" for an expired entry would mislead the user when
+    // they're tracking down Polygon rate-limit pressure.
+    const cacheKey = `${rawSymbol}:${rawInterval}${isIntraday ? ":polygon" : ":yfinance"}`;
+    const memEntry = memCache.get(cacheKey);
+    const preHit   = !!(memEntry && memEntry.expiresAt > Date.now());
+    const t0       = Date.now();
+    const bars     = await fetchHistory(rawSymbol, rawInterval);
+    req.log?.info(
+      { symbol: rawSymbol, interval: rawInterval, count: bars.length, cache: preHit ? "HIT" : "MISS", ms: Date.now() - t0 },
+      "history served",
+    );
+    res.setHeader("X-Cache", preHit ? "HIT" : "MISS");
     res.json(bars);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    req.log?.warn({ symbol: rawSymbol, interval: rawInterval, err: msg }, "history fetch failed");
-    res.json([]);
+    req.log?.warn(
+      { symbol: rawSymbol, interval: rawInterval, err: msg, stack: (err as Error).stack },
+      "history fetch failed",
+    );
+    // Return JSON with the real reason instead of silently masking as []
+    // so the frontend can show "Polygon 429" / "yfinance timeout" / etc.
+    res.status(502).json({
+      error:   "history fetch failed",
+      message: msg,
+      symbol:  rawSymbol,
+      interval: rawInterval,
+    });
   }
 });
 

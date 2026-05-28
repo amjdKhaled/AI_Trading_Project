@@ -1,0 +1,135 @@
+Stop theorizing and fully debug the local architecture.
+
+The issue is NOT just “Windows differences”.
+
+The frontend is clearly not communicating reliably with the backend locally.
+
+Evidence:
+- AI endpoints return HTML instead of JSON
+- Generate sometimes fails
+- Watchlist switching is inconsistent
+- Signals disappear
+- Symbol state desync happens
+- Replit preview works differently
+
+I want you to deeply verify ALL frontend/backend communication paths.
+
+==================================================
+MANDATORY TASKS
+==================================================
+
+1. VERIFY ALL API ROUTING
+I want you to inspect:
+
+- vite.config.ts
+- all proxy rules
+- websocket proxy rules
+- frontend fetch wrappers
+- relative vs absolute URLs
+- environment variable loading
+- API base URL logic
+- SPA fallback behavior
+
+I suspect some requests are hitting Vite instead of Express.
+
+You must prove:
+- every /api/* request reaches the API server
+- every AI request reaches Express
+- websocket upgrades reach the backend
+- no request is accidentally routed to index.html
+
+==================================================
+
+2. ADD HARD DEBUGGING
+Add logging for:
+- every frontend fetch
+- every backend request
+- every websocket subscribe
+- every symbol switch
+- every AI request
+- every Generate request
+
+I want logs showing:
+REQUEST START
+REQUEST END
+STATUS
+SYMBOL
+TIMEFRAME
+
+==================================================
+
+3. FIX SYMBOL SWITCHING PROPERLY
+I do NOT want stale React state anymore.
+
+Audit:
+- ActiveSymbolContext
+- react-query cache keys
+- TradingChart props
+- chart refs
+- marker refs
+- websocket subscriptions
+- useEffect dependencies
+- useMemo/useCallback stale closures
+- AbortControllers
+
+The chart must ALWAYS:
+- fully clear old data
+- fully clear old markers
+- fully clear old signals
+- fully clear old websocket state
+before rendering a new symbol.
+
+==================================================
+
+4. FIX LOCAL API COMMUNICATION
+The local app must work identically to Replit.
+
+I want:
+- stable Express connection
+- stable Vite proxying
+- stable websocket routing
+- stable AI endpoints
+- stable Generate endpoint
+
+==================================================
+
+5. AI ENGINE FIX
+Current symptoms:
+- HTML returned instead of JSON
+- reflection failures
+- batch import failures
+
+Requirements:
+- AI endpoints always return JSON
+- AI gracefully handles Ollama unavailable
+- AI gracefully handles backend unavailable
+- AI always uses current active symbol
+- AI never silently fails
+
+==================================================
+
+6. VERIFY LOCALLY
+Do NOT stop after code edits.
+
+You must:
+- run frontend
+- run backend
+- manually switch symbols repeatedly
+- test Generate repeatedly
+- test AI repeatedly
+- verify logs
+- confirm no stale state remains
+
+==================================================
+
+7. IMPORTANT
+Do NOT give theoretical explanations anymore.
+
+I want:
+- actual fixes
+- actual verification
+- actual runtime testing
+- actual logs
+- actual parity
+
+The local Windows build must behave IDENTICALLY to the Replit preview.

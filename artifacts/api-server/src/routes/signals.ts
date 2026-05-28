@@ -36,27 +36,40 @@ router.get("/signals", async (req, res): Promise<void> => {
   const { symbol, limit } = query.data;
   const timeframe = typeof req.query.timeframe === "string" && req.query.timeframe ? req.query.timeframe : "5m";
 
-  const conditions: SQL[] = [];
-  if (symbol)    conditions.push(eq(signalsTable.symbol,    symbol));
-  if (timeframe) conditions.push(eq(signalsTable.timeframe, timeframe));
+  // Single try/catch wraps the entire handler so any DB / fetch / engine
+  // failure surfaces as a structured JSON error with the symbol+timeframe
+  // context the user can actually act on — never an opaque 500.
+  // The failing step is recorded in `phase` so logs pinpoint the root cause.
+  let phase: string = "query_build";
+  try {
+    const conditions: SQL[] = [];
+    if (symbol)    conditions.push(eq(signalsTable.symbol,    symbol));
+    if (timeframe) conditions.push(eq(signalsTable.timeframe, timeframe));
 
-  // Full historical coverage: up to 5000 signals per fetch.
-  // Ordered by barTime DESC so the most-recent setups appear first.
-  // No ETags / conditional-GET caching for this route — the dataset changes
-  // on every regenerate and must always return fresh data.
-  res.setHeader("Cache-Control", "no-store");
-  const effectiveLimit = Math.min(limit ?? 3000, 5000);
+    // Full historical coverage: up to 5000 signals per fetch.
+    // Ordered by barTime DESC so the most-recent setups appear first.
+    // No ETags / conditional-GET caching for this route — the dataset changes
+    // on every regenerate and must always return fresh data.
+    res.setHeader("Cache-Control", "no-store");
+    const effectiveLimit = Math.min(limit ?? 3000, 5000);
 
-  const base = db.select().from(signalsTable).orderBy(desc(signalsTable.barTime));
-  const rows = await (
-    conditions.length === 0 ? base :
-    conditions.length === 1 ? base.where(conditions[0]) :
-    base.where(and(...conditions))
-  ).limit(effectiveLimit);
+    phase = "db_select";
+    const base = db.select().from(signalsTable).orderBy(desc(signalsTable.barTime));
+    const rows = await (
+      conditions.length === 0 ? base :
+      conditions.length === 1 ? base.where(conditions[0]) :
+      base.where(and(...conditions))
+    ).limit(effectiveLimit);
 
-  // Seed once if empty for this symbol+timeframe
-  if (rows.length === 0 && symbol) {
+    // Seed once if empty for this symbol+timeframe.
+    // Only the best-effort steps (history fetch, engine, inserts) are wrapped
+    // in the inner try. DB re-select + schema parse are intentionally OUTSIDE
+    // so any real DB/parse failure propagates to the outer catch and surfaces
+    // as a structured 500 instead of being swallowed as "seeding failed".
+    let didSeed = false;
+    if (rows.length === 0 && symbol) {
     try {
+      phase = "seed_fetch_history";
       const rawBars = await fetchHistory(symbol, timeframe);
       const bars = rawBars as import("../lib/analyzer/types").OhlcvBar[];
       // For 5m signals, also fetch 15m bars so the engine can apply higher-timeframe bias.
@@ -68,7 +81,9 @@ router.get("/signals", async (req, res): Promise<void> => {
         } catch { /* HTF optional */ }
       }
       if (bars.length >= 50) {
+        phase = "seed_generate_signals";
         const { signals } = generateSignals(bars, symbol, timeframe, htfBars);
+        phase = "seed_insert";
         for (const sig of signals) {
           const entryIdx  = findBarIndex(bars, sig.barTime);
           const lifecycle = simulateLifecycle(bars, entryIdx, sig.side, sig.entryPrice, sig.slPrice, sig.tpPrice);
@@ -97,18 +112,54 @@ router.get("/signals", async (req, res): Promise<void> => {
             });
           } catch { /* duplicate — skip */ }
         }
-        const seeded = await (
-          conditions.length === 0 ? db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt)) :
-          conditions.length === 1 ? db.select().from(signalsTable).where(conditions[0]).orderBy(desc(signalsTable.createdAt)) :
-          db.select().from(signalsTable).where(and(...conditions)).orderBy(desc(signalsTable.createdAt))
-        ).limit(effectiveLimit);
-        res.json(ListSignalsResponse.parse(seeded));
-        return;
+        didSeed = true;
       }
-    } catch { /* history unavailable */ }
+    } catch (seedErr) {
+      // Seeding is best-effort: history fetch / engine / DB inserts may fail
+      // (Polygon 429, yfinance timeout, etc.) but the route must still return
+      // the empty rows. Log the real exception so the user knows WHY no
+      // signals were seeded instead of seeing silent emptiness.
+      req.log?.warn(
+        { err: seedErr, symbol, timeframe, phase },
+        "signal seeding failed — returning empty result",
+      );
+    }
   }
 
-  res.json(ListSignalsResponse.parse(rows));
+    // Re-select after seeding and respond. These are OUTSIDE the inner
+    // best-effort try so any DB error or response-schema mismatch flows to
+    // the outer catch as a structured 500 rather than silently degrading.
+    if (didSeed) {
+      phase = "seed_reselect";
+      const seeded = await (
+        conditions.length === 0 ? db.select().from(signalsTable).orderBy(desc(signalsTable.createdAt)) :
+        conditions.length === 1 ? db.select().from(signalsTable).where(conditions[0]).orderBy(desc(signalsTable.createdAt)) :
+        db.select().from(signalsTable).where(and(...conditions)).orderBy(desc(signalsTable.createdAt))
+      ).limit(effectiveLimit);
+      phase = "seed_parse_response";
+      res.json(ListSignalsResponse.parse(seeded));
+      return;
+    }
+
+    phase = "parse_response";
+    res.json(ListSignalsResponse.parse(rows));
+  } catch (err) {
+    // Surface the real exception with full context. The frontend's safeJson()
+    // helper will display this directly to the user.
+    req.log?.error(
+      { err, stack: (err as Error).stack, symbol, timeframe, phase },
+      `GET /signals failed during phase=${phase}`,
+    );
+    if (!res.headersSent) {
+      res.status(500).json({
+        error:   "Failed to load signals",
+        message: (err as Error).message,
+        phase,
+        symbol,
+        timeframe,
+      });
+    }
+  }
 });
 
 // ── POST /signals/regenerate ──────────────────────────────────
