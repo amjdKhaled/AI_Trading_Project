@@ -1,0 +1,213 @@
+Upgrade the platform into a multi-agent AI trading architecture.
+
+Current architecture:
+
+* Qwen2.5-14B handles AI trading decisions.
+* AI Decision Engine generates Entry, Stop Loss, Take Profit and Confidence.
+
+New architecture requirements:
+
+====================================================
+AI MODELS
+=========
+
+Add a second AI model:
+
+Qwen2.5-VL (Vision Model)
+
+Responsibilities:
+
+Qwen2.5-VL:
+
+* Analyze uploaded TradingView screenshots.
+* Detect chart patterns.
+* Detect support/resistance.
+* Detect trendlines.
+* Detect candlestick formations.
+* Detect market structure.
+* Detect supply/demand zones.
+* Detect volume behavior.
+
+Qwen2.5-14B:
+
+* Trading decision engine.
+* Trade planning.
+* Risk management.
+* News analysis.
+* Economic analysis.
+* Entry, SL, TP generation.
+* Confidence scoring.
+
+====================================================
+SHARED MEMORY
+=============
+
+IMPORTANT:
+
+Do NOT fine-tune either model.
+
+Do NOT allow either model to permanently modify its own weights.
+
+Instead create a shared intelligence layer.
+
+Both models must read and write to:
+
+* Trade Memory Database
+* Lessons Database
+* Pattern Database
+* Market Regime Database
+
+This shared memory becomes the knowledge source for both models.
+
+====================================================
+LEARNING SYSTEM
+===============
+
+Every closed trade must be analyzed automatically.
+
+Store:
+
+* Entry
+* Exit
+* Stop Loss
+* Take Profit
+* Win/Loss
+* Symbol
+* Timeframe
+* Market conditions
+* News conditions
+* Pattern detected
+* AI reasoning
+
+Then perform post-trade review.
+
+The AI must determine:
+
+Why did the trade win?
+
+Why did the trade fail?
+
+Possible categories:
+
+* News issue
+* Economic event
+* Bad entry
+* Poor risk management
+* Pattern failure
+* False breakout
+* Weak volume
+* Trend reversal
+* Market regime mismatch
+* Incorrect confidence score
+
+Store the lesson.
+
+====================================================
+CROSS MODEL LEARNING
+====================
+
+When Qwen2.5-VL discovers something useful:
+
+Store it in shared memory.
+
+When Qwen2.5-14B discovers something useful:
+
+Store it in shared memory.
+
+Both models must continuously benefit from the same lessons database.
+
+The goal is not model fine-tuning.
+
+The goal is shared institutional memory.
+
+====================================================
+AI CHART ANALYZER PAGE
+======================
+
+Create a new page:
+
+AI Chart Analyzer
+
+Features:
+
+* Upload image
+* Paste image
+* Multiple image upload
+* TradingView screenshot support
+
+Workflow:
+
+1. User uploads chart image.
+2. Qwen2.5-VL analyzes image.
+3. Extract:
+
+   * Trend
+   * Structure
+   * Patterns
+   * Volume
+   * Support/Resistance
+4. Compare with:
+
+   * Historical data
+   * Previous trades
+   * Lessons database
+5. Send all findings to Qwen2.5-14B.
+6. Generate final trading plan.
+
+====================================================
+FINAL OUTPUT
+============
+
+The final AI decision must return:
+
+BUY
+SELL
+NO TRADE
+
+Confidence %
+
+Entry
+
+Stop Loss
+
+Take Profit
+
+Risk Reward Ratio
+
+Technical Reasoning
+
+News Reasoning
+
+Market Structure Reasoning
+
+Historical Similar Setups
+
+Success Probability
+
+====================================================
+VISUAL CHART OUTPUT
+===================
+
+Draw directly on uploaded chart:
+
+* Entry
+* Stop Loss
+* Take Profit
+* Trendlines
+* Support
+* Resistance
+* Pattern labels
+
+Show:
+
+AI LONG
+or
+AI SHORT
+
+with confidence percentage.
+
+====================================================
+LONG TERM GOAL
+==============
+
+Build an institutional-grade AI trading assistant that improves through accumulated experience stored in shared memory rather than model fine-tuning.
