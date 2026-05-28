@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, signalsTable, aiLessonsTable, aiPatternsTable, aiMarketRegimesTable, aiChartAnalysesTable } from "@workspace/db";
 import { eq, desc, and } from "drizzle-orm";
 import { isOllamaAvailable, MODEL, OLLAMA_BASE_URL } from "../lib/ai/ollama.js";
-import { isVisionAvailable, VISION_MODEL } from "../lib/ai/ollama-vision.js";
+import { isVisionAvailable, getVisionModel, VISION_MODEL_DEFAULT } from "../lib/ai/ollama-vision.js";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection.js";
 import { filterSignalWithAi } from "../lib/ai/filter.js";
 import { getMemorySummary, loadMemory } from "../lib/ai/memory.js";
@@ -17,20 +17,23 @@ import type { TradeMemoryEntry } from "../lib/ai/types.js";
 const router: IRouter = Router();
 
 // ── GET /ai/status ─────────────────────────────────────────────
-// Reports both decision model (qwen2.5:14b) and vision model (qwen2.5-vl:7b).
+// Reports both decision model (qwen2.5:14b) and the auto-detected vision model.
+// Vision model detection is flexible: accepts qwen2.5-vl:7b, qwen2.5vl:7b, and variants.
 router.get("/ai/status", async (req, res): Promise<void> => {
-  const [available, visionAvailable] = await Promise.all([
+  const [available, visionAvailable, detectedVisionModel] = await Promise.all([
     isOllamaAvailable(),
     isVisionAvailable(),
+    getVisionModel(),
   ]);
+  const visionModel = visionAvailable ? detectedVisionModel : VISION_MODEL_DEFAULT;
   res.json({
     available,
     model:          MODEL,
     endpoint:       OLLAMA_BASE_URL,
-    visionModel:    VISION_MODEL,
+    visionModel,
     visionAvailable,
     message: available
-      ? `Ollama reachable at ${OLLAMA_BASE_URL} — decision: ${MODEL}, vision: ${VISION_MODEL} (${visionAvailable ? "ready" : "not pulled"})`
+      ? `Ollama reachable at ${OLLAMA_BASE_URL} — decision: ${MODEL}, vision: ${visionModel} (${visionAvailable ? "ready" : "not pulled"})`
       : `Ollama NOT reachable at ${OLLAMA_BASE_URL}. Start Ollama locally: ollama serve`,
   });
 });
@@ -266,9 +269,9 @@ router.get("/ai/chart-analyses", async (req, res): Promise<void> => {
 });
 
 // ── POST /ai/analyze-chart ──────────────────────────────────────
-// Phase 1: Vision model (qwen2.5-vl:7b) reads the chart image.
+// Phase 1: Vision model (auto-detected: qwen2.5-vl:7b or qwen2.5vl:7b) reads the chart.
 // Phase 2: Decision engine (qwen2.5:14b) produces a trade plan.
-// Returns ChartAnalysis + AiDecision + historicalMatches.
+// Returns ChartAnalysis + ChartDecision + historicalMatches.
 router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
   const { imageBase64, symbol, timeframe, signalId, thumbnailBase64 } = req.body as {
     imageBase64?: string;
@@ -283,39 +286,78 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
     return;
   }
 
+  // Detect the vision model — flexible: accepts qwen2.5-vl:7b, qwen2.5vl:7b, etc.
+  const resolvedVision = await getVisionModel();
   const visionOk = await isVisionAvailable();
+
+  req.log?.info(
+    { symbol, timeframe, signalId, visionModel: resolvedVision, visionOk,
+      imageSizeKb: Math.round(imageBase64.length * 0.75 / 1024) },
+    "Chart image received — starting analysis pipeline",
+  );
+
   if (!visionOk) {
+    // Query /api/tags to list available models so the user sees exactly what's installed
+    let availableModels = "(could not reach Ollama)";
+    try {
+      const tagsRes = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+      if (tagsRes.ok) {
+        const tags = (await tagsRes.json()) as { models?: Array<{ name: string }> };
+        availableModels = (tags.models ?? []).map(m => m.name).join(", ") || "(no models installed)";
+      }
+    } catch { /* ignore */ }
+
+    req.log?.warn(
+      { wanted: "qwen2.5-vl:7b or qwen2.5vl:7b", available: availableModels },
+      "Vision model not found",
+    );
     res.status(503).json({
       ok: false,
-      error: `Vision model ${VISION_MODEL} not available`,
-      hint: `Pull it first: ollama pull ${VISION_MODEL}`,
+      error: `Vision model not found. Wanted: qwen2.5-vl:7b or qwen2.5vl:7b. Models currently installed in Ollama: ${availableModels}`,
+      hint: "Pull the model: ollama pull qwen2.5-vl:7b",
     });
     return;
   }
 
   try {
     // Phase 1: Vision model reads the chart image + similarity lookup (parallel)
+    req.log?.info({ symbol, timeframe, visionModel: resolvedVision }, "Phase 1 — vision model + similarity lookup starting");
     const [visionAnalysis, historicalMatches] = await Promise.all([
       analyzeChart({ imageBase64, symbol, timeframe, signalId }),
       symbol
         ? findSimilarPatterns({ symbol, regime: "unknown", side: "long" }, 5)
         : Promise.resolve([]),
     ]);
+    req.log?.info(
+      { symbol, trend: visionAnalysis.trend, patterns: visionAnalysis.patterns,
+        resistance: visionAnalysis.resistanceLevels, support: visionAnalysis.supportLevels,
+        confidence: visionAnalysis.confidence },
+      "Phase 1 complete — vision analysis returned",
+    );
 
     // Phase 2: Decision engine (qwen2.5:14b) produces a trade plan
     let decision = null;
     let decisionAvailable = false;
     const decisionOk = await isOllamaAvailable();
     if (decisionOk) {
+      req.log?.info({ symbol, timeframe, model: MODEL }, "Phase 2 — decision engine starting");
       try {
         decision = await makeChartDecision(visionAnalysis, symbol, timeframe, historicalMatches);
         decisionAvailable = true;
+        req.log?.info(
+          { symbol, direction: decision.direction, confidence: decision.confidence,
+            entry: decision.entry, sl: decision.stopLoss, tp: decision.takeProfit, rr: decision.riskReward },
+          "Phase 2 complete — decision engine result",
+        );
       } catch (decErr) {
-        req.log?.warn({ decErr }, "Chart decision engine failed — returning vision-only result");
+        req.log?.warn({ decErr }, "Phase 2 failed — decision engine error, returning vision-only result");
       }
+    } else {
+      req.log?.info({ symbol }, "Phase 2 skipped — decision model (qwen2.5:14b) offline");
     }
 
     // Phase 3: Persist everything in a single DB insert
+    req.log?.info({ symbol, timeframe }, "Phase 3 — persisting to DB");
     await persistChartAnalysis({
       analysis: visionAnalysis,
       decision,
@@ -326,12 +368,12 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
     });
 
     req.log?.info(
-      { symbol, timeframe, signalId, trend: visionAnalysis.trend, decision: decision?.direction },
-      "Chart analysis complete",
+      { symbol, timeframe, signalId, trend: visionAnalysis.trend, direction: decision?.direction },
+      "Chart analysis pipeline complete",
     );
     res.json({ ok: true, analysis: visionAnalysis, historicalMatches, decision, decisionAvailable });
   } catch (err) {
-    req.log?.warn({ err, symbol, timeframe }, "Chart analysis failed");
+    req.log?.warn({ err: (err as Error).message, stack: (err as Error).stack?.slice(0, 500), symbol, timeframe }, "Chart analysis pipeline failed");
     res.status(500).json({ ok: false, error: (err as Error).message });
   }
 });
