@@ -1,0 +1,142 @@
+I want you to transform my trading platform into a professional AI-assisted trading analysis engine.
+
+IMPORTANT ARCHITECTURE REQUIREMENTS:
+
+- The AI MUST be fully LOCAL.
+- Use Ollama only.
+- The model is:
+  qwen2.5:14b
+
+- DO NOT use OpenAI APIs.
+- DO NOT use cloud inference.
+- Everything must run locally on my machine.
+
+My hardware:
+- RTX 2070 8GB
+- 32GB RAM
+
+The AI is NOT a chatbot.
+It is a market analysis engine.
+
+The goal is NOT generic conversation.
+The goal is:
+- improve signal quality
+- improve technical analysis
+- reduce bad entries
+- detect market context
+- learn from previous trades
+- improve win rate over time
+
+I want you to build a modular AI trading architecture.
+
+SYSTEM REQUIREMENTS:
+
+1. Trading Memory System
+Create persistent memory storage for:
+- winning trades
+- losing trades
+- setup types
+- market regime
+- volatility
+- trend strength
+- fake breakouts
+- liquidity sweeps
+- volume conditions
+
+Store memory in:
+memory/trades.json
+
+2. AI Reflection System
+After each completed trade:
+- analyze why it won or lost
+- detect mistakes
+- detect weak confirmations
+- detect market traps
+- store lessons into memory
+
+3. Multi-Strategy Analysis
+The engine MUST NOT rely on one strategy.
+
+The AI should dynamically evaluate:
+- trend pullbacks
+- breakouts
+- breakout retests
+- liquidity sweeps
+- momentum continuation
+- mean reversion
+- compression breakouts
+- support/resistance reactions
+- EMA pullbacks
+- VWAP reclaim setups
+
+Then determine:
+- if there is a valid setup
+- which strategy currently fits market conditions best
+
+4. Market Regime Detection
+The AI must classify market conditions:
+- trending
+- ranging
+- choppy
+- high volatility
+- low volatility
+- expansion
+- compression
+
+Then adapt signal logic dynamically.
+
+5. Trade Lifecycle Logic
+Every trade must have:
+- entry
+- SL
+- TP
+- active state
+- exit state
+
+No incomplete trade lifecycle.
+
+6. Sequential Trade Logic
+Never open a new LONG or SHORT while another trade is still active.
+
+If an opposite signal appears:
+- close the current trade first
+- mark exit
+- THEN allow reversal
+
+7. Confidence Engine
+The AI should output:
+- confidence score
+- continuation probability
+- trap probability
+- setup quality
+- reasoning
+
+8. AI-Assisted Signal Filtering
+The AI should review generated technical signals BEFORE final approval.
+
+The AI acts as a second-layer intelligent filter.
+
+9. Future-Proof Architecture
+Design the system so later I can add:
+- embeddings
+- vector memory
+- LoRA training
+- reinforcement learning
+- multi-agent systems
+- self-improving evaluation loops
+
+10. IMPORTANT:
+Do NOT over-filter setups.
+
+Current problem:
+The engine became too strict and misses many profitable opportunities.
+
+Goal:
+Balance between:
+- quality
+- opportunity frequency
+
+Target:
+Around 55–70% win rate with reasonable signal frequency.
+
+Build this as a scalable AI trading architecture, not a simple signal script.
