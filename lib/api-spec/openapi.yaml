@@ -16,6 +16,8 @@ tags:
     description: Trading signals
   - name: bars
     description: OHLCV bar data
+  - name: ai
+    description: AI engine operations
 paths:
   /healthz:
     get:
@@ -156,6 +158,72 @@ paths:
                 items:
                   $ref: "#/components/schemas/Bar"
 
+  /ai/status:
+    get:
+      operationId: getAiStatus
+      tags: [ai]
+      summary: Get AI model status (decision + vision models)
+      responses:
+        "200":
+          description: AI status including both models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiStatusExtended"
+
+  /ai/memory:
+    get:
+      operationId: getAiMemory
+      tags: [ai]
+      summary: Get DB-backed shared memory stats
+      responses:
+        "200":
+          description: Memory statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiMemorySummary"
+
+  /ai/analyze-chart:
+    post:
+      operationId: analyzeChart
+      tags: [ai]
+      summary: Analyze a chart image using the vision model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChartAnalysisRequest"
+      responses:
+        "200":
+          description: Chart analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartAnalysisResponse"
+        "503":
+          description: Vision model not available
+
+  /ai/similarity:
+    post:
+      operationId: querySimilarity
+      tags: [ai]
+      summary: Query the pattern similarity engine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimilarityRequest"
+      responses:
+        "200":
+          description: Similarity matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimilarityResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -280,3 +348,287 @@ components:
           type: number
         volume:
           type: number
+
+    AiStatusExtended:
+      type: object
+      required: [available, model, endpoint, visionModel, visionAvailable, message]
+      properties:
+        available:
+          type: boolean
+        model:
+          type: string
+        endpoint:
+          type: string
+        visionModel:
+          type: string
+        visionAvailable:
+          type: boolean
+        message:
+          type: string
+
+    PatternGroupStat:
+      type: object
+      required: [symbol, regime, side, strategy, winRate, sampleSize, avgRR]
+      properties:
+        symbol:
+          type: string
+        regime:
+          type: string
+        side:
+          type: string
+        strategy:
+          type: string
+        winRate:
+          type: number
+        sampleSize:
+          type: integer
+        avgRR:
+          type: number
+
+    AiMemorySummary:
+      type: object
+      required: [ok, source, totalTrades, lessonsCount, patternsCount, similarityMatchesCount, topSimilarityMatches, recentLessons, updatedAt]
+      properties:
+        ok:
+          type: boolean
+        source:
+          type: string
+        totalTrades:
+          type: integer
+        lessonsCount:
+          type: integer
+        patternsCount:
+          type: integer
+        similarityMatchesCount:
+          type: integer
+          description: Number of unique pattern groups queryable for similarity matching
+        topSimilarityMatches:
+          type: array
+          description: Top pattern groups by historical win rate (n >= 3)
+          items:
+            $ref: "#/components/schemas/PatternGroupStat"
+        regimeStats:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/WinLossStat"
+        strategyStats:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/WinLossStat"
+        symbolStats:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/WinLossStat"
+        recentLessons:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+
+    WinLossStat:
+      type: object
+      required: [wins, losses, total]
+      properties:
+        wins:
+          type: integer
+        losses:
+          type: integer
+        total:
+          type: integer
+
+    ChartAnalysisRequest:
+      type: object
+      required: [imageBase64]
+      properties:
+        imageBase64:
+          type: string
+          description: Base64-encoded chart image (PNG or JPEG)
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        signalId:
+          type: string
+
+    ChartAnalysis:
+      type: object
+      required: [trend, patterns, resistanceLevels, supportLevels, volumeBehavior, marketStructure, supplyZones, demandZones, summary, confidence]
+      properties:
+        trend:
+          type: string
+          enum: [strong_uptrend, uptrend, neutral, downtrend, strong_downtrend]
+        patterns:
+          type: array
+          items:
+            type: string
+        resistanceLevels:
+          type: array
+          items:
+            type: number
+        supportLevels:
+          type: array
+          items:
+            type: number
+        volumeBehavior:
+          type: string
+          enum: [expanding, contracting, climax, normal, weak]
+        marketStructure:
+          type: string
+          enum: [higher_highs_lows, lower_highs_lows, range_bound, breakout, breakdown, unclear]
+        supplyZones:
+          type: array
+          items:
+            type: number
+        demandZones:
+          type: array
+          items:
+            type: number
+        summary:
+          type: string
+        confidence:
+          type: integer
+
+    ChartAnalysisResponse:
+      type: object
+      required: [ok, analysis, historicalMatches]
+      properties:
+        ok:
+          type: boolean
+        analysis:
+          $ref: "#/components/schemas/ChartAnalysis"
+        historicalMatches:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimilarityMatch"
+
+    SimilarityMatch:
+      type: object
+      required: [symbol, regime, side, strategy, patternTags, session, htfBias, historicalWinRate, avgRR, sampleSize, matchScore, recentOutcomes]
+      properties:
+        symbol:
+          type: string
+        regime:
+          type: string
+        side:
+          type: string
+        strategy:
+          type: string
+        patternTags:
+          type: array
+          items:
+            type: string
+        session:
+          type: string
+        htfBias:
+          type: string
+        historicalWinRate:
+          type: number
+        avgRR:
+          type: number
+        sampleSize:
+          type: integer
+        matchScore:
+          type: integer
+        recentOutcomes:
+          type: array
+          items:
+            type: string
+
+    AiLesson:
+      type: object
+      required: [id, signalId, symbol, side, strategy, regime, outcome, lesson, failureCategory, confidence, createdAt]
+      properties:
+        id:
+          type: integer
+        signalId:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+        strategy:
+          type: string
+        regime:
+          type: string
+        session:
+          type: string
+        outcome:
+          type: string
+        lesson:
+          type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        failureCategory:
+          type: string
+          enum: [news_issue, bad_entry, poor_risk, pattern_failure, false_breakout, weak_volume, trend_reversal, regime_mismatch, incorrect_confidence, unknown]
+        trapType:
+          type: ["string", "null"]
+        continuationProbability:
+          type: number
+        confidence:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    AiPattern:
+      type: object
+      required: [id, symbol, regime, side, strategy, outcome, confidence, createdAt]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        regime:
+          type: string
+        side:
+          type: string
+        strategy:
+          type: string
+        patternTags:
+          type: array
+          items:
+            type: string
+        outcome:
+          type: string
+        confidence:
+          type: integer
+        rrRatio:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+
+    SimilarityRequest:
+      type: object
+      required: [symbol, side]
+      properties:
+        symbol:
+          type: string
+        regime:
+          type: string
+        side:
+          type: string
+          enum: [long, short]
+        strategy:
+          type: string
+        patternTags:
+          type: array
+          items:
+            type: string
+        session:
+          type: string
+
+    SimilarityResponse:
+      type: object
+      required: [ok, matches]
+      properties:
+        ok:
+          type: boolean
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimilarityMatch"

@@ -8,7 +8,9 @@
 // ============================================================
 
 import { ollamaGenerate, parseJsonFromResponse } from "./ollama.js";
+import { getRecentLessonsFromDb, getSymbolStatsFromDb } from "./shared-memory.js";
 import { loadMemory } from "./memory.js";
+import { findSimilarPatterns, formatSimilarityContext } from "./similarity.js";
 import { logger } from "../logger.js";
 import { analyzeTrendMomentumVolatility, emaArray } from "../analyzer/trend.js";
 import { analyzeStructure } from "../analyzer/structure.js";
@@ -52,6 +54,7 @@ interface DecisionInput {
   recentBars: Array<{ t: string; o: string; h: string; l: string; c: string; v: number }>;
   recentLessons: string[];
   symbolStats: { wins: number; losses: number; total: number } | undefined;
+  similarityContext: string;
 }
 
 function buildDecisionPrompt(d: DecisionInput): string {
@@ -135,6 +138,9 @@ MEMORY & LESSONS:
   ${memCtx}
 ${lessonsText}
 
+HISTORICAL PATTERN SIMILARITY:
+${d.similarityContext}
+
 Decision criteria:
 - BUY: trend up, price above VWAP/EMA20, RSI 40-65, pullback or breakout, HTF aligned or neutral
 - SELL: trend down, price below VWAP/EMA20, RSI 35-60, rejection or breakdown, HTF aligned or neutral
@@ -193,21 +199,19 @@ export async function aiDecide(params: {
     .map(p => p.name);
 
   // ── Swing highs (resistance) and lows (support) near price ───
-  // Use the structural points array; fall back to the engine's precomputed
-  // lastSwingHigh / lastSwingLow if the filtered set is empty.
   const price = bar.close;
   const swingHighs = structurePoints
     .filter(p => (p.type === "HH" || p.type === "swing-high") && p.price > price)
     .slice(-3)
     .map(p => p.price)
-    .sort((a: number, b: number) => a - b); // nearest first
+    .sort((a: number, b: number) => a - b);
   if (swingHighs.length === 0 && lastSwingHigh > price) swingHighs.push(lastSwingHigh);
 
   const swingLows = structurePoints
     .filter(p => (p.type === "LL" || p.type === "swing-low") && p.price < price)
     .slice(-3)
     .map(p => p.price)
-    .sort((a: number, b: number) => b - a); // nearest first
+    .sort((a: number, b: number) => b - a);
   if (swingLows.length === 0 && lastSwingLow < price) swingLows.push(lastSwingLow);
 
   // ── HTF bias from 15m bars (EMA20 vs EMA50) ──────────────────
@@ -222,10 +226,27 @@ export async function aiDecide(params: {
     else if (c < htfE20[li] && htfE20[li] < htfE50[li]) htfBias = "bear";
   }
 
-  // ── Memory context ────────────────────────────────────────────
-  const mem         = loadMemory();
-  const recentLessons = mem.recentLessons.slice(0, 5);
-  const symbolStats   = mem.symbolStats[symbol];
+  // ── Memory context (DB-first, JSON fallback) ──────────────────
+  const [recentLessons, symbolStats, similarMatches] = await Promise.all([
+    getRecentLessonsFromDb(5).catch(() => {
+      const mem = loadMemory();
+      return mem.recentLessons.slice(0, 5);
+    }),
+    getSymbolStatsFromDb(symbol).catch(() => {
+      const mem = loadMemory();
+      return mem.symbolStats[symbol];
+    }),
+    findSimilarPatterns({
+      symbol,
+      regime,
+      side: "long",
+      strategy: "ai_decision",
+      patternTags: recentPatterns,
+      session,
+    }).catch(() => []),
+  ]);
+
+  const similarityContext = formatSimilarityContext(similarMatches);
 
   // ── Last 10 bars formatted for the prompt ─────────────────────
   const recentBars = bars.slice(Math.max(0, lastIdx - 9), lastIdx + 1).map(b => ({
@@ -242,6 +263,7 @@ export async function aiDecide(params: {
     vwapVal, e20, e50, e200, htfBias,
     recentPatterns, swingHighs, swingLows,
     recentBars, recentLessons, symbolStats,
+    similarityContext,
   });
 
   logger.info(

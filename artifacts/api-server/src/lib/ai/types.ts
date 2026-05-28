@@ -27,6 +27,7 @@ export interface TradeMemoryEntry {
   weaknesses?: string[];
   trapType?: string | null;
   continuationProbability?: number;
+  failureCategory?: FailureCategory;
 }
 
 export interface AiSignalVerdict {
@@ -40,6 +41,18 @@ export interface AiSignalVerdict {
   lessons: string[];
 }
 
+export type FailureCategory =
+  | "news_issue"
+  | "bad_entry"
+  | "poor_risk"
+  | "pattern_failure"
+  | "false_breakout"
+  | "weak_volume"
+  | "trend_reversal"
+  | "regime_mismatch"
+  | "incorrect_confidence"
+  | "unknown";
+
 export interface AiReflection {
   outcome: "tp_hit" | "sl_hit" | "expired";
   lesson: string;
@@ -47,6 +60,7 @@ export interface AiReflection {
   trapType: string | null;
   continuationProbability: number;
   reasoning: string;
+  failureCategory?: FailureCategory;
 }
 
 export interface AiDecision {

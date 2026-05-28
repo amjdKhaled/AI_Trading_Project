@@ -101,6 +101,200 @@ export interface Bar {
   volume: number;
 }
 
+export interface AiStatusExtended {
+  available: boolean;
+  model: string;
+  endpoint: string;
+  visionModel: string;
+  visionAvailable: boolean;
+  message: string;
+}
+
+export interface PatternGroupStat {
+  symbol: string;
+  regime: string;
+  side: string;
+  strategy: string;
+  winRate: number;
+  sampleSize: number;
+  avgRR: number;
+}
+
+export interface WinLossStat {
+  wins: number;
+  losses: number;
+  total: number;
+}
+
+export type AiMemorySummaryRegimeStats = {[key: string]: WinLossStat};
+
+export type AiMemorySummaryStrategyStats = {[key: string]: WinLossStat};
+
+export type AiMemorySummarySymbolStats = {[key: string]: WinLossStat};
+
+export interface AiMemorySummary {
+  ok: boolean;
+  source: string;
+  totalTrades: number;
+  lessonsCount: number;
+  patternsCount: number;
+  /** Number of unique pattern groups queryable for similarity matching */
+  similarityMatchesCount: number;
+  /** Top pattern groups by historical win rate (n >= 3) */
+  topSimilarityMatches: PatternGroupStat[];
+  regimeStats?: AiMemorySummaryRegimeStats;
+  strategyStats?: AiMemorySummaryStrategyStats;
+  symbolStats?: AiMemorySummarySymbolStats;
+  recentLessons: string[];
+  updatedAt: string;
+}
+
+export interface ChartAnalysisRequest {
+  /** Base64-encoded chart image (PNG or JPEG) */
+  imageBase64: string;
+  symbol?: string;
+  timeframe?: string;
+  signalId?: string;
+}
+
+export type ChartAnalysisTrend = typeof ChartAnalysisTrend[keyof typeof ChartAnalysisTrend];
+
+
+export const ChartAnalysisTrend = {
+  strong_uptrend: 'strong_uptrend',
+  uptrend: 'uptrend',
+  neutral: 'neutral',
+  downtrend: 'downtrend',
+  strong_downtrend: 'strong_downtrend',
+} as const;
+
+export type ChartAnalysisVolumeBehavior = typeof ChartAnalysisVolumeBehavior[keyof typeof ChartAnalysisVolumeBehavior];
+
+
+export const ChartAnalysisVolumeBehavior = {
+  expanding: 'expanding',
+  contracting: 'contracting',
+  climax: 'climax',
+  normal: 'normal',
+  weak: 'weak',
+} as const;
+
+export type ChartAnalysisMarketStructure = typeof ChartAnalysisMarketStructure[keyof typeof ChartAnalysisMarketStructure];
+
+
+export const ChartAnalysisMarketStructure = {
+  higher_highs_lows: 'higher_highs_lows',
+  lower_highs_lows: 'lower_highs_lows',
+  range_bound: 'range_bound',
+  breakout: 'breakout',
+  breakdown: 'breakdown',
+  unclear: 'unclear',
+} as const;
+
+export interface ChartAnalysis {
+  trend: ChartAnalysisTrend;
+  patterns: string[];
+  resistanceLevels: number[];
+  supportLevels: number[];
+  volumeBehavior: ChartAnalysisVolumeBehavior;
+  marketStructure: ChartAnalysisMarketStructure;
+  supplyZones: number[];
+  demandZones: number[];
+  summary: string;
+  confidence: number;
+}
+
+export interface SimilarityMatch {
+  symbol: string;
+  regime: string;
+  side: string;
+  strategy: string;
+  patternTags: string[];
+  session: string;
+  htfBias: string;
+  historicalWinRate: number;
+  avgRR: number;
+  sampleSize: number;
+  matchScore: number;
+  recentOutcomes: string[];
+}
+
+export interface ChartAnalysisResponse {
+  ok: boolean;
+  analysis: ChartAnalysis;
+  historicalMatches: SimilarityMatch[];
+}
+
+export type AiLessonFailureCategory = typeof AiLessonFailureCategory[keyof typeof AiLessonFailureCategory];
+
+
+export const AiLessonFailureCategory = {
+  news_issue: 'news_issue',
+  bad_entry: 'bad_entry',
+  poor_risk: 'poor_risk',
+  pattern_failure: 'pattern_failure',
+  false_breakout: 'false_breakout',
+  weak_volume: 'weak_volume',
+  trend_reversal: 'trend_reversal',
+  regime_mismatch: 'regime_mismatch',
+  incorrect_confidence: 'incorrect_confidence',
+  unknown: 'unknown',
+} as const;
+
+export interface AiLesson {
+  id: number;
+  signalId: string;
+  symbol: string;
+  side: string;
+  strategy: string;
+  regime: string;
+  session?: string;
+  outcome: string;
+  lesson: string;
+  weaknesses?: string[];
+  failureCategory: AiLessonFailureCategory;
+  /** @nullable */
+  trapType?: string | null;
+  continuationProbability?: number;
+  confidence: number;
+  createdAt: string;
+}
+
+export interface AiPattern {
+  id: number;
+  symbol: string;
+  regime: string;
+  side: string;
+  strategy: string;
+  patternTags?: string[];
+  outcome: string;
+  confidence: number;
+  rrRatio?: number;
+  createdAt: string;
+}
+
+export type SimilarityRequestSide = typeof SimilarityRequestSide[keyof typeof SimilarityRequestSide];
+
+
+export const SimilarityRequestSide = {
+  long: 'long',
+  short: 'short',
+} as const;
+
+export interface SimilarityRequest {
+  symbol: string;
+  regime?: string;
+  side: SimilarityRequestSide;
+  strategy?: string;
+  patternTags?: string[];
+  session?: string;
+}
+
+export interface SimilarityResponse {
+  ok: boolean;
+  matches: SimilarityMatch[];
+}
+
 export type ListSignalsParams = {
 symbol?: string;
 limit?: number;

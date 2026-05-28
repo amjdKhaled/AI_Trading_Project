@@ -1,4 +1,5 @@
 import { ollamaGenerate, parseJsonFromResponse } from "./ollama.js";
+import { getRelevantContextFromDb, getStrategyWinRateFromDb, getRegimeWinRateFromDb, getRecentLessonsFromDb } from "./shared-memory.js";
 import { getRelevantContext, getStrategyWinRate, getRegimeWinRate, loadMemory } from "./memory.js";
 import { logger } from "../logger.js";
 import type { AiSignalVerdict } from "./types.js";
@@ -63,46 +64,53 @@ Respond with JSON only:
 }`;
 }
 
-function buildMemoryContext(
-  ctx: SignalContext,
-  strategyWr: number | null,
-  regimeWr: number | null,
-  recent: ReturnType<typeof getRelevantContext>,
-  recentLessons: string[],
-): string {
+async function buildMemoryContext(ctx: SignalContext): Promise<string> {
   const lines: string[] = [];
 
-  if (strategyWr !== null)
-    lines.push(`  Strategy "${ctx.strategy}" historical WR: ${Math.round(strategyWr * 100)}%`);
-  if (regimeWr !== null)
-    lines.push(`  Regime "${ctx.regime}" historical WR: ${Math.round(regimeWr * 100)}%`);
+  try {
+    const [strategyWr, regimeWr, recent, recentLessons] = await Promise.all([
+      getStrategyWinRateFromDb(ctx.strategy).catch(() => getStrategyWinRate(ctx.strategy)),
+      getRegimeWinRateFromDb(ctx.regime).catch(() => getRegimeWinRate(ctx.regime)),
+      getRelevantContextFromDb(ctx.symbol, ctx.regime, ctx.strategy, ctx.side).catch(
+        () => getRelevantContext(ctx.symbol, ctx.regime, ctx.strategy, ctx.side),
+      ),
+      getRecentLessonsFromDb(3).catch(() => {
+        const mem = loadMemory();
+        return mem.recentLessons.slice(0, 3);
+      }),
+    ]);
 
-  if (recent.length > 0) {
-    lines.push("  Recent similar trades:");
-    recent.slice(0, 4).forEach(t => {
-      const wr = t.outcome === "tp_hit" ? "WIN" : "LOSS";
-      lines.push(`    [${wr}] ${t.strategy} ${t.side} ${t.regime}/${t.session} — ${t.lesson ?? "no lesson"}`);
-    });
-  } else {
-    lines.push("  No similar trades in memory yet.");
-  }
+    if (strategyWr !== null)
+      lines.push(`  Strategy "${ctx.strategy}" historical WR: ${Math.round(strategyWr * 100)}%`);
+    if (regimeWr !== null)
+      lines.push(`  Regime "${ctx.regime}" historical WR: ${Math.round(regimeWr * 100)}%`);
 
-  if (recentLessons.length > 0) {
-    lines.push("  Recent lessons:");
-    recentLessons.slice(0, 3).forEach(l => lines.push(`    • ${l}`));
+    if (recent.length > 0) {
+      lines.push("  Recent similar trades:");
+      recent.slice(0, 4).forEach(t => {
+        const wr = t.outcome === "tp_hit" ? "WIN" : "LOSS";
+        lines.push(`    [${wr}] ${t.strategy} ${t.side} ${t.regime}/${t.session} — ${t.lesson ?? "no lesson"}`);
+      });
+    } else {
+      lines.push("  No similar trades in memory yet.");
+    }
+
+    if (recentLessons.length > 0) {
+      lines.push("  Recent lessons:");
+      recentLessons.forEach(l => lines.push(`    • ${l}`));
+    }
+  } catch (err) {
+    logger.warn({ err }, "Memory context build failed — using fallback");
+    lines.push("  Memory unavailable.");
   }
 
   return lines.join("\n") || "  No memory context available.";
 }
 
 export async function filterSignalWithAi(ctx: SignalContext): Promise<AiSignalVerdict> {
-  const recent       = getRelevantContext(ctx.symbol, ctx.regime, ctx.strategy, ctx.side);
-  const strategyWr   = getStrategyWinRate(ctx.strategy);
-  const regimeWr     = getRegimeWinRate(ctx.regime);
-  const mem          = loadMemory();
-  const memCtx       = buildMemoryContext(ctx, strategyWr, regimeWr, recent, mem.recentLessons);
-  const prompt       = buildFilterPrompt(ctx, memCtx);
-  const raw          = await ollamaGenerate(prompt, SYSTEM);
+  const memCtx = await buildMemoryContext(ctx);
+  const prompt  = buildFilterPrompt(ctx, memCtx);
+  const raw     = await ollamaGenerate(prompt, SYSTEM);
 
   try {
     const parsed = parseJsonFromResponse(raw) as Partial<AiSignalVerdict>;

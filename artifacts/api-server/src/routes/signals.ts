@@ -10,6 +10,9 @@ import {
 import { generateSignals } from "../lib/analyzer/signals";
 import { simulateLifecycle } from "../lib/analyzer/lifecycle";
 import { fetchHistory } from "./history";
+import { isOllamaAvailable } from "../lib/ai/ollama";
+import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection";
+import { rowToTradeEntry } from "./ai";
 
 // Find the bar index whose time equals (or is closest to) the signal's barTime.
 // Signals carry epoch-seconds matching the bar grid, so an exact match is
@@ -36,20 +39,12 @@ router.get("/signals", async (req, res): Promise<void> => {
   const { symbol, limit } = query.data;
   const timeframe = typeof req.query.timeframe === "string" && req.query.timeframe ? req.query.timeframe : "5m";
 
-  // Single try/catch wraps the entire handler so any DB / fetch / engine
-  // failure surfaces as a structured JSON error with the symbol+timeframe
-  // context the user can actually act on — never an opaque 500.
-  // The failing step is recorded in `phase` so logs pinpoint the root cause.
   let phase: string = "query_build";
   try {
     const conditions: SQL[] = [];
     if (symbol)    conditions.push(eq(signalsTable.symbol,    symbol));
     if (timeframe) conditions.push(eq(signalsTable.timeframe, timeframe));
 
-    // Full historical coverage: up to 5000 signals per fetch.
-    // Ordered by barTime DESC so the most-recent setups appear first.
-    // No ETags / conditional-GET caching for this route — the dataset changes
-    // on every regenerate and must always return fresh data.
     res.setHeader("Cache-Control", "no-store");
     const effectiveLimit = Math.min(limit ?? 3000, 5000);
 
@@ -61,18 +56,12 @@ router.get("/signals", async (req, res): Promise<void> => {
       base.where(and(...conditions))
     ).limit(effectiveLimit);
 
-    // Seed once if empty for this symbol+timeframe.
-    // Only the best-effort steps (history fetch, engine, inserts) are wrapped
-    // in the inner try. DB re-select + schema parse are intentionally OUTSIDE
-    // so any real DB/parse failure propagates to the outer catch and surfaces
-    // as a structured 500 instead of being swallowed as "seeding failed".
     let didSeed = false;
     if (rows.length === 0 && symbol) {
     try {
       phase = "seed_fetch_history";
       const rawBars = await fetchHistory(symbol, timeframe);
       const bars = rawBars as import("../lib/analyzer/types").OhlcvBar[];
-      // For 5m signals, also fetch 15m bars so the engine can apply higher-timeframe bias.
       let htfBars: import("../lib/analyzer/types").OhlcvBar[] = [];
       if (timeframe === "5m") {
         try {
@@ -115,10 +104,6 @@ router.get("/signals", async (req, res): Promise<void> => {
         didSeed = true;
       }
     } catch (seedErr) {
-      // Seeding is best-effort: history fetch / engine / DB inserts may fail
-      // (Polygon 429, yfinance timeout, etc.) but the route must still return
-      // the empty rows. Log the real exception so the user knows WHY no
-      // signals were seeded instead of seeing silent emptiness.
       req.log?.warn(
         { err: seedErr, symbol, timeframe, phase },
         "signal seeding failed — returning empty result",
@@ -126,9 +111,6 @@ router.get("/signals", async (req, res): Promise<void> => {
     }
   }
 
-    // Re-select after seeding and respond. These are OUTSIDE the inner
-    // best-effort try so any DB error or response-schema mismatch flows to
-    // the outer catch as a structured 500 rather than silently degrading.
     if (didSeed) {
       phase = "seed_reselect";
       const seeded = await (
@@ -144,8 +126,6 @@ router.get("/signals", async (req, res): Promise<void> => {
     phase = "parse_response";
     res.json(ListSignalsResponse.parse(rows));
   } catch (err) {
-    // Surface the real exception with full context. The frontend's safeJson()
-    // helper will display this directly to the user.
     req.log?.error(
       { err, stack: (err as Error).stack, symbol, timeframe, phase },
       `GET /signals failed during phase=${phase}`,
@@ -252,10 +232,13 @@ router.post("/signals/regenerate", async (req, res): Promise<void> => {
 });
 
 // ── PATCH /signals/:signalId/state ────────────────────────────
+// When a signal closes (tp_hit / sl_hit / expired), automatically
+// triggers post-trade reflection and writes a lesson to the DB.
 router.patch("/signals/:signalId/state", async (req, res): Promise<void> => {
   const { signalId } = req.params;
   const body = req.body as { state?: string; exitPrice?: number };
   const validStates = ["active", "tp_hit", "sl_hit", "expired"];
+  const closedStates = ["tp_hit", "sl_hit", "expired"];
 
   if (!body.state || !validStates.includes(body.state)) {
     res.status(400).json({ error: `state must be one of: ${validStates.join(", ")}` });
@@ -275,6 +258,33 @@ router.patch("/signals/:signalId/state", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.warn({ err, signalId }, "Failed to update signal state");
     res.status(500).json({ error: "Failed to update signal" });
+    return;
+  }
+
+  // ── Auto post-trade reflection (fire-and-forget after response sent) ──
+  if (closedStates.includes(body.state)) {
+    setImmediate(async () => {
+      try {
+        const rows = await db
+          .select()
+          .from(signalsTable)
+          .where(eq(signalsTable.signalId, signalId))
+          .limit(1);
+        if (rows.length === 0) return;
+
+        const trade = rowToTradeEntry(rows[0]);
+
+        const ollamaOk = await isOllamaAvailable();
+        if (ollamaOk) {
+          await reflectOnTrade(trade);
+        } else {
+          await reflectWithoutAi(trade);
+        }
+        // Logger available via module scope
+      } catch {
+        // Best-effort — errors must not affect the main response
+      }
+    });
   }
 });
 
