@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, signalsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, signalsTable, aiLessonsTable, aiPatternsTable, aiMarketRegimesTable, aiChartAnalysesTable } from "@workspace/db";
+import { eq, desc, and } from "drizzle-orm";
 import { isOllamaAvailable, MODEL, OLLAMA_BASE_URL } from "../lib/ai/ollama.js";
 import { isVisionAvailable, VISION_MODEL } from "../lib/ai/ollama-vision.js";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection.js";
@@ -319,6 +319,108 @@ router.post("/ai/similarity", async (req, res): Promise<void> => {
     res.json({ ok: true, matches });
   } catch (err) {
     req.log?.warn({ err }, "Similarity query failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/lessons ─────────────────────────────────────────────
+// Paginated list from ai_lessons. Filters: symbol, outcome, failureCategory.
+router.get("/ai/lessons", async (req, res): Promise<void> => {
+  const symbol          = typeof req.query.symbol === "string"          ? req.query.symbol.toUpperCase() : undefined;
+  const outcome         = typeof req.query.outcome === "string"         ? req.query.outcome              : undefined;
+  const failureCategory = typeof req.query.failureCategory === "string" ? req.query.failureCategory      : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit  ?? "100"), 10), 500);
+  const offset = parseInt(String(req.query.offset ?? "0"), 10);
+
+  try {
+    const conditions = [
+      symbol          ? eq(aiLessonsTable.symbol,          symbol)                        : undefined,
+      outcome         ? eq(aiLessonsTable.outcome,         outcome)                       : undefined,
+      failureCategory ? eq(aiLessonsTable.failureCategory, failureCategory as never)      : undefined,
+    ].filter(Boolean) as Parameters<typeof and>[0][];
+
+    const rows = await db
+      .select()
+      .from(aiLessonsTable)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(aiLessonsTable.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    res.json({ ok: true, lessons: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/lessons failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/patterns ────────────────────────────────────────────
+// Historical setup library. Filters: symbol, side, regime.
+router.get("/ai/patterns", async (req, res): Promise<void> => {
+  const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : undefined;
+  const side   = typeof req.query.side   === "string" ? req.query.side                 : undefined;
+  const regime = typeof req.query.regime === "string" ? req.query.regime               : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit ?? "500"), 10), 1000);
+
+  try {
+    const conditions = [
+      symbol ? eq(aiPatternsTable.symbol, symbol) : undefined,
+      side   ? eq(aiPatternsTable.side,   side)   : undefined,
+      regime ? eq(aiPatternsTable.regime, regime) : undefined,
+    ].filter(Boolean) as Parameters<typeof and>[0][];
+
+    const rows = await db
+      .select()
+      .from(aiPatternsTable)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(aiPatternsTable.createdAt))
+      .limit(limit);
+
+    res.json({ ok: true, patterns: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/patterns failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/regimes ─────────────────────────────────────────────
+// Regime time-series. Optional symbol filter.
+router.get("/ai/regimes", async (req, res): Promise<void> => {
+  const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit ?? "500"), 10), 2000);
+
+  try {
+    const rows = await db
+      .select()
+      .from(aiMarketRegimesTable)
+      .where(symbol ? eq(aiMarketRegimesTable.symbol, symbol) : undefined)
+      .orderBy(desc(aiMarketRegimesTable.snapshottedAt))
+      .limit(limit);
+
+    res.json({ ok: true, regimes: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/regimes failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/chart-analyses ──────────────────────────────────────
+// Recent vision model chart analyses. Optional symbol filter.
+router.get("/ai/chart-analyses", async (req, res): Promise<void> => {
+  const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit ?? "20"), 10), 100);
+
+  try {
+    const rows = await db
+      .select()
+      .from(aiChartAnalysesTable)
+      .where(symbol ? eq(aiChartAnalysesTable.symbol, symbol) : undefined)
+      .orderBy(desc(aiChartAnalysesTable.createdAt))
+      .limit(limit);
+
+    res.json({ ok: true, analyses: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/chart-analyses failed");
     res.status(500).json({ ok: false, error: (err as Error).message });
   }
 });

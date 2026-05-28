@@ -9,6 +9,7 @@
 
 import { ollamaGenerate, parseJsonFromResponse } from "./ollama.js";
 import { getRecentLessonsFromDb, getSymbolStatsFromDb } from "./shared-memory.js";
+import { snapshotRegime } from "./regime-tracker.js";
 import { loadMemory } from "./memory.js";
 import { findSimilarPatterns, formatSimilarityContext } from "./similarity.js";
 import { logger } from "../logger.js";
@@ -225,6 +226,15 @@ export async function aiDecide(params: {
     if (c > htfE20[li] && htfE20[li] > htfE50[li]) htfBias = "bull";
     else if (c < htfE20[li] && htfE20[li] < htfE50[li]) htfBias = "bear";
   }
+
+  // ── Regime snapshot (fire-and-forget) ────────────────────────
+  // Builds up the historical regime time-series in ai_market_regimes.
+  // Called on every aiDecide so the library grows automatically.
+  void snapshotRegime({
+    symbol, timeframe, regime, htfBias,
+    atr, rsi, macd,
+    vwapDiff: (bar.close - vwapVal) / (vwapVal || 1) * 100,
+  }).catch(() => { /* non-critical — never block the decision */ });
 
   // ── Memory context (DB-first, JSON fallback) ──────────────────
   const [recentLessons, symbolStats, similarMatches] = await Promise.all([
