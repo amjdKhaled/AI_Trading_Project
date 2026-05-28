@@ -1,14 +1,18 @@
 import { defineConfig } from "drizzle-kit";
-import path from "path";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
+
+// ESM-safe __dirname equivalent. The lib/db package has "type":"module" so
+// __dirname is not defined — we derive it from import.meta.url instead.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = dirname(__filename);
 
 // Auto-load .env from the project root so `pnpm --filter @workspace/db run push`
 // works without manually exporting DATABASE_URL in every terminal session.
-// The .env file is the same one the API server uses (api-server/src/env.ts).
-// drizzle.config.ts lives at lib/db/ — two levels up is the project root.
-const projectRoot = path.resolve(__dirname, "../..");
-const envFile    = path.resolve(projectRoot, ".env");
+// drizzle.config.ts is at lib/db/ — two levels up is the project root.
+const envFile = resolve(__dirname, "../../.env");
 if (existsSync(envFile)) {
   loadDotenv({ path: envFile });
 }
@@ -29,7 +33,9 @@ if (!process.env.DATABASE_URL) {
 }
 
 export default defineConfig({
-  schema: path.join(__dirname, "./src/schema/index.ts"),
+  // Relative path — drizzle-kit resolves it from this config file's location,
+  // which is platform-safe on both Windows and Linux without __dirname hacks.
+  schema: "./src/schema/index.ts",
   dialect: "postgresql",
   dbCredentials: {
     url: process.env.DATABASE_URL,
