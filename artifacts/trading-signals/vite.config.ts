@@ -59,6 +59,14 @@ export default defineConfig({
           target: `http://localhost:${process.env.API_PORT ?? "5000"}`,
           changeOrigin: true,
         },
+        // WebSocket proxy: forwards /ws?symbol=... to the Express WS server
+        // without this, Vite intercepts the upgrade and the live price feed
+        // never connects on local Windows/Mac development.
+        "/ws": {
+          target: `ws://localhost:${process.env.API_PORT ?? "5000"}`,
+          ws: true,
+          changeOrigin: true,
+        },
       },
     }),
   },

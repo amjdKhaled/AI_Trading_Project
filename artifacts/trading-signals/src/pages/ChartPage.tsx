@@ -3,6 +3,7 @@ import { WatchlistPanel } from "@/components/WatchlistPanel";
 import { TradingChart } from "@/components/TradingChart";
 import { SignalPanel } from "@/components/SignalPanel";
 import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
+import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 
 const TIMEFRAMES = ["5m", "15m"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
@@ -58,8 +59,8 @@ function useHistoryBars(symbol: string | null, interval: Timeframe) {
 }
 
 export default function ChartPage() {
-  const [activeSymbol, setActiveSymbol] = useState<string | null>("NVDA");
-  const [timeframe, setTimeframe]       = useState<Timeframe>("5m");
+  const { activeSymbol, setActiveSymbol } = useActiveSymbol();
+  const [timeframe, setTimeframe]         = useState<Timeframe>("5m");
   const [restSignals, setRestSignals]   = useState<SignalNew[]>([]);
   const [activeTrade, setActiveTrade]   = useState<ActiveTrade | null>(null);
   const [tradeResult, setTradeResult]   = useState<TradeResult | null>(null);
@@ -158,10 +159,12 @@ export default function ChartPage() {
     }).catch(() => {});
   }, [activeTrade]);
 
-  // Deduplicate signals by signalId (WS + REST merged)
-  const allSignals: SignalNew[] = [...wsSignals, ...restSignals].filter(
-    (sig, idx, arr) => arr.findIndex((s) => s.signalId === sig.signalId) === idx
-  );
+  // Deduplicate signals by signalId (WS + REST merged).
+  // Also filter by activeSymbol so stale WS signals from a previously viewed
+  // symbol don't bleed onto the new symbol's chart after switching.
+  const allSignals: SignalNew[] = [...wsSignals, ...restSignals]
+    .filter((sig) => !activeSymbol || sig.symbol === activeSymbol)
+    .filter((sig, idx, arr) => arr.findIndex((s) => s.signalId === sig.signalId) === idx);
 
   return (
     <div className="flex h-full" data-testid="chart-page">

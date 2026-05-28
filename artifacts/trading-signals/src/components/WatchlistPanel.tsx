@@ -22,7 +22,8 @@ const POPULAR = [
 
 export function WatchlistPanel({ activeSymbol, onSelectSymbol, connected }: Props) {
   const queryClient = useQueryClient();
-  const { data: symbols = [] } = useListSymbols();
+  const { data: rawSymbols } = useListSymbols();
+  const symbols = Array.isArray(rawSymbols) ? rawSymbols : [];
   const addSymbol = useAddSymbol();
   const removeSymbol = useRemoveSymbol();
   const [adding, setAdding] = useState(false);

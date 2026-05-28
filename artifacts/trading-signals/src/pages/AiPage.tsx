@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Brain, CheckCircle, XCircle, AlertTriangle, BookOpen, BarChart2, TrendingUp, TrendingDown, RefreshCw, Zap } from "lucide-react";
+import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -50,13 +51,14 @@ function WrBar({ wins, total }: { wins: number; total: number }) {
 }
 
 export default function AiPage() {
+  const { activeSymbol } = useActiveSymbol();
   const [status, setStatus]     = useState<AiStatus | null>(null);
   const [memory, setMemory]     = useState<MemorySummary | null>(null);
   const [loading, setLoading]   = useState(true);
   const [reflectId, setReflectId]     = useState("");
   const [reflectResult, setReflectResult] = useState<ReflectResult | null>(null);
   const [reflecting, setReflecting]       = useState(false);
-  const [batchSymbol, setBatchSymbol]     = useState("TSLA");
+  const [batchSymbol, setBatchSymbol]     = useState(activeSymbol ?? "NVDA");
   const [batching, setBatching]           = useState(false);
   const [batchResult, setBatchResult]     = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "regime" | "strategy" | "lessons">("overview");
@@ -76,6 +78,11 @@ export default function AiPage() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Keep batch import symbol in sync with the chart's active symbol
+  useEffect(() => {
+    if (activeSymbol) setBatchSymbol(activeSymbol);
+  }, [activeSymbol]);
 
   async function handleReflect() {
     if (!reflectId.trim()) return;

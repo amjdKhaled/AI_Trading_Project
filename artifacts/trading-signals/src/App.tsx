@@ -7,6 +7,7 @@ import ChartPage from "@/pages/ChartPage";
 import SignalsPage from "@/pages/SignalsPage";
 import WatchlistPage from "@/pages/WatchlistPage";
 import AiPage from "@/pages/AiPage";
+import { ActiveSymbolProvider } from "@/lib/ActiveSymbolContext";
 import { BarChart2, LineChart, ListOrdered, Activity, Brain } from "lucide-react";
 
 const queryClient = new QueryClient({
@@ -75,10 +76,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AppLayout />
-        </WouterRouter>
-        <Toaster />
+        <ActiveSymbolProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AppLayout />
+          </WouterRouter>
+          <Toaster />
+        </ActiveSymbolProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

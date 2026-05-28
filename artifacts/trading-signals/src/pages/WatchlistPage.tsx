@@ -28,7 +28,8 @@ function SymbolStats({ symbol }: { symbol: string }) {
 export default function WatchlistPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: symbols = [], isLoading } = useListSymbols();
+  const { data: rawSymbols, isLoading } = useListSymbols();
+  const symbols = Array.isArray(rawSymbols) ? rawSymbols : [];
   const addSymbol = useAddSymbol();
   const removeSymbol = useRemoveSymbol();
   const [sym, setSym] = useState("");

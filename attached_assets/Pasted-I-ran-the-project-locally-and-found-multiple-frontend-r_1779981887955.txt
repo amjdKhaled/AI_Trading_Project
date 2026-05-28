@@ -1,0 +1,59 @@
+I ran the project locally and found multiple frontend/runtime issues that need fixing.
+
+Main issues:
+
+1. Symbol switching is broken
+
+* Clicking TSLA, META, AAPL, etc does not switch the chart.
+* The chart stays stuck on NVDA.
+* Fix the symbol state management and ensure chart data reloads correctly when selecting another symbol from the watchlist.
+
+2. Chart overlays/signals are missing
+
+* The chart currently only shows candles and volume.
+* Trading signals, BOS/CHOCH, liquidity zones, support/resistance, EMA/VWAP overlays, and AI annotations are not rendering.
+* Restore all chart drawing layers and indicator rendering.
+
+3. Watchlist state bugs
+
+* Watchlist interactions sometimes freeze or stop updating.
+* Ensure symbols is always an array and API responses are normalized before rendering.
+
+4. Improve realtime chart architecture
+
+* Refactor chart state updates to avoid stale state and unnecessary rerenders.
+* Ensure timeframe switching (5m / 15m) refreshes data correctly.
+
+5. Add proper loading/error states
+
+* Show loading skeletons/spinners while fetching candles.
+* Add empty-state handling if API returns invalid or empty data.
+
+6. Improve AI Engine integration
+
+* Make sure the AI analysis updates dynamically based on the currently selected symbol and timeframe.
+* Remove any hardcoded NVDA references.
+
+7. Improve local Ollama integration
+
+* This project uses a LOCAL Ollama model, not cloud inference.
+* Ensure all AI requests use:
+
+  * OLLAMA_BASE_URL=http://localhost:11434
+  * model=qwen2.5:14b
+* Add connection health checks and graceful fallback handling.
+
+8. General UI/UX improvements noticed during local runtime
+
+* Some interactions feel frozen or non-reactive.
+* Add proper reactive updates and state synchronization.
+* Improve dark-theme chart spacing and responsiveness.
+
+Please fully debug and stabilize the local development experience on Windows with:
+
+* Node.js
+* Vite
+* PostgreSQL
+* Ollama local inference
+
+The project should behave like a professional trading terminal with smooth chart switching, working overlays, stable watchlists, and live AI analysis.
