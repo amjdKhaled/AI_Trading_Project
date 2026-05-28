@@ -1,0 +1,269 @@
+The project direction has changed significantly.
+
+I do NOT want the AI to be a post-trade reflection tool anymore.
+
+The current AI Reflection Engine architecture is no longer the primary purpose of the system.
+
+I want to transform the platform into an AI-FIRST Trading System where the AI participates in the signal generation process itself and becomes the final decision maker before any signal appears on the chart.
+
+==================================================
+NEW ARCHITECTURE
+================
+
+Current architecture:
+
+Market Data
+→ Technical Analysis
+→ Signal Generation
+→ Chart Markers
+→ AI Reflection (after trade)
+
+This is NOT what I want.
+
+New architecture:
+
+Market Data
+→ Technical Analysis Engine
+→ Pattern Detection Engine
+→ Candlestick Analysis Engine
+→ Market Structure Engine
+→ News & Sentiment Engine
+→ Economic Events Engine
+→ Trade Memory Engine
+→ AI Decision Engine (Ollama)
+→ BUY / SELL / NO_TRADE
+→ Entry / SL / TP
+→ Chart Markers
+→ Trade Tracking
+→ Learning & Memory Update
+
+The AI must be integrated BEFORE signal generation.
+
+==================================================
+AI IS THE FINAL DECISION MAKER
+==============================
+
+The AI should receive:
+
+* Symbol
+* Timeframe
+* OHLCV data
+* Volume analysis
+* EMA20
+* EMA50
+* VWAP
+* RSI
+* ATR
+* Support zones
+* Resistance zones
+* Trend analysis
+* Momentum analysis
+* Volatility analysis
+* Market structure
+* BOS
+* CHOCH
+* Liquidity sweeps
+* Breakout detection
+* Retest detection
+* Candlestick patterns
+* Technical chart patterns
+* News sentiment
+* Economic events
+* Previous trade memory
+* Previous AI lessons
+
+The AI must analyze ALL of these together before making a decision.
+
+==================================================
+AI OUTPUT
+=========
+
+The AI should NOT simply evaluate trades.
+
+The AI must CREATE trades.
+
+The AI should return:
+
+{
+"decision": "BUY | SELL | NO_TRADE",
+"confidence": 0-100,
+"entry": number,
+"stopLoss": number,
+"takeProfit": number,
+"riskReward": number,
+"reasoning": "...",
+"marketBias": "BULLISH | BEARISH | NEUTRAL"
+}
+
+==================================================
+STOP LOSS & TAKE PROFIT
+=======================
+
+IMPORTANT:
+
+I do NOT want fixed SL/TP values.
+
+The AI must calculate them.
+
+The AI should determine:
+
+* Entry
+* Stop Loss
+* Take Profit
+
+based on:
+
+* volatility
+* ATR
+* support/resistance
+* liquidity zones
+* market structure
+* risk/reward
+
+The AI decides where SL and TP should be placed.
+
+The system should not hardcode SL or TP.
+
+==================================================
+NO TRADE IS A VALID DECISION
+============================
+
+The AI must be allowed to reject setups.
+
+If confidence is low:
+
+decision = NO_TRADE
+
+I do NOT want forced signals.
+
+I prefer fewer high-quality signals over many low-quality signals.
+
+==================================================
+CHART VISUALIZATION
+===================
+
+The chart must visually display the AI decision.
+
+When AI returns BUY:
+
+Display:
+
+* BUY marker
+* Entry marker
+* Stop Loss marker
+* Take Profit marker
+
+When AI returns SELL:
+
+Display:
+
+* SELL marker
+* Entry marker
+* Stop Loss marker
+* Take Profit marker
+
+These must be rendered directly on the chart.
+
+I want to visually see:
+
+BUY
+SL
+TP
+
+or
+
+SELL
+SL
+TP
+
+at the exact locations chosen by the AI.
+
+==================================================
+AI MEMORY SYSTEM
+================
+
+Every completed trade should be stored.
+
+Store:
+
+* Symbol
+* Timeframe
+* Indicators
+* Pattern
+* Entry
+* SL
+* TP
+* Result
+* Win/Loss
+* Profit
+* AI reasoning
+
+After the trade closes:
+
+The AI should analyze:
+
+* Why it won
+* Why it lost
+* What conditions were present
+* What mistakes were made
+
+Store those lessons in memory.
+
+Future decisions should use those lessons.
+
+==================================================
+OLLAMA
+======
+
+This system uses:
+
+OLLAMA_BASE_URL=http://localhost:11434
+
+OLLAMA_MODEL=qwen2.5:14b
+
+Everything must run locally.
+
+No cloud AI assumptions.
+
+No OpenAI dependency.
+
+No external inference dependency.
+
+==================================================
+SIGNAL QUALITY
+==============
+
+The goal is not quantity.
+
+The goal is quality.
+
+The AI should behave more like:
+
+* institutional trader
+* prop firm trader
+* discretionary professional trader
+
+and less like:
+
+* indicator crossover bot
+* EMA crossover spam
+* random signal generator
+
+==================================================
+FINAL GOAL
+==========
+
+I want the AI to become the core trading brain of the platform.
+
+The AI should:
+
+* analyze
+* decide
+* create trades
+* determine entry
+* determine stop loss
+* determine take profit
+* explain reasoning
+* learn from outcomes
+
+Then render all results directly on the chart as visual markers.

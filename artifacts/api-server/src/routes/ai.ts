@@ -5,6 +5,8 @@ import { isOllamaAvailable, MODEL, OLLAMA_BASE_URL } from "../lib/ai/ollama.js";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection.js";
 import { filterSignalWithAi } from "../lib/ai/filter.js";
 import { getMemorySummary, loadMemory } from "../lib/ai/memory.js";
+import { aiDecide } from "../lib/ai/decide.js";
+import { fetchHistory } from "./history.js";
 import type { TradeMemoryEntry } from "../lib/ai/types.js";
 
 const router: IRouter = Router();
@@ -180,6 +182,94 @@ router.post("/ai/reflect/batch", async (req, res): Promise<void> => {
   }
 
   res.json({ ok: true, symbol, processed, errors, useAi, total: closed.length });
+});
+
+// ── POST /ai/decide ─────────────────────────────────────────────
+// Full AI-first decision pipeline: fetch latest bars → run all technical
+// analysis → ask Ollama to decide BUY/SELL/NO_TRADE with precise entry,
+// stop-loss, and take-profit levels.  If BUY or SELL, the decision is
+// persisted to the signals table as an active signal so the chart can
+// display it and the user can activate the trade.
+router.post("/ai/decide", async (req, res): Promise<void> => {
+  const { symbol, timeframe = "5m" } = req.body as { symbol?: string; timeframe?: string };
+  if (!symbol) { res.status(400).json({ error: "symbol required" }); return; }
+
+  const sym = symbol.toUpperCase();
+
+  const available = await isOllamaAvailable();
+  if (!available) {
+    res.status(503).json({
+      ok: false,
+      error: "Ollama not available — start it locally first",
+      hint: `ollama serve && ollama pull ${MODEL}`,
+    });
+    return;
+  }
+
+  try {
+    const bars = (await fetchHistory(sym, timeframe)) as import("../lib/analyzer/types.js").OhlcvBar[];
+
+    let htfBars: import("../lib/analyzer/types.js").OhlcvBar[] = [];
+    if (timeframe === "5m") {
+      try {
+        htfBars = (await fetchHistory(sym, "15m")) as import("../lib/analyzer/types.js").OhlcvBar[];
+      } catch { /* HTF optional */ }
+    }
+
+    const decision = await aiDecide({ symbol: sym, timeframe, bars, htfBars });
+
+    let signalId: string | null = null;
+
+    if (decision.decision !== "NO_TRADE") {
+      // Generate an "AI"-prefixed ID so these are easily distinguishable in the DB
+      const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      signalId = "AI" + Array.from({ length: 10 }, () =>
+        ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)],
+      ).join("");
+
+      const lastBar = bars[bars.length - 2];
+      const sl      = decision.stopLoss;
+      const tp      = decision.takeProfit;
+      const entry   = decision.entry;
+      const rr      = Math.abs(tp - entry) / (Math.abs(entry - sl) || 0.001);
+
+      try {
+        await db.insert(signalsTable).values({
+          signalId,
+          symbol:         sym,
+          timeframe,
+          barTime:        new Date(lastBar.time * 1000),
+          side:           decision.decision === "BUY" ? "long" : "short",
+          entryPrice:     entry,
+          slPrice:        sl,
+          tpPrice:        tp,
+          currentSlPrice: sl,
+          confidence:     decision.confidence,
+          riskTag:        rr >= 2 ? "Safe" : rr >= 1.5 ? "Medium" : "Danger",
+          state:          "active",
+          rrRatio:        Math.round(rr * 100) / 100,
+          pattern:        "AI Decision",
+          regime:         "ai_generated",
+          grade:          decision.confidence >= 80 ? "A" : "B",
+          metadata: {
+            aiDecision: true,
+            reasoning:  decision.reasoning,
+            marketBias: decision.marketBias,
+            confidence: decision.confidence,
+          } as Record<string, unknown>,
+        });
+        req.log?.info({ signalId, decision: decision.decision, sym, confidence: decision.confidence }, "AI signal persisted");
+      } catch (dbErr) {
+        req.log?.warn({ dbErr, signalId }, "AI signal DB insert failed — returning decision without signalId");
+        signalId = null;
+      }
+    }
+
+    res.json({ ok: true, ...decision, signalId, aiUsed: true, barsUsed: bars.length });
+  } catch (err) {
+    req.log?.warn({ err, symbol: sym, timeframe }, "AI decide failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
 });
 
 // ── POST /ai/filter ─────────────────────────────────────────────

@@ -10,7 +10,7 @@ export interface OllamaResponse {
   done: boolean;
 }
 
-export async function ollamaGenerate(prompt: string, system?: string): Promise<string> {
+export async function ollamaGenerate(prompt: string, system?: string, numPredict = 512): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -22,7 +22,7 @@ export async function ollamaGenerate(prompt: string, system?: string): Promise<s
       options: {
         temperature: 0.1,
         top_p: 0.9,
-        num_predict: 512,
+        num_predict: numPredict,
       },
     };
     if (system) body.system = system;

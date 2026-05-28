@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { X, Brain } from "lucide-react";
 import { WatchlistPanel } from "@/components/WatchlistPanel";
 import { TradingChart } from "@/components/TradingChart";
 import { SignalPanel } from "@/components/SignalPanel";
 import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
+import { getListSignalsQueryKey, getGetSignalStatsQueryKey } from "@workspace/api-client-react";
 
 const TIMEFRAMES = ["5m", "15m"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
@@ -126,8 +129,22 @@ function useHistoryBars(symbol: string | null, interval: Timeframe) {
   };
 }
 
+interface AiDecideResult {
+  decision: "BUY" | "SELL" | "NO_TRADE";
+  confidence: number;
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskReward: number;
+  reasoning: string;
+  marketBias: string;
+  signalId: string | null;
+  error?: string;
+}
+
 export default function ChartPage() {
   const { activeSymbol, setActiveSymbol } = useActiveSymbol();
+  const queryClient = useQueryClient();
   const [timeframe, setTimeframe]         = useState<Timeframe>("5m");
   const [restSignals, setRestSignals]   = useState<SignalNew[]>([]);
   const [activeTrade, setActiveTrade]   = useState<ActiveTrade | null>(null);
@@ -137,6 +154,8 @@ export default function ChartPage() {
   const signalFetchAbort = useRef<AbortController | null>(null);
   const [genMsg,      setGenMsg]        = useState<string | null>(null);
   const [devMock,     setDevMock]       = useState(false);
+  const [deciding,    setDeciding]      = useState(false);
+  const [aiResult,    setAiResult]      = useState<AiDecideResult | null>(null);
 
   const { bars, loading, error } = useHistoryBars(activeSymbol, timeframe);
   const { connected, lastPrice, isMarketOpen, realtimeAvailable, newSignals: wsSignals } = useMarketSocket(activeSymbol);
@@ -273,6 +292,40 @@ export default function ChartPage() {
     }
   }, [activeSymbol, timeframe, generating]);
 
+  const handleAiDecide = useCallback(async () => {
+    if (!activeSymbol || deciding) return;
+    setDeciding(true);
+    setAiResult(null);
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    try {
+      const r = await fetch(`${base}/api/ai/decide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: activeSymbol, timeframe }),
+      });
+      const ct = r.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        throw new Error(`Server returned ${ct || "non-JSON"} — is the API server running?`);
+      }
+      const data = await r.json() as AiDecideResult & { ok?: boolean; error?: string; hint?: string };
+      if (!r.ok) {
+        setAiResult({ decision: "NO_TRADE", confidence: 0, entry: 0, stopLoss: 0, takeProfit: 0, riskReward: 0, reasoning: "", marketBias: "NEUTRAL", signalId: null, error: data.error ?? data.hint ?? `HTTP ${r.status}` });
+        return;
+      }
+      setAiResult(data);
+      if (data.signalId) {
+        // Refresh chart markers and the signal panel list
+        setRefetchKey((k) => k + 1);
+        queryClient.invalidateQueries({ queryKey: getListSignalsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetSignalStatsQueryKey() });
+      }
+    } catch (e) {
+      setAiResult({ decision: "NO_TRADE", confidence: 0, entry: 0, stopLoss: 0, takeProfit: 0, riskReward: 0, reasoning: "", marketBias: "NEUTRAL", signalId: null, error: String(e) });
+    } finally {
+      setDeciding(false);
+    }
+  }, [activeSymbol, timeframe, deciding, queryClient]);
+
   // DEV: log the full signal pipeline on each meaningful state change so the
   // browser console reveals exactly where the pipeline is broken.
   useEffect(() => {
@@ -337,6 +390,18 @@ export default function ChartPage() {
                 ? <><span className="inline-block w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />  Gen…</>
                 : "⚡ Generate"}
             </button>
+
+            <button
+              onClick={handleAiDecide}
+              disabled={deciding || !activeSymbol}
+              className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border border-primary/40 text-primary hover:border-primary/70 hover:bg-primary/10 transition-colors disabled:opacity-40"
+              title="Ask Ollama to analyze current market conditions and decide BUY / SELL / NO_TRADE"
+            >
+              {deciding
+                ? <><span className="inline-block w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" /> Analyzing…</>
+                : <><Brain size={11} /> AI Decide</>}
+            </button>
+
             {genMsg && (
               <span className={`text-[10px] font-mono ${genMsg.startsWith("✓") ? "text-emerald-400" : "text-amber-400"}`}>
                 {genMsg}
@@ -383,6 +448,72 @@ export default function ChartPage() {
             </div>
           )}
         </div>
+
+        {/* AI Decision Result Card */}
+        {aiResult && (
+          <div className={`flex-shrink-0 px-3 py-2 border-b border-white/5 flex items-start gap-2.5 text-[11px] ${
+            aiResult.error ? "bg-red-500/5" :
+            aiResult.decision === "BUY"      ? "bg-emerald-500/5" :
+            aiResult.decision === "SELL"     ? "bg-red-500/5" :
+            "bg-amber-500/5"
+          }`}>
+            {/* Decision badge */}
+            <span className={`flex-shrink-0 font-mono font-bold text-[11px] px-1.5 py-0.5 rounded leading-none mt-0.5 ${
+              aiResult.error           ? "bg-red-500/20 text-red-400" :
+              aiResult.decision === "BUY"  ? "bg-emerald-500/20 text-emerald-400" :
+              aiResult.decision === "SELL" ? "bg-red-500/20 text-red-400" :
+              "bg-amber-500/20 text-amber-400"
+            }`}>
+              {aiResult.error ? "ERR" : aiResult.decision}
+            </span>
+
+            {/* Error message */}
+            {aiResult.error && (
+              <span className="text-red-400 flex-1 text-[10px] font-mono leading-snug">
+                {aiResult.error.slice(0, 200)}
+              </span>
+            )}
+
+            {/* Trade levels */}
+            {!aiResult.error && aiResult.decision !== "NO_TRADE" && (
+              <div className="flex-shrink-0 flex gap-2.5 font-mono text-[10px] items-baseline">
+                <span className="text-muted-foreground">Entry <span className="text-foreground font-semibold">{aiResult.entry.toFixed(2)}</span></span>
+                <span className="text-muted-foreground">SL <span className="text-red-400 font-semibold">{aiResult.stopLoss.toFixed(2)}</span></span>
+                <span className="text-muted-foreground">TP <span className="text-emerald-400 font-semibold">{aiResult.takeProfit.toFixed(2)}</span></span>
+                <span className="text-muted-foreground">RR <span className="text-foreground">{aiResult.riskReward.toFixed(2)}×</span></span>
+                <span className={`font-semibold ${aiResult.confidence >= 80 ? "text-emerald-400" : aiResult.confidence >= 70 ? "text-amber-400" : "text-red-400"}`}>
+                  {aiResult.confidence}%
+                </span>
+                <span className="text-muted-foreground/70 text-[9px]">{aiResult.marketBias}</span>
+              </div>
+            )}
+
+            {/* Reasoning */}
+            {!aiResult.error && (
+              <span className="flex-1 text-muted-foreground leading-snug text-[10px] min-w-0">
+                {aiResult.decision === "NO_TRADE"
+                  ? <><span className="text-amber-400 font-medium">No trade: </span>{aiResult.reasoning}</>
+                  : aiResult.reasoning
+                }
+              </span>
+            )}
+
+            {/* Signal Panel hint */}
+            {!aiResult.error && aiResult.signalId && (
+              <span className="flex-shrink-0 text-[9px] text-muted-foreground/60 italic leading-snug mt-0.5">
+                → Signal Panel
+              </span>
+            )}
+
+            {/* Dismiss */}
+            <button
+              onClick={() => setAiResult(null)}
+              className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors mt-0.5"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-2">

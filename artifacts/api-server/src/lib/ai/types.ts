@@ -49,6 +49,17 @@ export interface AiReflection {
   reasoning: string;
 }
 
+export interface AiDecision {
+  decision: "BUY" | "SELL" | "NO_TRADE";
+  confidence: number;        // 0–100
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskReward: number;
+  reasoning: string;
+  marketBias: "BULLISH" | "BEARISH" | "NEUTRAL";
+}
+
 export interface MemoryStore {
   version: number;
   updatedAt: string;
