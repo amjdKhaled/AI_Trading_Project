@@ -57,7 +57,10 @@ export async function isOllamaAvailable(): Promise<boolean> {
     const timer = setTimeout(() => controller.abort(), 3000);
     const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { signal: controller.signal });
     clearTimeout(timer);
-    return res.ok;
+    if (!res.ok) return false;
+    const data = (await res.json()) as { models?: { name: string }[] };
+    const models = data.models ?? [];
+    return models.some(m => m.name.startsWith(MODEL.split(":")[0]) || m.name === MODEL);
   } catch {
     return false;
   }

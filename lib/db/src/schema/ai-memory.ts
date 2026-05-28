@@ -1,0 +1,118 @@
+import { pgTable, text, serial, timestamp, integer, real, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const failureCategoryEnum = pgEnum("failure_category", [
+  "news_issue",
+  "bad_entry",
+  "poor_risk",
+  "pattern_failure",
+  "false_breakout",
+  "weak_volume",
+  "trend_reversal",
+  "regime_mismatch",
+  "incorrect_confidence",
+  "unknown",
+]);
+
+// ── ai_lessons ──────────────────────────────────────────────────
+// Structured post-trade lessons written after each closed signal
+export const aiLessonsTable = pgTable("ai_lessons", {
+  id: serial("id").primaryKey(),
+  signalId: text("signal_id").notNull(),
+  symbol: text("symbol").notNull(),
+  side: text("side").notNull(),
+  strategy: text("strategy").notNull(),
+  regime: text("regime").notNull(),
+  session: text("session").notNull(),
+  htfBias: text("htf_bias").notNull().default("neutral"),
+  outcome: text("outcome").notNull(),
+  lesson: text("lesson").notNull(),
+  weaknesses: jsonb("weaknesses").$type<string[]>().notNull().default([]),
+  failureCategory: failureCategoryEnum("failure_category").notNull().default("unknown"),
+  trapType: text("trap_type"),
+  continuationProbability: real("continuation_probability").notNull().default(0.5),
+  reasoning: text("reasoning").notNull().default(""),
+  confidence: integer("confidence").notNull().default(0),
+  grade: text("grade").notNull().default("B"),
+  rrRatio: real("rr_ratio").notNull().default(1),
+  entryPrice: real("entry_price").notNull().default(0),
+  exitPrice: real("exit_price"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertAiLessonSchema = createInsertSchema(aiLessonsTable).omit({ id: true, createdAt: true });
+export type InsertAiLesson = z.infer<typeof insertAiLessonSchema>;
+export type AiLesson = typeof aiLessonsTable.$inferSelect;
+
+// ── ai_patterns ──────────────────────────────────────────────────
+// Historical setup library — keyed by symbol + regime + side + pattern
+export const aiPatternsTable = pgTable("ai_patterns", {
+  id: serial("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  regime: text("regime").notNull(),
+  side: text("side").notNull(),
+  strategy: text("strategy").notNull(),
+  patternTags: jsonb("pattern_tags").$type<string[]>().notNull().default([]),
+  session: text("session").notNull().default("unknown"),
+  htfBias: text("htf_bias").notNull().default("neutral"),
+  outcome: text("outcome").notNull(),
+  confidence: integer("confidence").notNull().default(0),
+  rrRatio: real("rr_ratio").notNull().default(1),
+  entryPrice: real("entry_price").notNull().default(0),
+  exitPrice: real("exit_price"),
+  durationBars: integer("duration_bars"),
+  atrPct: real("atr_pct"),
+  volumeState: text("volume_state").notNull().default("neutral"),
+  structureState: text("structure_state").notNull().default("mixed"),
+  signalId: text("signal_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertAiPatternSchema = createInsertSchema(aiPatternsTable).omit({ id: true, createdAt: true });
+export type InsertAiPattern = z.infer<typeof insertAiPatternSchema>;
+export type AiPattern = typeof aiPatternsTable.$inferSelect;
+
+// ── ai_market_regimes ────────────────────────────────────────────
+// Time-series regime snapshots per symbol
+export const aiMarketRegimesTable = pgTable("ai_market_regimes", {
+  id: serial("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  timeframe: text("timeframe").notNull().default("5m"),
+  regime: text("regime").notNull(),
+  htfBias: text("htf_bias").notNull().default("neutral"),
+  atr: real("atr"),
+  rsi: real("rsi"),
+  macd: real("macd"),
+  vwapDiff: real("vwap_diff"),
+  snapshottedAt: timestamp("snapshotted_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertAiMarketRegimeSchema = createInsertSchema(aiMarketRegimesTable).omit({ id: true, snapshottedAt: true });
+export type InsertAiMarketRegime = z.infer<typeof insertAiMarketRegimeSchema>;
+export type AiMarketRegime = typeof aiMarketRegimesTable.$inferSelect;
+
+// ── ai_chart_analyses ────────────────────────────────────────────
+// Stores vision model (qwen2.5-vl:7b) outputs tied to a signal or standalone
+export const aiChartAnalysesTable = pgTable("ai_chart_analyses", {
+  id: serial("id").primaryKey(),
+  signalId: text("signal_id"),
+  symbol: text("symbol"),
+  timeframe: text("timeframe"),
+  trend: text("trend").notNull().default("neutral"),
+  patterns: jsonb("patterns").$type<string[]>().notNull().default([]),
+  resistanceLevels: jsonb("resistance_levels").$type<number[]>().notNull().default([]),
+  supportLevels: jsonb("support_levels").$type<number[]>().notNull().default([]),
+  volumeBehavior: text("volume_behavior").notNull().default("normal"),
+  marketStructure: text("market_structure").notNull().default("unclear"),
+  supplyZones: jsonb("supply_zones").$type<number[]>().notNull().default([]),
+  demandZones: jsonb("demand_zones").$type<number[]>().notNull().default([]),
+  summary: text("summary").notNull().default(""),
+  confidence: integer("confidence").notNull().default(0),
+  rawResponse: text("raw_response"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertAiChartAnalysisSchema = createInsertSchema(aiChartAnalysesTable).omit({ id: true, createdAt: true });
+export type InsertAiChartAnalysis = z.infer<typeof insertAiChartAnalysisSchema>;
+export type AiChartAnalysis = typeof aiChartAnalysesTable.$inferSelect;

@@ -126,3 +126,127 @@ export const ListBarsResponseItem = zod.object({
 export const ListBarsResponse = zod.array(ListBarsResponseItem)
 
 
+/**
+ * @summary Get AI model status (decision + vision models)
+ */
+export const GetAiStatusResponse = zod.object({
+  "available": zod.boolean(),
+  "model": zod.string(),
+  "endpoint": zod.string(),
+  "visionModel": zod.string(),
+  "visionAvailable": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Get DB-backed shared memory stats
+ */
+export const GetAiMemoryResponse = zod.object({
+  "ok": zod.boolean(),
+  "source": zod.string(),
+  "totalTrades": zod.number(),
+  "lessonsCount": zod.number(),
+  "patternsCount": zod.number(),
+  "similarityMatchesCount": zod.number().describe('Number of unique pattern groups queryable for similarity matching'),
+  "topSimilarityMatches": zod.array(zod.object({
+  "symbol": zod.string(),
+  "regime": zod.string(),
+  "side": zod.string(),
+  "strategy": zod.string(),
+  "winRate": zod.number(),
+  "sampleSize": zod.number(),
+  "avgRR": zod.number()
+})).describe('Top pattern groups by historical win rate (n >= 3)'),
+  "regimeStats": zod.record(zod.string(), zod.object({
+  "wins": zod.number(),
+  "losses": zod.number(),
+  "total": zod.number()
+})).optional(),
+  "strategyStats": zod.record(zod.string(), zod.object({
+  "wins": zod.number(),
+  "losses": zod.number(),
+  "total": zod.number()
+})).optional(),
+  "symbolStats": zod.record(zod.string(), zod.object({
+  "wins": zod.number(),
+  "losses": zod.number(),
+  "total": zod.number()
+})).optional(),
+  "recentLessons": zod.array(zod.string()),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Analyze a chart image using the vision model
+ */
+export const AnalyzeChartBody = zod.object({
+  "imageBase64": zod.string().describe('Base64-encoded chart image (PNG or JPEG)'),
+  "symbol": zod.string().optional(),
+  "timeframe": zod.string().optional(),
+  "signalId": zod.string().optional()
+})
+
+export const AnalyzeChartResponse = zod.object({
+  "ok": zod.boolean(),
+  "analysis": zod.object({
+  "trend": zod.enum(['strong_uptrend', 'uptrend', 'neutral', 'downtrend', 'strong_downtrend']),
+  "patterns": zod.array(zod.string()),
+  "resistanceLevels": zod.array(zod.number()),
+  "supportLevels": zod.array(zod.number()),
+  "volumeBehavior": zod.enum(['expanding', 'contracting', 'climax', 'normal', 'weak']),
+  "marketStructure": zod.enum(['higher_highs_lows', 'lower_highs_lows', 'range_bound', 'breakout', 'breakdown', 'unclear']),
+  "supplyZones": zod.array(zod.number()),
+  "demandZones": zod.array(zod.number()),
+  "summary": zod.string(),
+  "confidence": zod.number()
+}),
+  "historicalMatches": zod.array(zod.object({
+  "symbol": zod.string(),
+  "regime": zod.string(),
+  "side": zod.string(),
+  "strategy": zod.string(),
+  "patternTags": zod.array(zod.string()),
+  "session": zod.string(),
+  "htfBias": zod.string(),
+  "historicalWinRate": zod.number(),
+  "avgRR": zod.number(),
+  "sampleSize": zod.number(),
+  "matchScore": zod.number(),
+  "recentOutcomes": zod.array(zod.string())
+}))
+})
+
+
+/**
+ * @summary Query the pattern similarity engine
+ */
+export const QuerySimilarityBody = zod.object({
+  "symbol": zod.string(),
+  "regime": zod.string().optional(),
+  "side": zod.enum(['long', 'short']),
+  "strategy": zod.string().optional(),
+  "patternTags": zod.array(zod.string()).optional(),
+  "session": zod.string().optional()
+})
+
+export const QuerySimilarityResponse = zod.object({
+  "ok": zod.boolean(),
+  "matches": zod.array(zod.object({
+  "symbol": zod.string(),
+  "regime": zod.string(),
+  "side": zod.string(),
+  "strategy": zod.string(),
+  "patternTags": zod.array(zod.string()),
+  "session": zod.string(),
+  "htfBias": zod.string(),
+  "historicalWinRate": zod.number(),
+  "avgRR": zod.number(),
+  "sampleSize": zod.number(),
+  "matchScore": zod.number(),
+  "recentOutcomes": zod.array(zod.string())
+}))
+})
+
+

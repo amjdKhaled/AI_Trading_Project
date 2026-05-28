@@ -1,9 +1,27 @@
 import { ollamaGenerate, parseJsonFromResponse } from "./ollama.js";
+import { appendTradeToDb, getRelevantContextFromDb } from "./shared-memory.js";
 import { appendTrade, getRelevantContext } from "./memory.js";
 import { logger } from "../logger.js";
 import type { TradeMemoryEntry, AiReflection } from "./types.js";
 
-const SYSTEM = `You are a professional trading coach and market analyst. You analyze completed trades with precision and extract actionable lessons. You respond ONLY with valid JSON — no preamble, no markdown outside the JSON block.`;
+export type FailureCategory =
+  | "news_issue"
+  | "bad_entry"
+  | "poor_risk"
+  | "pattern_failure"
+  | "false_breakout"
+  | "weak_volume"
+  | "trend_reversal"
+  | "regime_mismatch"
+  | "incorrect_confidence"
+  | "unknown";
+
+const SYSTEM = `You are a professional trading coach and market analyst. You analyze completed trades with precision and extract actionable lessons. You respond ONLY with valid JSON — no preamble, no markdown outside the JSON block. Be concise and data-driven.`;
+
+const FAILURE_CATEGORIES: FailureCategory[] = [
+  "news_issue","bad_entry","poor_risk","pattern_failure","false_breakout",
+  "weak_volume","trend_reversal","regime_mismatch","incorrect_confidence","unknown",
+];
 
 function buildReflectionPrompt(trade: TradeMemoryEntry, similar: TradeMemoryEntry[]): string {
   const similarSummary = similar.length > 0
@@ -32,20 +50,33 @@ Respond with JSON only:
   "lesson": "One concrete, specific lesson from this trade outcome (max 120 chars)",
   "weaknesses": ["list of 1-3 specific setup weaknesses that contributed to outcome"],
   "trapType": "name of trap pattern if applicable (fake_breakout | liquidity_sweep | counter_trend | exhaustion | null)",
+  "failureCategory": "news_issue | bad_entry | poor_risk | pattern_failure | false_breakout | weak_volume | trend_reversal | regime_mismatch | incorrect_confidence | unknown",
   "continuationProbability": 0.0,
   "reasoning": "2-3 sentence analysis of why this trade won or lost"
 }`;
 }
 
 export async function reflectOnTrade(trade: TradeMemoryEntry): Promise<AiReflection> {
-  const similar = getRelevantContext(trade.symbol, trade.regime, trade.strategy, trade.side);
+  // Try DB-backed context first, fall back to JSON
+  let similar: TradeMemoryEntry[] = [];
+  try {
+    similar = await getRelevantContextFromDb(trade.symbol, trade.regime, trade.strategy, trade.side);
+  } catch {
+    similar = getRelevantContext(trade.symbol, trade.regime, trade.strategy, trade.side);
+  }
 
   const prompt  = buildReflectionPrompt(trade, similar);
   const raw     = await ollamaGenerate(prompt, SYSTEM);
 
   let reflection: AiReflection;
+  let failureCategory: FailureCategory = "unknown";
+
   try {
-    const parsed = parseJsonFromResponse(raw) as Partial<AiReflection>;
+    const parsed = parseJsonFromResponse(raw) as Partial<AiReflection> & { failureCategory?: string };
+    failureCategory = FAILURE_CATEGORIES.includes(parsed.failureCategory as FailureCategory)
+      ? (parsed.failureCategory as FailureCategory)
+      : "unknown";
+
     reflection = {
       outcome:                 trade.outcome,
       lesson:                  parsed.lesson                  ?? `${trade.strategy} in ${trade.regime}: ${trade.outcome}`,
@@ -55,6 +86,7 @@ export async function reflectOnTrade(trade: TradeMemoryEntry): Promise<AiReflect
                                  ? Math.max(0, Math.min(1, parsed.continuationProbability))
                                  : 0.5,
       reasoning:               parsed.reasoning              ?? "",
+      failureCategory,
     };
   } catch (parseErr) {
     logger.warn({ parseErr, raw }, "AI reflection parse failed — using fallback");
@@ -65,6 +97,7 @@ export async function reflectOnTrade(trade: TradeMemoryEntry): Promise<AiReflect
       trapType:                null,
       continuationProbability: trade.outcome === "tp_hit" ? 0.65 : 0.35,
       reasoning:               raw.slice(0, 200),
+      failureCategory:         "unknown",
     };
   }
 
@@ -74,12 +107,18 @@ export async function reflectOnTrade(trade: TradeMemoryEntry): Promise<AiReflect
     weaknesses:              reflection.weaknesses,
     trapType:                reflection.trapType,
     continuationProbability: reflection.continuationProbability,
+    failureCategory:         reflection.failureCategory,
   };
+
+  // Write to both DB and JSON file for compatibility
+  await appendTradeToDb(withLesson);
   appendTrade(withLesson);
 
   return reflection;
 }
 
 export async function reflectWithoutAi(trade: TradeMemoryEntry): Promise<void> {
+  // Write to both DB and JSON file for compatibility
+  await appendTradeToDb(trade);
   appendTrade(trade);
 }

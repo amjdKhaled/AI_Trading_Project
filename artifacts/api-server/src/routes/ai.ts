@@ -1,39 +1,53 @@
 import { Router, type IRouter } from "express";
-import { db, signalsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, signalsTable, aiLessonsTable, aiPatternsTable, aiMarketRegimesTable, aiChartAnalysesTable } from "@workspace/db";
+import { eq, desc, and } from "drizzle-orm";
 import { isOllamaAvailable, MODEL, OLLAMA_BASE_URL } from "../lib/ai/ollama.js";
+import { isVisionAvailable, VISION_MODEL } from "../lib/ai/ollama-vision.js";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection.js";
 import { filterSignalWithAi } from "../lib/ai/filter.js";
 import { getMemorySummary, loadMemory } from "../lib/ai/memory.js";
+import { getMemorySummaryFromDb } from "../lib/ai/shared-memory.js";
 import { aiDecide } from "../lib/ai/decide.js";
+import { analyzeChart } from "../lib/ai/analyze-chart.js";
+import { findSimilarPatterns } from "../lib/ai/similarity.js";
 import { fetchHistory } from "./history.js";
 import type { TradeMemoryEntry } from "../lib/ai/types.js";
 
 const router: IRouter = Router();
 
 // ── GET /ai/status ─────────────────────────────────────────────
-// Check if Ollama is reachable and report model config.
+// Reports both decision model (qwen2.5:14b) and vision model (qwen2.5-vl:7b).
 router.get("/ai/status", async (req, res): Promise<void> => {
-  const available = await isOllamaAvailable();
+  const [available, visionAvailable] = await Promise.all([
+    isOllamaAvailable(),
+    isVisionAvailable(),
+  ]);
   res.json({
     available,
-    model:    MODEL,
-    endpoint: OLLAMA_BASE_URL,
-    message:  available
-      ? `Ollama reachable at ${OLLAMA_BASE_URL} — model: ${MODEL}`
+    model:          MODEL,
+    endpoint:       OLLAMA_BASE_URL,
+    visionModel:    VISION_MODEL,
+    visionAvailable,
+    message: available
+      ? `Ollama reachable at ${OLLAMA_BASE_URL} — decision: ${MODEL}, vision: ${VISION_MODEL} (${visionAvailable ? "ready" : "not pulled"})`
       : `Ollama NOT reachable at ${OLLAMA_BASE_URL}. Start Ollama locally: ollama serve`,
   });
 });
 
 // ── GET /ai/memory ──────────────────────────────────────────────
-// View the trade memory store (stats + recent lessons).
-router.get("/ai/memory", (_req, res): void => {
-  const summary = getMemorySummary();
-  res.json({ ok: true, ...summary });
+// DB-backed stats: lessons count, pattern count, similarity matches.
+router.get("/ai/memory", async (_req, res): Promise<void> => {
+  try {
+    const summary = await getMemorySummaryFromDb();
+    res.json({ ok: true, source: "db", ...summary });
+  } catch {
+    const summary = getMemorySummary();
+    res.json({ ok: true, source: "json_fallback", lessonsCount: summary.totalTrades, patternsCount: 0, ...summary });
+  }
 });
 
 // ── GET /ai/memory/trades ───────────────────────────────────────
-// Raw trade list with optional symbol filter.
+// Raw trade list with optional symbol filter (JSON fallback for compatibility).
 router.get("/ai/memory/trades", (req, res): void => {
   const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : null;
   const limit  = Math.min(parseInt(String(req.query.limit ?? "50"), 10), 200);
@@ -44,7 +58,6 @@ router.get("/ai/memory/trades", (req, res): void => {
 
 // ── POST /ai/reflect ────────────────────────────────────────────
 // Trigger AI reflection on a completed trade (by signalId).
-// Pulls the signal from DB, runs Ollama reflection, stores lesson in memory.
 router.post("/ai/reflect", async (req, res): Promise<void> => {
   const { signalId, useAi = true } = req.body as { signalId?: string; useAi?: boolean };
   if (!signalId) { res.status(400).json({ error: "signalId required" }); return; }
@@ -58,43 +71,14 @@ router.post("/ai/reflect", async (req, res): Promise<void> => {
     return;
   }
 
-  const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  const trade: TradeMemoryEntry = {
-    id:              row.signalId,
-    timestamp:       row.barTime?.toISOString() ?? new Date().toISOString(),
-    symbol:          row.symbol,
-    timeframe:       row.timeframe,
-    side:            row.side as "long" | "short",
-    strategy:        String(meta.strategy ?? row.pattern ?? "unknown"),
-    regime:          String(meta.regime   ?? row.regime  ?? "ranging"),
-    session:         String(meta.session  ?? "unknown"),
-    htfBias:         String(meta.htfBias  ?? "neutral"),
-    confluenceCount: Number(meta.confluenceCount ?? 0),
-    confidence:      row.confidence,
-    grade:           row.grade ?? "B",
-    riskLevel:       row.riskTag ?? "Medium",
-    rrRatio:         row.rrRatio ?? 1,
-    entryPrice:      row.entryPrice,
-    slPrice:         row.slPrice,
-    tpPrice:         row.tpPrice,
-    exitPrice:       row.exitPrice ?? null,
-    outcome:         row.state as "tp_hit" | "sl_hit" | "expired",
-    volumeState:     String(meta.volumeState    ?? "neutral"),
-    structureState:  String(meta.structureState ?? "mixed"),
-    patterns:        row.pattern ? [row.pattern] : [],
-  };
+  const trade = rowToTradeEntry(row);
 
   try {
     if (useAi) {
       const available = await isOllamaAvailable();
       if (!available) {
         await reflectWithoutAi(trade);
-        res.json({
-          ok: true, signalId,
-          aiUsed: false,
-          warning: "Ollama not available — trade stored without AI reflection",
-          trade,
-        });
+        res.json({ ok: true, signalId, aiUsed: false, warning: "Ollama not available — trade stored without AI reflection", trade });
         return;
       }
       const reflection = await reflectOnTrade(trade);
@@ -106,18 +90,12 @@ router.post("/ai/reflect", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.warn({ err, signalId }, "AI reflection failed");
     await reflectWithoutAi(trade);
-    res.json({
-      ok: true, signalId, aiUsed: false,
-      error: (err as Error).message,
-      warning: "AI reflection failed — trade stored without lesson",
-    });
+    res.json({ ok: true, signalId, aiUsed: false, error: (err as Error).message, warning: "AI reflection failed — trade stored without lesson" });
   }
 });
 
 // ── POST /ai/reflect/batch ──────────────────────────────────────
 // Reflect on ALL closed signals for a symbol (up to limit).
-// Useful for bootstrapping memory from existing backtest data.
-// Set useAi=false to store trades without Ollama calls (fast).
 router.post("/ai/reflect/batch", async (req, res): Promise<void> => {
   const { symbol, useAi = false, limit = 100 } = req.body as {
     symbol?: string;
@@ -138,32 +116,7 @@ router.post("/ai/reflect/batch", async (req, res): Promise<void> => {
   let errors    = 0;
 
   for (const row of closed) {
-    const meta = (row.metadata ?? {}) as Record<string, unknown>;
-    const trade: TradeMemoryEntry = {
-      id:              row.signalId,
-      timestamp:       row.barTime?.toISOString() ?? new Date().toISOString(),
-      symbol:          row.symbol,
-      timeframe:       row.timeframe,
-      side:            row.side as "long" | "short",
-      strategy:        String(meta.strategy ?? row.pattern ?? "unknown"),
-      regime:          String(meta.regime   ?? row.regime  ?? "ranging"),
-      session:         String(meta.session  ?? "unknown"),
-      htfBias:         String(meta.htfBias  ?? "neutral"),
-      confluenceCount: Number(meta.confluenceCount ?? 0),
-      confidence:      row.confidence,
-      grade:           row.grade ?? "B",
-      riskLevel:       row.riskTag ?? "Medium",
-      rrRatio:         row.rrRatio ?? 1,
-      entryPrice:      row.entryPrice,
-      slPrice:         row.slPrice,
-      tpPrice:         row.tpPrice,
-      exitPrice:       row.exitPrice ?? null,
-      outcome:         row.state as "tp_hit" | "sl_hit" | "expired",
-      volumeState:     String(meta.volumeState    ?? "neutral"),
-      structureState:  String(meta.structureState ?? "mixed"),
-      patterns:        row.pattern ? [row.pattern] : [],
-    };
-
+    const trade = rowToTradeEntry(row);
     try {
       if (useAi) {
         const available = await isOllamaAvailable();
@@ -185,11 +138,7 @@ router.post("/ai/reflect/batch", async (req, res): Promise<void> => {
 });
 
 // ── POST /ai/decide ─────────────────────────────────────────────
-// Full AI-first decision pipeline: fetch latest bars → run all technical
-// analysis → ask Ollama to decide BUY/SELL/NO_TRADE with precise entry,
-// stop-loss, and take-profit levels.  If BUY or SELL, the decision is
-// persisted to the signals table as an active signal so the chart can
-// display it and the user can activate the trade.
+// Full AI-first decision pipeline using shared memory + similarity engine.
 router.post("/ai/decide", async (req, res): Promise<void> => {
   const { symbol, timeframe = "5m" } = req.body as { symbol?: string; timeframe?: string };
   if (!symbol) { res.status(400).json({ error: "symbol required" }); return; }
@@ -221,7 +170,6 @@ router.post("/ai/decide", async (req, res): Promise<void> => {
     let signalId: string | null = null;
 
     if (decision.decision !== "NO_TRADE") {
-      // Generate an "AI"-prefixed ID so these are easily distinguishable in the DB
       const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       signalId = "AI" + Array.from({ length: 10 }, () =>
         ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)],
@@ -299,4 +247,213 @@ router.post("/ai/filter", async (req, res): Promise<void> => {
   }
 });
 
+// ── POST /ai/analyze-chart ──────────────────────────────────────
+// Accept a base64 chart image, run qwen2.5-vl:7b vision analysis,
+// cross-reference shared memory for similar historical patterns,
+// and return a structured ChartAnalysis + historicalMatches.
+router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
+  const { imageBase64, symbol, timeframe, signalId } = req.body as {
+    imageBase64?: string;
+    symbol?: string;
+    timeframe?: string;
+    signalId?: string;
+  };
+
+  if (!imageBase64) {
+    res.status(400).json({ error: "imageBase64 required" });
+    return;
+  }
+
+  const visionOk = await isVisionAvailable();
+  if (!visionOk) {
+    res.status(503).json({
+      ok: false,
+      error: `Vision model ${VISION_MODEL} not available`,
+      hint: `Pull it first: ollama pull ${VISION_MODEL}`,
+    });
+    return;
+  }
+
+  try {
+    const [analysis, historicalMatches] = await Promise.all([
+      analyzeChart({ imageBase64, symbol, timeframe, signalId }),
+      symbol
+        ? findSimilarPatterns({ symbol, regime: "unknown", side: "long" }, 5)
+        : Promise.resolve([]),
+    ]);
+
+    req.log?.info({ symbol, timeframe, signalId, trend: analysis.trend, confidence: analysis.confidence }, "Chart analysis complete");
+    res.json({ ok: true, analysis, historicalMatches });
+  } catch (err) {
+    req.log?.warn({ err, symbol, timeframe }, "Chart analysis failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── POST /ai/similarity ─────────────────────────────────────────
+// Query the pattern similarity engine for a given context.
+router.post("/ai/similarity", async (req, res): Promise<void> => {
+  const { symbol, regime, side, strategy, patternTags, session } = req.body as {
+    symbol?: string;
+    regime?: string;
+    side?: "long" | "short";
+    strategy?: string;
+    patternTags?: string[];
+    session?: string;
+  };
+
+  if (!symbol || !side) {
+    res.status(400).json({ error: "symbol and side are required" });
+    return;
+  }
+
+  try {
+    const matches = await findSimilarPatterns({
+      symbol,
+      regime: regime ?? "ranging",
+      side,
+      strategy,
+      patternTags,
+      session,
+    });
+    res.json({ ok: true, matches });
+  } catch (err) {
+    req.log?.warn({ err }, "Similarity query failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/lessons ─────────────────────────────────────────────
+// Paginated list from ai_lessons. Filters: symbol, outcome, failureCategory.
+router.get("/ai/lessons", async (req, res): Promise<void> => {
+  const symbol          = typeof req.query.symbol === "string"          ? req.query.symbol.toUpperCase() : undefined;
+  const outcome         = typeof req.query.outcome === "string"         ? req.query.outcome              : undefined;
+  const failureCategory = typeof req.query.failureCategory === "string" ? req.query.failureCategory      : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit  ?? "100"), 10), 500);
+  const offset = parseInt(String(req.query.offset ?? "0"), 10);
+
+  try {
+    const conditions = [
+      symbol          ? eq(aiLessonsTable.symbol,          symbol)                        : undefined,
+      outcome         ? eq(aiLessonsTable.outcome,         outcome)                       : undefined,
+      failureCategory ? eq(aiLessonsTable.failureCategory, failureCategory as never)      : undefined,
+    ].filter(Boolean) as Parameters<typeof and>[0][];
+
+    const rows = await db
+      .select()
+      .from(aiLessonsTable)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(aiLessonsTable.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    res.json({ ok: true, lessons: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/lessons failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/patterns ────────────────────────────────────────────
+// Historical setup library. Filters: symbol, side, regime.
+router.get("/ai/patterns", async (req, res): Promise<void> => {
+  const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : undefined;
+  const side   = typeof req.query.side   === "string" ? req.query.side                 : undefined;
+  const regime = typeof req.query.regime === "string" ? req.query.regime               : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit ?? "500"), 10), 1000);
+
+  try {
+    const conditions = [
+      symbol ? eq(aiPatternsTable.symbol, symbol) : undefined,
+      side   ? eq(aiPatternsTable.side,   side)   : undefined,
+      regime ? eq(aiPatternsTable.regime, regime) : undefined,
+    ].filter(Boolean) as Parameters<typeof and>[0][];
+
+    const rows = await db
+      .select()
+      .from(aiPatternsTable)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(aiPatternsTable.createdAt))
+      .limit(limit);
+
+    res.json({ ok: true, patterns: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/patterns failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/regimes ─────────────────────────────────────────────
+// Regime time-series. Optional symbol filter.
+router.get("/ai/regimes", async (req, res): Promise<void> => {
+  const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit ?? "500"), 10), 2000);
+
+  try {
+    const rows = await db
+      .select()
+      .from(aiMarketRegimesTable)
+      .where(symbol ? eq(aiMarketRegimesTable.symbol, symbol) : undefined)
+      .orderBy(desc(aiMarketRegimesTable.snapshottedAt))
+      .limit(limit);
+
+    res.json({ ok: true, regimes: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/regimes failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /ai/chart-analyses ──────────────────────────────────────
+// Recent vision model chart analyses. Optional symbol filter.
+router.get("/ai/chart-analyses", async (req, res): Promise<void> => {
+  const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : undefined;
+  const limit  = Math.min(parseInt(String(req.query.limit ?? "20"), 10), 100);
+
+  try {
+    const rows = await db
+      .select()
+      .from(aiChartAnalysesTable)
+      .where(symbol ? eq(aiChartAnalysesTable.symbol, symbol) : undefined)
+      .orderBy(desc(aiChartAnalysesTable.createdAt))
+      .limit(limit);
+
+    res.json({ ok: true, analyses: rows, total: rows.length });
+  } catch (err) {
+    req.log?.warn({ err }, "GET /ai/chart-analyses failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── Helper ────────────────────────────────────────────────────
+
+function rowToTradeEntry(row: typeof signalsTable.$inferSelect): TradeMemoryEntry {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  return {
+    id:              row.signalId,
+    timestamp:       row.barTime?.toISOString() ?? new Date().toISOString(),
+    symbol:          row.symbol,
+    timeframe:       row.timeframe,
+    side:            row.side as "long" | "short",
+    strategy:        String(meta.strategy ?? row.pattern ?? "unknown"),
+    regime:          String(meta.regime   ?? row.regime  ?? "ranging"),
+    session:         String(meta.session  ?? "unknown"),
+    htfBias:         String(meta.htfBias  ?? "neutral"),
+    confluenceCount: Number(meta.confluenceCount ?? 0),
+    confidence:      row.confidence,
+    grade:           row.grade ?? "B",
+    riskLevel:       row.riskTag ?? "Medium",
+    rrRatio:         row.rrRatio ?? 1,
+    entryPrice:      row.entryPrice,
+    slPrice:         row.slPrice,
+    tpPrice:         row.tpPrice,
+    exitPrice:       row.exitPrice ?? null,
+    outcome:         row.state as "tp_hit" | "sl_hit" | "expired",
+    volumeState:     String(meta.volumeState    ?? "neutral"),
+    structureState:  String(meta.structureState ?? "mixed"),
+    patterns:        row.pattern ? [row.pattern] : [],
+  };
+}
+
+export { rowToTradeEntry };
 export default router;

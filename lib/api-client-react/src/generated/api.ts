@@ -20,13 +20,19 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AiMemorySummary,
+  AiStatusExtended,
   Bar,
+  ChartAnalysisRequest,
+  ChartAnalysisResponse,
   GetSignalStatsParams,
   HealthStatus,
   ListBarsParams,
   ListSignalsParams,
   Signal,
   SignalStats,
+  SimilarityRequest,
+  SimilarityResponse,
   Symbol,
   SymbolInput
 } from './api.schemas';
@@ -589,4 +595,300 @@ export function useListBars<TData = Awaited<ReturnType<typeof listBars>>, TError
 
 
 
+
+export const getGetAiStatusUrl = () => {
+
+
+
+
+  return `/api/ai/status`
+}
+
+/**
+ * @summary Get AI model status (decision + vision models)
+ */
+export const getAiStatus = async ( options?: RequestInit): Promise<AiStatusExtended> => {
+
+  return customFetch<AiStatusExtended>(getGetAiStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiStatusQueryKey = () => {
+    return [
+    `/api/ai/status`
+    ] as const;
+    }
+
+
+export const getGetAiStatusQueryOptions = <TData = Awaited<ReturnType<typeof getAiStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiStatus>>> = ({ signal }) => getAiStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getAiStatus>>>
+export type GetAiStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get AI model status (decision + vision models)
+ */
+
+export function useGetAiStatus<TData = Awaited<ReturnType<typeof getAiStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiMemoryUrl = () => {
+
+
+
+
+  return `/api/ai/memory`
+}
+
+/**
+ * @summary Get DB-backed shared memory stats
+ */
+export const getAiMemory = async ( options?: RequestInit): Promise<AiMemorySummary> => {
+
+  return customFetch<AiMemorySummary>(getGetAiMemoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiMemoryQueryKey = () => {
+    return [
+    `/api/ai/memory`
+    ] as const;
+    }
+
+
+export const getGetAiMemoryQueryOptions = <TData = Awaited<ReturnType<typeof getAiMemory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiMemory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiMemoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiMemory>>> = ({ signal }) => getAiMemory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiMemory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiMemoryQueryResult = NonNullable<Awaited<ReturnType<typeof getAiMemory>>>
+export type GetAiMemoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get DB-backed shared memory stats
+ */
+
+export function useGetAiMemory<TData = Awaited<ReturnType<typeof getAiMemory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiMemory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiMemoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAnalyzeChartUrl = () => {
+
+
+
+
+  return `/api/ai/analyze-chart`
+}
+
+/**
+ * @summary Analyze a chart image using the vision model
+ */
+export const analyzeChart = async (chartAnalysisRequest: ChartAnalysisRequest, options?: RequestInit): Promise<ChartAnalysisResponse> => {
+
+  return customFetch<ChartAnalysisResponse>(getAnalyzeChartUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      chartAnalysisRequest,)
+  }
+);}
+
+
+
+
+export const getAnalyzeChartMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeChart>>, TError,{data: BodyType<ChartAnalysisRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeChart>>, TError,{data: BodyType<ChartAnalysisRequest>}, TContext> => {
+
+const mutationKey = ['analyzeChart'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeChart>>, {data: BodyType<ChartAnalysisRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  analyzeChart(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeChartMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeChart>>>
+    export type AnalyzeChartMutationBody = BodyType<ChartAnalysisRequest>
+    export type AnalyzeChartMutationError = ErrorType<void>
+
+    /**
+ * @summary Analyze a chart image using the vision model
+ */
+export const useAnalyzeChart = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeChart>>, TError,{data: BodyType<ChartAnalysisRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeChart>>,
+        TError,
+        {data: BodyType<ChartAnalysisRequest>},
+        TContext
+      > => {
+      return useMutation(getAnalyzeChartMutationOptions(options));
+    }
+
+export const getQuerySimilarityUrl = () => {
+
+
+
+
+  return `/api/ai/similarity`
+}
+
+/**
+ * @summary Query the pattern similarity engine
+ */
+export const querySimilarity = async (similarityRequest: SimilarityRequest, options?: RequestInit): Promise<SimilarityResponse> => {
+
+  return customFetch<SimilarityResponse>(getQuerySimilarityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      similarityRequest,)
+  }
+);}
+
+
+
+
+export const getQuerySimilarityMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof querySimilarity>>, TError,{data: BodyType<SimilarityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof querySimilarity>>, TError,{data: BodyType<SimilarityRequest>}, TContext> => {
+
+const mutationKey = ['querySimilarity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof querySimilarity>>, {data: BodyType<SimilarityRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  querySimilarity(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type QuerySimilarityMutationResult = NonNullable<Awaited<ReturnType<typeof querySimilarity>>>
+    export type QuerySimilarityMutationBody = BodyType<SimilarityRequest>
+    export type QuerySimilarityMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Query the pattern similarity engine
+ */
+export const useQuerySimilarity = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof querySimilarity>>, TError,{data: BodyType<SimilarityRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof querySimilarity>>,
+        TError,
+        {data: BodyType<SimilarityRequest>},
+        TContext
+      > => {
+      return useMutation(getQuerySimilarityMutationOptions(options));
+    }
 

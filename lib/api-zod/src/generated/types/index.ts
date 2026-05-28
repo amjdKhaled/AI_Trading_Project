@@ -6,15 +6,35 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './aiLesson';
+export * from './aiLessonFailureCategory';
+export * from './aiMemorySummary';
+export * from './aiMemorySummaryRegimeStats';
+export * from './aiMemorySummaryStrategyStats';
+export * from './aiMemorySummarySymbolStats';
+export * from './aiPattern';
+export * from './aiStatusExtended';
 export * from './bar';
+export * from './chartAnalysis';
+export * from './chartAnalysisMarketStructure';
+export * from './chartAnalysisRequest';
+export * from './chartAnalysisResponse';
+export * from './chartAnalysisTrend';
+export * from './chartAnalysisVolumeBehavior';
 export * from './getSignalStatsParams';
 export * from './healthStatus';
 export * from './listBarsParams';
 export * from './listSignalsParams';
+export * from './patternGroupStat';
 export * from './signal';
 export * from './signalRiskTag';
 export * from './signalSide';
 export * from './signalState';
 export * from './signalStats';
+export * from './similarityMatch';
+export * from './similarityRequest';
+export * from './similarityRequestSide';
+export * from './similarityResponse';
 export * from './symbol';
 export * from './symbolInput';
+export * from './winLossStat';
