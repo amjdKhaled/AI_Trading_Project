@@ -24,14 +24,20 @@ npm install -g pnpm
 # 2. Clone/copy the project, then install all dependencies
 pnpm install
 
-# 3. Set required environment variables (PowerShell)
-$env:DATABASE_URL = "postgresql://user:password@localhost:5432/trading_signals"
-$env:POLYGON_API_KEY = "your_polygon_api_key"
-$env:SESSION_SECRET = "any_random_string_for_dev"
+# 3. Create a .env file at the project root (copy from .env.example).
+#    The API server and drizzle-kit both load this automatically —
+#    you do NOT need to export env vars in every terminal session.
+#
+#    Minimum contents of .env:
+#      DATABASE_URL=postgresql://postgres:password@localhost:5432/trading_signals
+#      POLYGON_API_KEY=your_polygon_api_key
+#      SESSION_SECRET=any_random_string
+#
+#    (see .env.example in the project root for a ready-to-copy template)
 
-# 4. CREATE THE DATABASE SCHEMA — must run once before starting the server.
-#    Without this step every API call returns "relation does not exist" 500s.
-#    The server will now print a clear error + this exact command if skipped.
+# 4. CREATE THE DATABASE SCHEMA — run once after creating .env.
+#    Without this every API call returns "relation does not exist" 500s.
+#    The server prints the exact fix command if you forget this step.
 pnpm --filter @workspace/db run push
 ```
 
