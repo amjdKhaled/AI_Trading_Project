@@ -3,7 +3,6 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "preinstall": "node -e \"const a=process.env.npm_config_user_agent||'';if(!a.startsWith('pnpm/')){process.stderr.write('Error: Use pnpm instead of npm/yarn.\\n');process.exit(1)}\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
