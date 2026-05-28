@@ -580,6 +580,19 @@ interface AiMemoryData {
   updatedAt:     string;
 }
 
+// ── Diagnostics types ─────────────────────────────────────────
+
+interface DiagData {
+  tables: {
+    ai_lessons:        number;
+    ai_patterns:       number;
+    ai_market_regimes: number;
+    ai_chart_analyses: number;
+  };
+  symbols:     string[];
+  symbolCount: number;
+}
+
 // ── Main page ─────────────────────────────────────────────────
 
 type TabId = "lessons" | "patterns" | "regimes" | "setups";
@@ -600,6 +613,8 @@ export default function AiMemoryPage() {
   const [loading, setLoading]     = useState(true);
   const [tabLoading, setTabLoading] = useState(false);
   const [error, setError]           = useState<string | null>(null);
+  const [diag, setDiag]             = useState<DiagData | null>(null);
+  const [diagOpen, setDiagOpen]     = useState(false);
 
   const fetchMemory = useCallback(async () => {
     try {
@@ -608,6 +623,13 @@ export default function AiMemoryPage() {
     } catch (e) {
       setError((e as Error).message);
     }
+  }, []);
+
+  const fetchDiag = useCallback(async () => {
+    try {
+      const d = await apiFetch<DiagData & { ok: boolean }>(`/api/ai/diagnostics`);
+      setDiag(d);
+    } catch { /* diagnostics are non-critical — ignore errors */ }
   }, []);
 
   const fetchTabData = useCallback(async (tab: TabId) => {
@@ -633,9 +655,9 @@ export default function AiMemoryPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
-    await Promise.all([fetchMemory(), fetchTabData("lessons")]);
+    await Promise.all([fetchMemory(), fetchTabData("lessons"), fetchDiag()]);
     setLoading(false);
-  }, [fetchMemory, fetchTabData]);
+  }, [fetchMemory, fetchTabData, fetchDiag]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -700,6 +722,79 @@ export default function AiMemoryPage() {
               <div className={`text-xl font-mono font-bold ${k.color}`}>{k.value}</div>
             </div>
           ))}
+        </div>
+
+        {/* Diagnostics panel */}
+        <div className="mt-2">
+          <button
+            onClick={() => setDiagOpen(o => !o)}
+            className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Database size={10} />
+            <span>Diagnostics</span>
+            <span className="text-[9px] opacity-50">{diagOpen ? "▲" : "▼"}</span>
+          </button>
+
+          {diagOpen && (
+            <div className="mt-2 bg-card border border-border rounded overflow-hidden">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Table</th>
+                    <th className="text-right px-3 py-1.5 text-muted-foreground font-medium">DB (raw)</th>
+                    <th className="text-right px-3 py-1.5 text-muted-foreground font-medium">API summary</th>
+                    <th className="text-right px-3 py-1.5 text-muted-foreground font-medium">Loaded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    {
+                      name: "ai_lessons",
+                      db:      diag?.tables.ai_lessons        ?? "—",
+                      api:     memory?.lessonsCount            ?? "—",
+                      loaded:  lessons.length,
+                    },
+                    {
+                      name: "ai_patterns",
+                      db:      diag?.tables.ai_patterns        ?? "—",
+                      api:     memory?.patternsCount           ?? "—",
+                      loaded:  patterns.length,
+                    },
+                    {
+                      name: "ai_market_regimes",
+                      db:      diag?.tables.ai_market_regimes  ?? "—",
+                      api:     "—",
+                      loaded:  regimes.length,
+                    },
+                    {
+                      name: "ai_chart_analyses",
+                      db:      diag?.tables.ai_chart_analyses  ?? "—",
+                      api:     "—",
+                      loaded:  "—",
+                    },
+                  ].map(row => {
+                    const mismatch = typeof row.db === "number" && typeof row.api === "number" && row.db !== row.api;
+                    return (
+                      <tr key={row.name} className={`border-b border-border/50 last:border-0 ${mismatch ? "bg-amber-500/5" : ""}`}>
+                        <td className="px-3 py-1.5 font-mono text-muted-foreground">{row.name}</td>
+                        <td className={`text-right px-3 py-1.5 font-mono ${mismatch ? "text-amber-400 font-bold" : "text-foreground"}`}>{String(row.db)}</td>
+                        <td className={`text-right px-3 py-1.5 font-mono ${mismatch ? "text-amber-400 font-bold" : "text-foreground"}`}>{String(row.api)}</td>
+                        <td className="text-right px-3 py-1.5 font-mono text-muted-foreground">{String(row.loaded)}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="border-t border-border bg-muted/20">
+                    <td className="px-3 py-1.5 font-mono text-muted-foreground">symbols</td>
+                    <td className="text-right px-3 py-1.5 font-mono text-foreground">{diag?.symbolCount ?? "—"}</td>
+                    <td className="text-right px-3 py-1.5 font-mono text-foreground">{Object.keys(memory?.symbolStats ?? {}).length || "—"}</td>
+                    <td className="text-right px-3 py-1.5 font-mono text-muted-foreground">
+                      {diag?.symbols.join(", ") || "—"}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 

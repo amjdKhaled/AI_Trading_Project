@@ -5,7 +5,6 @@ import {
   ArrowUpCircle, ArrowDownCircle, MinusCircle,
 } from "lucide-react";
 import {
-  useAnalyzeChart,
   useListChartAnalyses,
   type ChartAnalysis,
   type AiDecision,
@@ -599,13 +598,14 @@ function UploadZone({ onImages }: { onImages: (imgs: QueuedImage[]) => void }) {
 
 // ── Progress indicator ────────────────────────────────────────────
 
-type Phase = "idle" | "vision" | "decision" | "done" | "error";
+type Phase = "idle" | "uploading" | "vision" | "decision" | "done" | "error";
 
 function PhaseBar({ phase, queuePos, queueLen }: { phase: Phase; queuePos: number; queueLen: number }) {
   const steps: { key: Phase; label: string }[] = [
-    { key: "vision",   label: "Vision Model" },
-    { key: "decision", label: "Decision Engine" },
-    { key: "done",     label: "Complete" },
+    { key: "uploading", label: "Uploading" },
+    { key: "vision",    label: "Vision Analysis" },
+    { key: "decision",  label: "Decision Engine" },
+    { key: "done",      label: "Completed" },
   ];
   const activeIdx = steps.findIndex(s => s.key === phase);
 
@@ -656,7 +656,7 @@ export default function AiChartPage() {
   const [visionModel, setVisionModel] = useState("qwen2.5-vl:7b");
   const [queuePos, setQueuePos]       = useState(0);
 
-  const { mutateAsync: analyzeChart } = useAnalyzeChart();
+  const abortRef   = useRef<AbortController | null>(null);
   const recentQuery = useListChartAnalyses({ limit: 20 });
 
   useEffect(() => {
@@ -679,7 +679,7 @@ export default function AiChartPage() {
     setQueue(prev => prev.filter(img => img.id !== id));
   }, []);
 
-  // Sequential queue processor
+  // Sequential queue processor — uses direct fetch so we can cancel via AbortController
   const handleAnalyze = useCallback(async () => {
     if (queue.length === 0 || processing) return;
     setProcessing(true);
@@ -695,25 +695,48 @@ export default function AiChartPage() {
       const img = queue[i];
       setQueuePos(i + 1);
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+      let progressTimer: ReturnType<typeof setTimeout> | null = null;
+
       try {
-        setPhase("vision");
+        // Phase 1: convert image to base64
+        setPhase("uploading");
         const base64 = img.file ? await fileToBase64(img.file) : dataUrlToBase64(img.dataUrl);
         const thumbBase64 = await makeThumbnail(img.dataUrl);
 
-        setPhase("decision");
-        const response = await analyzeChart({
-          data: {
-            imageBase64: base64,
-            thumbnailBase64: thumbBase64,
-            symbol: sym,
-            timeframe: tf,
-          },
+        // Phase 2: vision model runs on the server (auto-advance to decision after 45s)
+        setPhase("vision");
+        progressTimer = setTimeout(() => setPhase("decision"), 45_000);
+
+        const res = await fetch(`${BASE}/api/ai/analyze-chart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: base64, thumbnailBase64: thumbBase64, symbol: sym, timeframe: tf }),
+          signal: controller.signal,
         });
+        if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
+
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          let msg = `HTTP ${res.status}`;
+          try { msg = (JSON.parse(body) as { error?: string }).error ?? msg; } catch { /**/ }
+          throw new Error(msg);
+        }
+
+        const response = await res.json() as {
+          ok: boolean;
+          analysis: ChartAnalysis;
+          decision?: AiDecision | null;
+          historicalMatches?: SimilarityMatch[];
+          error?: string;
+        };
+        if (!response.ok) throw new Error(response.error ?? "Analysis failed");
 
         const result: AnalysisResult = {
           analysis: response.analysis,
-          decision: (response as { decision?: AiDecision | null }).decision ?? null,
-          matches: response.historicalMatches ?? [],
+          decision: response.decision ?? null,
+          matches:  response.historicalMatches ?? [],
           imageDataUrl: img.dataUrl,
         };
 
@@ -724,6 +747,14 @@ export default function AiChartPage() {
         // Brief pause before next image
         if (i < total - 1) await new Promise(r => setTimeout(r, 800));
       } catch (err) {
+        if (progressTimer) clearTimeout(progressTimer);
+        // Cancelled by user — reset silently
+        if ((err as Error).name === "AbortError") {
+          setPhase("idle");
+          setProcessing(false);
+          setErrorMsg(null);
+          return;
+        }
         setPhase("error");
         setErrorMsg((err as Error).message ?? "Analysis failed");
         break;
@@ -732,7 +763,11 @@ export default function AiChartPage() {
 
     setProcessing(false);
     void recentQuery.refetch();
-  }, [queue, processing, symbol, timeframe, analyzeChart, recentQuery]);
+  }, [queue, processing, symbol, timeframe, recentQuery]);
+
+  const handleCancel = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const reset = useCallback(() => {
     setQueue([]);
@@ -839,10 +874,19 @@ export default function AiChartPage() {
       {processing && (
         <div className="bg-card border border-border rounded p-4 space-y-4">
           <PhaseBar phase={phase} queuePos={queuePos} queueLen={queue.length} />
-          <p className="text-xs text-muted-foreground text-center animate-pulse">
-            {phase === "vision"   && `Running ${visionModel}…`}
-            {phase === "decision" && "Running decision engine (qwen2.5:14b)…"}
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground animate-pulse flex-1">
+              {phase === "uploading" && "Preparing image…"}
+              {phase === "vision"    && `Running ${visionModel} — may take 1–3 min…`}
+              {phase === "decision"  && "Running decision engine (qwen2.5:14b)…"}
+            </p>
+            <button
+              onClick={handleCancel}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors flex-shrink-0"
+            >
+              <X size={10} /> Cancel
+            </button>
+          </div>
         </div>
       )}
 

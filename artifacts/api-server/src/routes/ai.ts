@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, signalsTable, aiLessonsTable, aiPatternsTable, aiMarketRegimesTable, aiChartAnalysesTable } from "@workspace/db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, count } from "drizzle-orm";
 import { isOllamaAvailable, MODEL, OLLAMA_BASE_URL } from "../lib/ai/ollama.js";
 import { isVisionAvailable, getVisionModel, VISION_MODEL_DEFAULT } from "../lib/ai/ollama-vision.js";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection.js";
@@ -47,6 +47,37 @@ router.get("/ai/memory", async (_req, res): Promise<void> => {
   } catch {
     const summary = getMemorySummary();
     res.json({ ok: true, source: "json_fallback", lessonsCount: summary.totalTrades, patternsCount: 0, ...summary });
+  }
+});
+
+// ── GET /ai/diagnostics ─────────────────────────────────────────
+// Raw COUNT(*) for every AI table — used by the Memory page diagnostics panel
+// to verify DB → API → frontend count agreement.
+router.get("/ai/diagnostics", async (_req, res): Promise<void> => {
+  try {
+    const [lessonRows, patternRows, regimeRows, setupRows] = await Promise.all([
+      db.select({ n: count() }).from(aiLessonsTable),
+      db.select({ n: count() }).from(aiPatternsTable),
+      db.select({ n: count() }).from(aiMarketRegimesTable),
+      db.select({ n: count() }).from(aiChartAnalysesTable),
+    ]);
+    const symbolRows = await db
+      .selectDistinct({ symbol: aiLessonsTable.symbol })
+      .from(aiLessonsTable);
+
+    res.json({
+      ok: true,
+      tables: {
+        ai_lessons:        Number(lessonRows[0]?.n  ?? 0),
+        ai_patterns:       Number(patternRows[0]?.n ?? 0),
+        ai_market_regimes: Number(regimeRows[0]?.n  ?? 0),
+        ai_chart_analyses: Number(setupRows[0]?.n   ?? 0),
+      },
+      symbols:     symbolRows.map(r => r.symbol),
+      symbolCount: symbolRows.length,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
   }
 });
 

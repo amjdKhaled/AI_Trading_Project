@@ -3,7 +3,9 @@ import { OLLAMA_BASE_URL } from "./ollama.js";
 
 // Preferred default — overridable by env var
 export const VISION_MODEL_DEFAULT = process.env.OLLAMA_VISION_MODEL ?? "qwen2.5-vl:7b";
-const TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS ?? "60000", 10);
+// Default 10 minutes — vision models on consumer GPUs can take 1–3 min per image.
+// Override with OLLAMA_TIMEOUT_MS env var if needed (0 = no timeout).
+const TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS ?? "600000", 10);
 
 // ── Flexible model detection ──────────────────────────────────
 // Accepts any of the known naming variants Ollama may report:
@@ -84,12 +86,13 @@ export async function ollamaVisionGenerate(
   const model = (await resolveVisionModel()) ?? VISION_MODEL_DEFAULT;
 
   logger.info(
-    { model, imageBytes: Math.round(imageBase64.length * 0.75), numPredict },
+    { model, imageBytes: Math.round(imageBase64.length * 0.75), numPredict, timeoutMs: TIMEOUT_MS },
     "Vision model called — sending image",
   );
 
+  const t0 = Date.now();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = TIMEOUT_MS > 0 ? setTimeout(() => controller.abort(), TIMEOUT_MS) : null;
 
   try {
     const body: Record<string, unknown> = {
@@ -119,20 +122,22 @@ export async function ollamaVisionGenerate(
 
     const data = (await res.json()) as OllamaVisionResponse;
     const responseText = data.response.trim();
+    const elapsedMs = Date.now() - t0;
 
     logger.info(
-      { model, responseChars: responseText.length },
+      { model, responseChars: responseText.length, elapsedMs, elapsedSec: Math.round(elapsedMs / 100) / 10 },
       "Vision model response received",
     );
 
     return responseText;
   } catch (err) {
+    const elapsedMs = Date.now() - t0;
     if ((err as Error).name === "AbortError") {
-      throw new Error(`Ollama vision timeout after ${TIMEOUT_MS}ms — model may still be loading`);
+      throw new Error(`Ollama vision timeout after ${elapsedMs}ms (limit: ${TIMEOUT_MS}ms) — increase OLLAMA_TIMEOUT_MS or use a faster model`);
     }
     throw err;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 
