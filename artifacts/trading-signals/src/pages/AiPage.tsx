@@ -4,6 +4,32 @@ import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/**
+ * Parse an API response as JSON, but turn the common failure modes into
+ * actionable error messages instead of cryptic "Unexpected token '<'" parse
+ * errors. This is what the user sees on Windows when the Vite proxy can't
+ * reach the API server — the response is the SPA's index.html (HTML, not
+ * JSON), and `r.json()` blows up with a useless stack trace.
+ */
+async function safeJson<T>(r: Response, label: string): Promise<T> {
+  const ct = r.headers.get("content-type") ?? "";
+  if (!r.ok) {
+    let body = "";
+    try { body = (await r.text()).slice(0, 200); } catch { /* ignore */ }
+    throw new Error(`${label}: HTTP ${r.status}${body ? ` — ${body}` : ""}`);
+  }
+  if (!ct.includes("application/json")) {
+    // Almost always: API server is not running and Vite's SPA fallback
+    // returned index.html. Tell the user exactly what to do.
+    throw new Error(
+      `${label}: server returned ${ct || "no content-type"} instead of JSON. ` +
+      `On Windows, make sure the API server is running: ` +
+      `pnpm --filter @workspace/api-server run dev`,
+    );
+  }
+  return r.json() as Promise<T>;
+}
+
 interface AiStatus {
   available: boolean;
   model: string;
@@ -63,15 +89,22 @@ export default function AiPage() {
   const [batchResult, setBatchResult]     = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "regime" | "strategy" | "lessons">("overview");
 
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
-      const [s, m] = await Promise.all([
-        fetch(`${BASE}/api/ai/status`).then(r => r.json()),
-        fetch(`${BASE}/api/ai/memory`).then(r => r.json()),
+      const [sRes, mRes] = await Promise.all([
+        fetch(`${BASE}/api/ai/status`),
+        fetch(`${BASE}/api/ai/memory`),
       ]);
-      setStatus(s as AiStatus);
-      setMemory(m as MemorySummary);
+      const s = await safeJson<AiStatus>(sRes, "GET /api/ai/status");
+      const m = await safeJson<MemorySummary>(mRes, "GET /api/ai/memory");
+      setStatus(s);
+      setMemory(m);
+    } catch (e) {
+      setFetchError((e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -94,7 +127,7 @@ export default function AiPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signalId: reflectId.trim(), useAi: status?.available }),
       });
-      const data = await r.json() as ReflectResult;
+      const data = await safeJson<ReflectResult>(r, "POST /api/ai/reflect");
       setReflectResult(data);
       fetchAll();
     } catch (e) {
@@ -114,7 +147,9 @@ export default function AiPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: batchSymbol.toUpperCase(), useAi: false, limit: 200 }),
       });
-      const data = await r.json() as { processed: number; errors: number; total: number };
+      const data = await safeJson<{ processed: number; errors: number; total: number }>(
+        r, "POST /api/ai/reflect/batch",
+      );
       setBatchResult(`Stored ${data.processed}/${data.total} trades. Errors: ${data.errors}`);
       fetchAll();
     } catch (e) {
@@ -132,6 +167,26 @@ export default function AiPage() {
       <div className="h-full flex items-center justify-center">
         <div className="space-y-2 w-64">
           {[1,2,3].map(i => <div key={i} className="h-8 bg-muted rounded animate-pulse" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="h-full flex items-center justify-center p-6">
+        <div className="max-w-lg space-y-3">
+          <div className="flex items-center gap-2 text-red-400">
+            <XCircle size={16} />
+            <h2 className="text-sm font-semibold">Could not reach AI endpoints</h2>
+          </div>
+          <pre className="text-[11px] bg-card border border-border rounded p-3 text-amber-300 whitespace-pre-wrap font-mono leading-relaxed">{fetchError}</pre>
+          <button
+            onClick={fetchAll}
+            className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
+          >
+            <RefreshCw size={11} /> Retry
+          </button>
         </div>
       </div>
     );
