@@ -6,7 +6,8 @@ import NotFound from "@/pages/not-found";
 import ChartPage from "@/pages/ChartPage";
 import SignalsPage from "@/pages/SignalsPage";
 import WatchlistPage from "@/pages/WatchlistPage";
-import { BarChart2, LineChart, ListOrdered, Activity } from "lucide-react";
+import AiPage from "@/pages/AiPage";
+import { BarChart2, LineChart, ListOrdered, Activity, Brain } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,6 +21,7 @@ function TopNav() {
     { href: "/", label: "Chart", icon: <LineChart size={13} /> },
     { href: "/signals", label: "Signals", icon: <Activity size={13} /> },
     { href: "/watchlist", label: "Watchlist", icon: <ListOrdered size={13} /> },
+    { href: "/ai", label: "AI Engine", icon: <Brain size={13} /> },
   ];
 
   return (
@@ -61,6 +63,7 @@ function AppLayout() {
           <Route path="/" component={ChartPage} />
           <Route path="/signals" component={SignalsPage} />
           <Route path="/watchlist" component={WatchlistPage} />
+          <Route path="/ai" component={AiPage} />
           <Route component={NotFound} />
         </Switch>
       </div>
