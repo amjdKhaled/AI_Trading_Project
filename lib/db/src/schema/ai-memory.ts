@@ -93,7 +93,7 @@ export type InsertAiMarketRegime = z.infer<typeof insertAiMarketRegimeSchema>;
 export type AiMarketRegime = typeof aiMarketRegimesTable.$inferSelect;
 
 // ── ai_chart_analyses ────────────────────────────────────────────
-// Stores vision model (qwen2.5-vl:7b) outputs tied to a signal or standalone
+// Stores vision model (qwen2.5-vl:7b) + decision engine outputs tied to a signal or standalone
 export const aiChartAnalysesTable = pgTable("ai_chart_analyses", {
   id: serial("id").primaryKey(),
   signalId: text("signal_id"),
@@ -109,6 +109,18 @@ export const aiChartAnalysesTable = pgTable("ai_chart_analyses", {
   demandZones: jsonb("demand_zones").$type<number[]>().notNull().default([]),
   summary: text("summary").notNull().default(""),
   confidence: integer("confidence").notNull().default(0),
+  // Decision engine fields (qwen2.5:14b) — nullable when Ollama is offline
+  direction: text("direction"),
+  entryPrice: real("entry_price"),
+  slPrice: real("sl_price"),
+  tpPrice: real("tp_price"),
+  rrRatio: real("rr_ratio"),
+  decisionConfidence: integer("decision_confidence"),
+  successProbability: integer("success_probability"),
+  technicalReasoning: text("technical_reasoning"),
+  marketStructureReasoning: text("market_structure_reasoning"),
+  historicalReasoning: text("historical_reasoning"),
+  thumbnailBase64: text("thumbnail_base64"),
   rawResponse: text("raw_response"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

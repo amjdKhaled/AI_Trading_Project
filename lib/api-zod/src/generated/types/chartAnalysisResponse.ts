@@ -5,6 +5,7 @@
  * Trading Signal Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { AiDecision } from './aiDecision';
 import type { ChartAnalysis } from './chartAnalysis';
 import type { SimilarityMatch } from './similarityMatch';
 
@@ -12,4 +13,6 @@ export interface ChartAnalysisResponse {
   ok: boolean;
   analysis: ChartAnalysis;
   historicalMatches: SimilarityMatch[];
+  decision?: AiDecision;
+  decisionAvailable?: boolean;
 }

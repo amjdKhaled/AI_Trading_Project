@@ -205,6 +205,28 @@ paths:
         "503":
           description: Vision model not available
 
+  /ai/chart-analyses:
+    get:
+      operationId: listChartAnalyses
+      tags: [ai]
+      summary: List recent chart analyses (last 10)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Recent chart analyses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChartAnalysisRecord"
+
   /ai/similarity:
     post:
       operationId: querySimilarity
@@ -444,6 +466,9 @@ components:
         imageBase64:
           type: string
           description: Base64-encoded chart image (PNG or JPEG)
+        thumbnailBase64:
+          type: string
+          description: Small base64 JPEG thumbnail generated client-side for the recent-analyses list
         symbol:
           type: string
         timeframe:
@@ -489,6 +514,32 @@ components:
         confidence:
           type: integer
 
+    AiDecision:
+      type: object
+      required: [direction, confidence, entry, stopLoss, takeProfit, riskReward, technicalReasoning, marketStructureReasoning, historicalReasoning, successProbability]
+      properties:
+        direction:
+          type: string
+          enum: [BUY, SELL, NO_TRADE]
+        confidence:
+          type: integer
+        entry:
+          type: number
+        stopLoss:
+          type: number
+        takeProfit:
+          type: number
+        riskReward:
+          type: number
+        technicalReasoning:
+          type: string
+        marketStructureReasoning:
+          type: string
+        historicalReasoning:
+          type: string
+        successProbability:
+          type: integer
+
     ChartAnalysisResponse:
       type: object
       required: [ok, analysis, historicalMatches]
@@ -501,6 +552,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SimilarityMatch"
+        decision:
+          $ref: "#/components/schemas/AiDecision"
+        decisionAvailable:
+          type: boolean
 
     SimilarityMatch:
       type: object
@@ -598,6 +653,70 @@ components:
           type: integer
         rrRatio:
           type: number
+        createdAt:
+          type: string
+          format: date-time
+
+    ChartAnalysisRecord:
+      type: object
+      required: [id, trend, patterns, resistanceLevels, supportLevels, volumeBehavior, marketStructure, supplyZones, demandZones, summary, confidence, createdAt]
+      properties:
+        id:
+          type: integer
+        signalId:
+          type: ["string", "null"]
+        symbol:
+          type: ["string", "null"]
+        timeframe:
+          type: ["string", "null"]
+        trend:
+          type: string
+        patterns:
+          type: array
+          items:
+            type: string
+        resistanceLevels:
+          type: array
+          items:
+            type: number
+        supportLevels:
+          type: array
+          items:
+            type: number
+        volumeBehavior:
+          type: string
+        marketStructure:
+          type: string
+        supplyZones:
+          type: array
+          items:
+            type: number
+        demandZones:
+          type: array
+          items:
+            type: number
+        summary:
+          type: string
+        confidence:
+          type: integer
+        direction:
+          type: ["string", "null"]
+        entryPrice:
+          type: ["number", "null"]
+        slPrice:
+          type: ["number", "null"]
+        tpPrice:
+          type: ["number", "null"]
+        rrRatio:
+          type: ["number", "null"]
+        decisionConfidence:
+          type: ["integer", "null"]
+        successProbability:
+          type: ["integer", "null"]
+        technicalReasoning:
+          type: ["string", "null"]
+        thumbnailBase64:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time

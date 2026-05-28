@@ -9,6 +9,8 @@
 export interface ChartAnalysisRequest {
   /** Base64-encoded chart image (PNG or JPEG) */
   imageBase64: string;
+  /** Small base64 JPEG thumbnail generated client-side for the recent-analyses list */
+  thumbnailBase64?: string;
   symbol?: string;
   timeframe?: string;
   signalId?: string;

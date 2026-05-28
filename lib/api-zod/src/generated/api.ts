@@ -183,6 +183,7 @@ export const GetAiMemoryResponse = zod.object({
  */
 export const AnalyzeChartBody = zod.object({
   "imageBase64": zod.string().describe('Base64-encoded chart image (PNG or JPEG)'),
+  "thumbnailBase64": zod.string().optional().describe('Small base64 JPEG thumbnail generated client-side for the recent-analyses list'),
   "symbol": zod.string().optional(),
   "timeframe": zod.string().optional(),
   "signalId": zod.string().optional()
@@ -215,8 +216,59 @@ export const AnalyzeChartResponse = zod.object({
   "sampleSize": zod.number(),
   "matchScore": zod.number(),
   "recentOutcomes": zod.array(zod.string())
-}))
+})),
+  "decision": zod.object({
+  "direction": zod.enum(['BUY', 'SELL', 'NO_TRADE']),
+  "confidence": zod.number(),
+  "entry": zod.number(),
+  "stopLoss": zod.number(),
+  "takeProfit": zod.number(),
+  "riskReward": zod.number(),
+  "technicalReasoning": zod.string(),
+  "marketStructureReasoning": zod.string(),
+  "historicalReasoning": zod.string(),
+  "successProbability": zod.number()
+}).optional(),
+  "decisionAvailable": zod.boolean().optional()
 })
+
+
+/**
+ * @summary List recent chart analyses (last 10)
+ */
+export const listChartAnalysesQueryLimitDefault = 10;
+
+export const ListChartAnalysesQueryParams = zod.object({
+  "limit": zod.coerce.number().default(listChartAnalysesQueryLimitDefault)
+})
+
+export const ListChartAnalysesResponseItem = zod.object({
+  "id": zod.number(),
+  "signalId": zod.string().nullish(),
+  "symbol": zod.string().nullish(),
+  "timeframe": zod.string().nullish(),
+  "trend": zod.string(),
+  "patterns": zod.array(zod.string()),
+  "resistanceLevels": zod.array(zod.number()),
+  "supportLevels": zod.array(zod.number()),
+  "volumeBehavior": zod.string(),
+  "marketStructure": zod.string(),
+  "supplyZones": zod.array(zod.number()),
+  "demandZones": zod.array(zod.number()),
+  "summary": zod.string(),
+  "confidence": zod.number(),
+  "direction": zod.string().nullish(),
+  "entryPrice": zod.number().nullish(),
+  "slPrice": zod.number().nullish(),
+  "tpPrice": zod.number().nullish(),
+  "rrRatio": zod.number().nullish(),
+  "decisionConfidence": zod.number().nullish(),
+  "successProbability": zod.number().nullish(),
+  "technicalReasoning": zod.string().nullish(),
+  "thumbnailBase64": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListChartAnalysesResponse = zod.array(ListChartAnalysesResponseItem)
 
 
 /**

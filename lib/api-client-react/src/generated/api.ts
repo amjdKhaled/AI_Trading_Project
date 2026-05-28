@@ -23,11 +23,13 @@ import type {
   AiMemorySummary,
   AiStatusExtended,
   Bar,
+  ChartAnalysisRecord,
   ChartAnalysisRequest,
   ChartAnalysisResponse,
   GetSignalStatsParams,
   HealthStatus,
   ListBarsParams,
+  ListChartAnalysesParams,
   ListSignalsParams,
   Signal,
   SignalStats,
@@ -820,6 +822,90 @@ export const useAnalyzeChart = <TError = ErrorType<void>,
       > => {
       return useMutation(getAnalyzeChartMutationOptions(options));
     }
+
+export const getListChartAnalysesUrl = (params?: ListChartAnalysesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/chart-analyses?${stringifiedParams}` : `/api/ai/chart-analyses`
+}
+
+/**
+ * @summary List recent chart analyses (last 10)
+ */
+export const listChartAnalyses = async (params?: ListChartAnalysesParams, options?: RequestInit): Promise<ChartAnalysisRecord[]> => {
+
+  return customFetch<ChartAnalysisRecord[]>(getListChartAnalysesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListChartAnalysesQueryKey = (params?: ListChartAnalysesParams,) => {
+    return [
+    `/api/ai/chart-analyses`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListChartAnalysesQueryOptions = <TData = Awaited<ReturnType<typeof listChartAnalyses>>, TError = ErrorType<unknown>>(params?: ListChartAnalysesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChartAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListChartAnalysesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChartAnalyses>>> = ({ signal }) => listChartAnalyses(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listChartAnalyses>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListChartAnalysesQueryResult = NonNullable<Awaited<ReturnType<typeof listChartAnalyses>>>
+export type ListChartAnalysesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List recent chart analyses (last 10)
+ */
+
+export function useListChartAnalyses<TData = Awaited<ReturnType<typeof listChartAnalyses>>, TError = ErrorType<unknown>>(
+ params?: ListChartAnalysesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChartAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListChartAnalysesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getQuerySimilarityUrl = () => {
 

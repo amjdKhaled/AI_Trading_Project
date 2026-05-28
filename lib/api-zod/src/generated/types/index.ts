@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './aiDecision';
+export * from './aiDecisionDirection';
 export * from './aiLesson';
 export * from './aiLessonFailureCategory';
 export * from './aiMemorySummary';
@@ -17,6 +19,7 @@ export * from './aiStatusExtended';
 export * from './bar';
 export * from './chartAnalysis';
 export * from './chartAnalysisMarketStructure';
+export * from './chartAnalysisRecord';
 export * from './chartAnalysisRequest';
 export * from './chartAnalysisResponse';
 export * from './chartAnalysisTrend';
@@ -24,6 +27,7 @@ export * from './chartAnalysisVolumeBehavior';
 export * from './getSignalStatsParams';
 export * from './healthStatus';
 export * from './listBarsParams';
+export * from './listChartAnalysesParams';
 export * from './listSignalsParams';
 export * from './patternGroupStat';
 export * from './signal';

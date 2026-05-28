@@ -8,8 +8,9 @@ import SignalsPage from "@/pages/SignalsPage";
 import WatchlistPage from "@/pages/WatchlistPage";
 import AiPage from "@/pages/AiPage";
 import AiMemoryPage from "@/pages/AiMemoryPage";
+import AiChartPage from "@/pages/AiChartPage";
 import { ActiveSymbolProvider } from "@/lib/ActiveSymbolContext";
-import { BarChart2, LineChart, ListOrdered, Activity, Brain, Database } from "lucide-react";
+import { BarChart2, LineChart, ListOrdered, Activity, Brain, Database, Eye } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ function TopNav() {
     { href: "/watchlist", label: "Watchlist", icon: <ListOrdered size={13} /> },
     { href: "/ai", label: "AI Engine", icon: <Brain size={13} /> },
     { href: "/ai-memory", label: "AI Memory", icon: <Database size={13} /> },
+    { href: "/ai-chart", label: "AI Chart", icon: <Eye size={13} /> },
   ];
 
   return (
@@ -68,6 +70,7 @@ function AppLayout() {
           <Route path="/watchlist" component={WatchlistPage} />
           <Route path="/ai" component={AiPage} />
           <Route path="/ai-memory" component={AiMemoryPage} />
+          <Route path="/ai-chart" component={AiChartPage} />
           <Route component={NotFound} />
         </Switch>
       </div>

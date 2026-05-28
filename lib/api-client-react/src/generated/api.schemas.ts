@@ -152,6 +152,8 @@ export interface AiMemorySummary {
 export interface ChartAnalysisRequest {
   /** Base64-encoded chart image (PNG or JPEG) */
   imageBase64: string;
+  /** Small base64 JPEG thumbnail generated client-side for the recent-analyses list */
+  thumbnailBase64?: string;
   symbol?: string;
   timeframe?: string;
   signalId?: string;
@@ -204,6 +206,28 @@ export interface ChartAnalysis {
   confidence: number;
 }
 
+export type AiDecisionDirection = typeof AiDecisionDirection[keyof typeof AiDecisionDirection];
+
+
+export const AiDecisionDirection = {
+  BUY: 'BUY',
+  SELL: 'SELL',
+  NO_TRADE: 'NO_TRADE',
+} as const;
+
+export interface AiDecision {
+  direction: AiDecisionDirection;
+  confidence: number;
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskReward: number;
+  technicalReasoning: string;
+  marketStructureReasoning: string;
+  historicalReasoning: string;
+  successProbability: number;
+}
+
 export interface SimilarityMatch {
   symbol: string;
   regime: string;
@@ -223,6 +247,8 @@ export interface ChartAnalysisResponse {
   ok: boolean;
   analysis: ChartAnalysis;
   historicalMatches: SimilarityMatch[];
+  decision?: AiDecision;
+  decisionAvailable?: boolean;
 }
 
 export type AiLessonFailureCategory = typeof AiLessonFailureCategory[keyof typeof AiLessonFailureCategory];
@@ -273,6 +299,45 @@ export interface AiPattern {
   createdAt: string;
 }
 
+export interface ChartAnalysisRecord {
+  id: number;
+  /** @nullable */
+  signalId?: string | null;
+  /** @nullable */
+  symbol?: string | null;
+  /** @nullable */
+  timeframe?: string | null;
+  trend: string;
+  patterns: string[];
+  resistanceLevels: number[];
+  supportLevels: number[];
+  volumeBehavior: string;
+  marketStructure: string;
+  supplyZones: number[];
+  demandZones: number[];
+  summary: string;
+  confidence: number;
+  /** @nullable */
+  direction?: string | null;
+  /** @nullable */
+  entryPrice?: number | null;
+  /** @nullable */
+  slPrice?: number | null;
+  /** @nullable */
+  tpPrice?: number | null;
+  /** @nullable */
+  rrRatio?: number | null;
+  /** @nullable */
+  decisionConfidence?: number | null;
+  /** @nullable */
+  successProbability?: number | null;
+  /** @nullable */
+  technicalReasoning?: string | null;
+  /** @nullable */
+  thumbnailBase64?: string | null;
+  createdAt: string;
+}
+
 export type SimilarityRequestSide = typeof SimilarityRequestSide[keyof typeof SimilarityRequestSide];
 
 
@@ -307,6 +372,10 @@ symbol?: string;
 export type ListBarsParams = {
 symbol: string;
 timeframe?: string;
+limit?: number;
+};
+
+export type ListChartAnalysesParams = {
 limit?: number;
 };
 

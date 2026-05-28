@@ -8,7 +8,8 @@ import { filterSignalWithAi } from "../lib/ai/filter.js";
 import { getMemorySummary, loadMemory } from "../lib/ai/memory.js";
 import { getMemorySummaryFromDb } from "../lib/ai/shared-memory.js";
 import { aiDecide } from "../lib/ai/decide.js";
-import { analyzeChart } from "../lib/ai/analyze-chart.js";
+import { analyzeChart, persistChartAnalysis } from "../lib/ai/analyze-chart.js";
+import { makeChartDecision } from "../lib/ai/chart-decision.js";
 import { findSimilarPatterns } from "../lib/ai/similarity.js";
 import { fetchHistory } from "./history.js";
 import type { TradeMemoryEntry } from "../lib/ai/types.js";
@@ -247,16 +248,34 @@ router.post("/ai/filter", async (req, res): Promise<void> => {
   }
 });
 
+// ── GET /ai/chart-analyses ──────────────────────────────────────
+// Return the last N chart analyses from the DB (for the recent-analyses list).
+router.get("/ai/chart-analyses", async (req, res): Promise<void> => {
+  const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "10"), 10)), 50);
+  try {
+    const rows = await db
+      .select()
+      .from(aiChartAnalysesTable)
+      .orderBy(desc(aiChartAnalysesTable.createdAt))
+      .limit(limit);
+    res.json(rows);
+  } catch (err) {
+    req.log?.warn({ err }, "Failed to fetch chart analyses");
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // ── POST /ai/analyze-chart ──────────────────────────────────────
-// Accept a base64 chart image, run qwen2.5-vl:7b vision analysis,
-// cross-reference shared memory for similar historical patterns,
-// and return a structured ChartAnalysis + historicalMatches.
+// Phase 1: Vision model (qwen2.5-vl:7b) reads the chart image.
+// Phase 2: Decision engine (qwen2.5:14b) produces a trade plan.
+// Returns ChartAnalysis + AiDecision + historicalMatches.
 router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
-  const { imageBase64, symbol, timeframe, signalId } = req.body as {
+  const { imageBase64, symbol, timeframe, signalId, thumbnailBase64 } = req.body as {
     imageBase64?: string;
     symbol?: string;
     timeframe?: string;
     signalId?: string;
+    thumbnailBase64?: string;
   };
 
   if (!imageBase64) {
@@ -275,15 +294,42 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
   }
 
   try {
-    const [analysis, historicalMatches] = await Promise.all([
+    // Phase 1: Vision model reads the chart image + similarity lookup (parallel)
+    const [visionAnalysis, historicalMatches] = await Promise.all([
       analyzeChart({ imageBase64, symbol, timeframe, signalId }),
       symbol
         ? findSimilarPatterns({ symbol, regime: "unknown", side: "long" }, 5)
         : Promise.resolve([]),
     ]);
 
-    req.log?.info({ symbol, timeframe, signalId, trend: analysis.trend, confidence: analysis.confidence }, "Chart analysis complete");
-    res.json({ ok: true, analysis, historicalMatches });
+    // Phase 2: Decision engine (qwen2.5:14b) produces a trade plan
+    let decision = null;
+    let decisionAvailable = false;
+    const decisionOk = await isOllamaAvailable();
+    if (decisionOk) {
+      try {
+        decision = await makeChartDecision(visionAnalysis, symbol, timeframe, historicalMatches);
+        decisionAvailable = true;
+      } catch (decErr) {
+        req.log?.warn({ decErr }, "Chart decision engine failed — returning vision-only result");
+      }
+    }
+
+    // Phase 3: Persist everything in a single DB insert
+    await persistChartAnalysis({
+      analysis: visionAnalysis,
+      decision,
+      symbol,
+      timeframe,
+      signalId,
+      thumbnailBase64,
+    });
+
+    req.log?.info(
+      { symbol, timeframe, signalId, trend: visionAnalysis.trend, decision: decision?.direction },
+      "Chart analysis complete",
+    );
+    res.json({ ok: true, analysis: visionAnalysis, historicalMatches, decision, decisionAvailable });
   } catch (err) {
     req.log?.warn({ err, symbol, timeframe }, "Chart analysis failed");
     res.status(500).json({ ok: false, error: (err as Error).message });

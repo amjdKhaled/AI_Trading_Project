@@ -1,13 +1,14 @@
 // ============================================================
 // Chart Analysis — qwen2.5-vl:7b vision model
 // Accepts a base64 chart image, returns structured ChartAnalysis.
-// Stores result in ai_chart_analyses table.
+// Persistence is handled separately via persistChartAnalysis().
 // ============================================================
 
 import { ollamaVisionGenerate } from "./ollama-vision.js";
 import { parseJsonFromResponse } from "./ollama.js";
 import { db, aiChartAnalysesTable } from "@workspace/db";
 import { logger } from "../logger.js";
+import type { ChartDecision } from "./chart-decision.js";
 
 const SYSTEM = `You are an expert technical analyst with 20 years of experience in equity markets. You analyze chart images with precision and identify key patterns, levels, and market structure. You respond ONLY with valid JSON — no preamble, no markdown outside the JSON block.`;
 
@@ -59,6 +60,7 @@ const VALID_TRENDS = ["strong_uptrend","uptrend","neutral","downtrend","strong_d
 const VALID_VOLUMES = ["expanding","contracting","climax","normal","weak"] as const;
 const VALID_STRUCTURES = ["higher_highs_lows","lower_highs_lows","range_bound","breakout","breakdown","unclear"] as const;
 
+// ── Phase 1: pure vision call (no DB side-effects) ────────────────
 export async function analyzeChart(params: {
   imageBase64: string;
   symbol?: string;
@@ -73,11 +75,10 @@ export async function analyzeChart(params: {
 
   const raw = await ollamaVisionGenerate(prompt, imageBase64, SYSTEM, 600);
 
-  let analysis: ChartAnalysis;
   try {
     const parsed = parseJsonFromResponse(raw) as Partial<ChartAnalysis>;
 
-    analysis = {
+    return {
       trend: VALID_TRENDS.includes(parsed.trend as never)
         ? (parsed.trend as ChartAnalysis["trend"]) : "neutral",
       patterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
@@ -99,7 +100,7 @@ export async function analyzeChart(params: {
     };
   } catch (parseErr) {
     logger.warn({ parseErr, raw: raw.slice(0, 200) }, "Chart analysis parse failed — using fallback");
-    analysis = {
+    return {
       trend: "neutral",
       patterns: [],
       resistanceLevels: [],
@@ -112,27 +113,47 @@ export async function analyzeChart(params: {
       confidence: 0,
     };
   }
+}
 
+// ── Phase 3: persist analysis + decision to DB in a single insert ──
+export async function persistChartAnalysis(params: {
+  analysis: ChartAnalysis;
+  decision?: ChartDecision | null;
+  symbol?: string;
+  timeframe?: string;
+  signalId?: string;
+  thumbnailBase64?: string;
+}): Promise<void> {
+  const { analysis, decision, symbol, timeframe, signalId, thumbnailBase64 } = params;
   try {
     await db.insert(aiChartAnalysesTable).values({
-      signalId:         signalId ?? null,
-      symbol:           symbol ?? null,
-      timeframe:        timeframe ?? null,
-      trend:            analysis.trend,
-      patterns:         analysis.patterns,
-      resistanceLevels: analysis.resistanceLevels,
-      supportLevels:    analysis.supportLevels,
-      volumeBehavior:   analysis.volumeBehavior,
-      marketStructure:  analysis.marketStructure,
-      supplyZones:      analysis.supplyZones,
-      demandZones:      analysis.demandZones,
-      summary:          analysis.summary,
-      confidence:       analysis.confidence,
-      rawResponse:      raw.slice(0, 4000),
+      signalId:                 signalId ?? null,
+      symbol:                   symbol ?? null,
+      timeframe:                timeframe ?? null,
+      trend:                    analysis.trend,
+      patterns:                 analysis.patterns,
+      resistanceLevels:         analysis.resistanceLevels,
+      supportLevels:            analysis.supportLevels,
+      volumeBehavior:           analysis.volumeBehavior,
+      marketStructure:          analysis.marketStructure,
+      supplyZones:              analysis.supplyZones,
+      demandZones:              analysis.demandZones,
+      summary:                  analysis.summary,
+      confidence:               analysis.confidence,
+      direction:                decision?.direction ?? null,
+      entryPrice:               decision?.entry ?? null,
+      slPrice:                  decision?.stopLoss ?? null,
+      tpPrice:                  decision?.takeProfit ?? null,
+      rrRatio:                  decision?.riskReward ?? null,
+      decisionConfidence:       decision?.confidence ?? null,
+      successProbability:       decision?.successProbability ?? null,
+      technicalReasoning:       decision?.technicalReasoning ?? null,
+      marketStructureReasoning: decision?.marketStructureReasoning ?? null,
+      historicalReasoning:      decision?.historicalReasoning ?? null,
+      thumbnailBase64:          thumbnailBase64 ?? null,
+      rawResponse:              null,
     });
   } catch (dbErr) {
     logger.warn({ dbErr }, "Failed to persist chart analysis to DB");
   }
-
-  return analysis;
 }
