@@ -26,9 +26,28 @@ interface MarkerPos {
 }
 interface ExitPos { x: number; y: number; isWin: boolean; }
 
+interface AiMarkerPos {
+  key: string;
+  x: number;
+  y: number;
+  entryY: number;
+  slY: number;
+  tpY: number;
+  rightX: number;
+  isLong: boolean;
+  confidence: number;
+  reasoning?: string;
+  marketBias?: string;
+  entryPrice: number;
+  slPrice: number;
+  tpPrice: number;
+  isActive: boolean;
+}
+
 interface Props {
   bars: Bar[];
   signals: SignalNew[];
+  aiSignals: SignalNew[];
   activeTrade: ActiveTrade | null;
   tradeResult: TradeResult | null;
   lastPrice: PriceUpdate | null;
@@ -62,7 +81,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -97,9 +116,11 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
 
   // stable refs for computeMarkers closure
   const signalsRef     = useRef<SignalNew[]>([]);
+  const aiSignalsRef   = useRef<SignalNew[]>([]);
   const activeTradeRef = useRef<ActiveTrade | null>(null);
   const tradeResultRef = useRef<TradeResult | null>(null);
   signalsRef.current     = signals;
+  aiSignalsRef.current   = aiSignals;
   activeTradeRef.current = activeTrade;
   tradeResultRef.current = tradeResult;
   barsRef.current        = bars;
@@ -111,6 +132,8 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
   const [activeZone, setActiveZone] = useState<{
     x: number; rightX: number; tpY: number; slY: number; isLong: boolean;
   } | null>(null);
+  const [aiMarkers, setAiMarkers]     = useState<AiMarkerPos[]>([]);
+  const [hoveredAiKey, setHoveredAiKey] = useState<string | null>(null);
 
   const removeSLTP = useCallback(() => {
     const cs = candleRef.current;
@@ -241,6 +264,79 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     }
   }, []);
 
+  const computeAiMarkers = useCallback(() => {
+    const chart  = chartRef.current;
+    const series = candleRef.current;
+    const el     = containerRef.current;
+    if (!chart || !series || !el) return;
+
+    const W    = el.offsetWidth;
+    const H    = el.offsetHeight;
+    const maxX = W - PRICE_SCALE_W;
+    const maxY = H * (1 - VOLUME_RATIO);
+    const snap = barsRef.current;
+
+    const byTime = new Map<number, Bar>();
+    for (const b of snap) byTime.set(b.time, b);
+    const nearestBar = (targetSec: number): Bar | undefined => {
+      const hit = byTime.get(targetSec);
+      if (hit) return hit;
+      let lo = 0, hi = snap.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (snap[mid].time < targetSec) lo = mid + 1; else hi = mid;
+      }
+      const cand = snap[lo];
+      if (!cand) return undefined;
+      const prev = snap[lo - 1];
+      if (prev && Math.abs(prev.time - targetSec) < Math.abs(cand.time - targetSec)) return prev;
+      return cand;
+    };
+
+    const clampY = (y: number) => Math.max(0, Math.min(maxY, y));
+    const positions: AiMarkerPos[] = [];
+
+    for (const sig of aiSignalsRef.current) {
+      if (!sig.barTime) continue;
+      const b = nearestBar(Math.floor(new Date(sig.barTime).getTime() / 1000));
+      if (!b) continue;
+
+      const x = chart.timeScale().timeToCoordinate(b.time as Time);
+      if (x === null || x < 0 || x > maxX) continue;
+
+      const entryY = series.priceToCoordinate(sig.entryPrice);
+      const slY    = series.priceToCoordinate(sig.slPrice);
+      const tpY    = series.priceToCoordinate(sig.tpPrice);
+      if (entryY === null || slY === null || tpY === null) continue;
+
+      const barPriceY = sig.side === "long"
+        ? series.priceToCoordinate(b.low)
+        : series.priceToCoordinate(b.high);
+      const labelY = barPriceY === null
+        ? (sig.side === "long" ? entryY + 30 : entryY - 30)
+        : (sig.side === "long" ? barPriceY + 16 : barPriceY - 16);
+
+      positions.push({
+        key:        sig.signalId,
+        x,
+        y:          clampY(labelY),
+        entryY:     clampY(entryY),
+        slY:        clampY(slY),
+        tpY:        clampY(tpY),
+        rightX:     maxX,
+        isLong:     sig.side === "long",
+        confidence: sig.confidence,
+        reasoning:  sig.aiReasoning,
+        marketBias: sig.aiMarketBias,
+        entryPrice: sig.entryPrice,
+        slPrice:    sig.slPrice,
+        tpPrice:    sig.tpPrice,
+        isActive:   !!activeTradeRef.current && sig.signalId === activeTradeRef.current.signalId,
+      });
+    }
+    setAiMarkers(positions);
+  }, []);
+
   // Chart init
   useEffect(() => {
     if (!containerRef.current) return;
@@ -335,16 +431,19 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     csmRef.current = csm;
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeMarkers);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(computeAiMarkers);
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
       chartRef.current.applyOptions({ width: containerRef.current.offsetWidth, height: containerRef.current.offsetHeight || 500 });
       computeMarkers();
+      computeAiMarkers();
     });
     ro.observe(containerRef.current);
 
     return () => {
       ro.disconnect();
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeMarkers);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeAiMarkers);
       removeSLTP();
       tradeIdRef.current = null;
       csmRef.current?.detach();
@@ -403,7 +502,8 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
     removeSLTP();
     tradeIdRef.current = null;
     setTimeout(computeMarkers, 80);
-  }, [bars, computeMarkers, removeSLTP]);
+    setTimeout(computeAiMarkers, 80);
+  }, [bars, computeMarkers, computeAiMarkers, removeSLTP]);
 
   // Active trade → SL/TP lines
   useEffect(() => {
@@ -446,6 +546,7 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
 
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
+  useEffect(() => { setTimeout(computeAiMarkers, 30); }, [aiSignals, computeAiMarkers]);
 
   // ── Live tick ingestion ────────────────────────────────────────────────────
   //
@@ -549,7 +650,89 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
               <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.937  0 0 0 0 0.325  0 0 0 0 0.314  0 0 0 0.9 0" result="cb"/>
               <feMerge><feMergeNode in="cb"/><feMergeNode in="SourceGraphic"/></feMerge>
             </filter>
+            {/* AI Decision Engine — stronger glow filters */}
+            <filter id="aiGlowLong" x="-120%" y="-120%" width="340%" height="340%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b"/>
+              <feColorMatrix in="b" type="matrix" values="0 0 0 0 0  0 0 0 0 1  0 0 0 0 0.53  0 0 0 1 0" result="cb"/>
+              <feMerge><feMergeNode in="cb"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="aiGlowShort" x="-120%" y="-120%" width="340%" height="340%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b"/>
+              <feColorMatrix in="b" type="matrix" values="0 0 0 0 1  0 0 0 0 0.2  0 0 0 0 0.27  0 0 0 1 0" result="cb"/>
+              <feMerge><feMergeNode in="cb"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
           </defs>
+
+          {/* ── AI Decision Engine layer ──────────────────────────────────────
+               R/R boxes, Entry/SL/TP price levels, and diamond markers.
+               Rendered BEFORE rule-based markers so diamonds sit on top. */}
+          {aiMarkers.map((m) => {
+            const G = "#00ff88";
+            const R = "#ff3346";
+            const col = m.isLong ? G : R;
+
+            const profitTop    = Math.min(m.entryY, m.tpY);
+            const profitHeight = Math.max(1, Math.abs(m.tpY - m.entryY));
+            const lossTop      = Math.min(m.slY, m.entryY);
+            const lossHeight   = Math.max(1, Math.abs(m.entryY - m.slY));
+            const boxX = Math.max(0, m.x - 3);
+            const boxW = Math.max(0, m.rightX - boxX);
+
+            const dHW = 9; const dHH = 13;
+            const diamondPts = [
+              `${m.x},${m.y - dHH}`,
+              `${m.x + dHW},${m.y}`,
+              `${m.x},${m.y + dHH}`,
+              `${m.x - dHW},${m.y}`,
+            ].join(" ");
+
+            return (
+              <g key={`ai-svg-${m.key}`}>
+                {/* Profit zone fill */}
+                <rect x={boxX} y={profitTop} width={boxW} height={profitHeight}
+                  fill={m.isLong ? "#00ff8808" : "#ff334608"} />
+                <rect x={boxX} y={profitTop} width={boxW} height={profitHeight}
+                  fill="none" stroke={m.isLong ? "#00ff8820" : "#ff334620"} strokeWidth={0.8} />
+                {/* Loss zone fill */}
+                <rect x={boxX} y={lossTop} width={boxW} height={lossHeight}
+                  fill={m.isLong ? "#ff334608" : "#00ff8808"} />
+                <rect x={boxX} y={lossTop} width={boxW} height={lossHeight}
+                  fill="none" stroke={m.isLong ? "#ff334620" : "#00ff8820"} strokeWidth={0.8} />
+                {/* TP line */}
+                <line x1={boxX} y1={m.tpY} x2={m.rightX} y2={m.tpY}
+                  stroke={G} strokeWidth={1} strokeDasharray="6 4" opacity={0.65} />
+                <text x={m.rightX - 4} y={m.tpY - 3} textAnchor="end"
+                  fill={G} fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" opacity={0.8}>
+                  TP {m.tpPrice.toFixed(2)}
+                </text>
+                {/* Entry line */}
+                <line x1={boxX} y1={m.entryY} x2={m.rightX} y2={m.entryY}
+                  stroke={col} strokeWidth={1} strokeDasharray="3 3" opacity={0.7} />
+                <text x={m.rightX - 4} y={m.entryY - 3} textAnchor="end"
+                  fill={col} fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" opacity={0.7}>
+                  E {m.entryPrice.toFixed(2)}
+                </text>
+                {/* SL line */}
+                <line x1={boxX} y1={m.slY} x2={m.rightX} y2={m.slY}
+                  stroke={R} strokeWidth={1} strokeDasharray="6 4" opacity={0.65} />
+                <text x={m.rightX - 4} y={m.slY + 10} textAnchor="end"
+                  fill={R} fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" opacity={0.8}>
+                  SL {m.slPrice.toFixed(2)}
+                </text>
+                {/* Diamond marker */}
+                <polygon points={diamondPts}
+                  fill={col} opacity={0.92}
+                  stroke={col} strokeWidth={0.8}
+                  filter={m.isLong ? "url(#aiGlowLong)" : "url(#aiGlowShort)"} />
+                {/* "AI" badge in diamond */}
+                <text x={m.x} y={m.y + 1} textAnchor="middle" dominantBaseline="middle"
+                  fill="#000" fontSize={6.5} fontWeight="900"
+                  fontFamily="'JetBrains Mono',Menlo,monospace">
+                  AI
+                </text>
+              </g>
+            );
+          })}
 
           {/* Active trade lifecycle zone: translucent band between TP and SL from entry → now */}
           {activeZone && (
@@ -682,6 +865,162 @@ export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPric
             </g>
           )}
         </svg>
+
+        {/* ── AI signal interactive labels ──────────────────────────────────
+             Separate div layer (pointer-events-auto) on top of SVG so hover
+             works. Each label is absolutely positioned from the same (x,y)
+             computed by computeAiMarkers. */}
+        {aiMarkers.map((m) => {
+          const col = m.isLong ? "#00ff88" : "#ff3346";
+          const isHov = hoveredAiKey === m.key;
+          const labelTopPx = m.isLong ? m.y + 14 : m.y - 50;
+          const rightSide  = m.x > 500;
+
+          return (
+            <div
+              key={`ai-lbl-${m.key}`}
+              style={{
+                position: "absolute",
+                left:         m.x - 39,
+                top:          labelTopPx,
+                zIndex:       20,
+                pointerEvents:"auto",
+                cursor:       "default",
+                userSelect:   "none",
+              }}
+              onMouseEnter={() => setHoveredAiKey(m.key)}
+              onMouseLeave={() => setHoveredAiKey(null)}
+            >
+              {/* Label pill */}
+              <div style={{
+                background:     `linear-gradient(135deg, ${col}1a, ${col}08)`,
+                border:         `1px solid ${col}55`,
+                borderRadius:   4,
+                padding:        "2px 7px",
+                minWidth:       78,
+                textAlign:      "center",
+                backdropFilter: "blur(4px)",
+                boxShadow:      `0 0 14px ${col}28`,
+              }}>
+                <div style={{
+                  fontFamily:  "'JetBrains Mono', Menlo, monospace",
+                  fontSize:    10,
+                  fontWeight:  800,
+                  color:       col,
+                  letterSpacing:"0.06em",
+                  lineHeight:  1.3,
+                  textShadow:  `0 0 9px ${col}80`,
+                }}>
+                  {m.isLong ? "AI LONG" : "AI SHORT"}
+                </div>
+                <div style={{
+                  fontFamily: "'JetBrains Mono', Menlo, monospace",
+                  fontSize:   9,
+                  fontWeight: 700,
+                  color: m.confidence >= 80
+                    ? "#00ff88"
+                    : m.confidence >= 70
+                    ? "#f59e0b"
+                    : "#ff3346",
+                  lineHeight: 1.2,
+                }}>
+                  {m.confidence}%
+                </div>
+              </div>
+
+              {/* Hover tooltip */}
+              {isHov && (
+                <div style={{
+                  position:      "absolute",
+                  [rightSide ? "right" : "left"]: 0,
+                  top:           m.isLong ? "100%" : "auto",
+                  bottom:        m.isLong ? "auto" : "100%",
+                  marginTop:     m.isLong ? 5 : 0,
+                  marginBottom:  m.isLong ? 0 : 5,
+                  zIndex:        30,
+                  background:    "#0c0f16f4",
+                  border:        `1px solid ${col}35`,
+                  borderRadius:  7,
+                  padding:       "9px 11px",
+                  width:         230,
+                  boxShadow:     `0 6px 28px #00000090, 0 0 18px ${col}18`,
+                  backdropFilter:"blur(10px)",
+                  fontFamily:    "'JetBrains Mono', Menlo, monospace",
+                }}>
+                  {/* Header */}
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:7, alignItems:"center" }}>
+                    <span style={{ fontSize:10, fontWeight:800, color:col, textShadow:`0 0 8px ${col}60` }}>
+                      {m.isLong ? "▲ AI LONG" : "▼ AI SHORT"}
+                    </span>
+                    <span style={{ fontSize:9, color:"#6b7280" }}>{m.confidence}% conf</span>
+                  </div>
+                  {/* Market bias */}
+                  {m.marketBias && (
+                    <div style={{ fontSize:9, color:"#9ca3af", marginBottom:5 }}>
+                      Bias: <span style={{ color:"#d1d5db", fontWeight:600 }}>{m.marketBias}</span>
+                    </div>
+                  )}
+                  {/* Trade levels grid */}
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:4, marginBottom:7 }}>
+                    {([ ["Entry", m.entryPrice.toFixed(2), "#e5e7eb"],
+                        ["SL",    m.slPrice.toFixed(2),    "#ff3346"],
+                        ["TP",    m.tpPrice.toFixed(2),    "#00ff88"] ] as const
+                    ).map(([lbl, val, clr]) => (
+                      <div key={lbl} style={{
+                        textAlign:"center",
+                        background:"#ffffff08",
+                        borderRadius:3,
+                        padding:"2px 0",
+                      }}>
+                        <div style={{ fontSize:7, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em" }}>{lbl}</div>
+                        <div style={{ fontSize:9, fontWeight:700, color:clr }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Reasoning */}
+                  {m.reasoning && (
+                    <div style={{
+                      fontSize:    9,
+                      color:       "#9ca3af",
+                      lineHeight:  1.55,
+                      borderTop:   "1px solid #ffffff10",
+                      paddingTop:  7,
+                    }}>
+                      {m.reasoning.length > 180
+                        ? m.reasoning.slice(0, 180) + "…"
+                        : m.reasoning}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Legend overlay — top-left of chart canvas */}
+        <div
+          style={{
+            position:      "absolute",
+            top:           8,
+            left:          8,
+            zIndex:        15,
+            background:    "#0b0e14cc",
+            border:        "1px solid #ffffff0e",
+            borderRadius:  5,
+            padding:       "4px 9px",
+            backdropFilter:"blur(6px)",
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{
+            fontFamily:"'JetBrains Mono', Menlo, monospace",
+            fontSize:   9,
+            lineHeight: 1.8,
+          }}>
+            <div style={{ color:"#60a5fa" }}>⚡ Generate Engine</div>
+            <div style={{ color:"#a78bfa" }}>🧠 AI Decision Engine</div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -156,6 +156,8 @@ export default function ChartPage() {
   const [devMock,     setDevMock]       = useState(false);
   const [deciding,    setDeciding]      = useState(false);
   const [aiResult,    setAiResult]      = useState<AiDecideResult | null>(null);
+  const [showRuleSignals, setShowRuleSignals] = useState(true);
+  const [showAiSignals,   setShowAiSignals]   = useState(true);
 
   const { bars, loading, error } = useHistoryBars(activeSymbol, timeframe);
   const { connected, lastPrice, isMarketOpen, realtimeAvailable, newSignals: wsSignals } = useMarketSocket(activeSymbol);
@@ -186,24 +188,33 @@ export default function ChartPage() {
       .then((data: unknown) => {
         if (ctrl.signal.aborted) return;
         if (!Array.isArray(data)) { setRestSignals([]); return; }
-        const mapped: SignalNew[] = (data as Record<string, unknown>[]).map((s) => ({
-          type: "signal.new" as const,
-          signalId:   String(s.signalId),
-          symbol:     String(s.symbol),
-          side:       (s.side as string) === "long" ? ("long" as const) : ("short" as const),
-          entryPrice: Number(s.entryPrice),
-          slPrice:    Number(s.slPrice),
-          tpPrice:    Number(s.tpPrice),
-          confidence: Number(s.confidence),
-          riskTag:    String(s.riskTag),
-          barTime:    new Date(String(s.barTime)).toISOString(),
-          grade:      s.grade as ("A+" | "A" | "B" | "Weak") | undefined,
-          patterns:   Array.isArray(s.patterns) ? (s.patterns as string[]) : undefined,
-          state:      (s.state as SignalNew["state"]) ?? "active",
-          exitPrice:  s.exitPrice == null ? null : Number(s.exitPrice),
-          exitBarTime: s.exitBarTime == null ? null : new Date(String(s.exitBarTime)).toISOString(),
-          exitReason:  s.exitReason == null ? null : String(s.exitReason),
-        }));
+        const mapped: SignalNew[] = (data as Record<string, unknown>[]).map((s) => {
+          const meta = (s.metadata ?? {}) as Record<string, unknown>;
+          const isAi = s.regime === "ai_generated" ||
+                       meta.aiDecision === true ||
+                       String(s.signalId ?? "").startsWith("AI");
+          return {
+            type: "signal.new" as const,
+            signalId:   String(s.signalId),
+            symbol:     String(s.symbol),
+            side:       (s.side as string) === "long" ? ("long" as const) : ("short" as const),
+            entryPrice: Number(s.entryPrice),
+            slPrice:    Number(s.slPrice),
+            tpPrice:    Number(s.tpPrice),
+            confidence: Number(s.confidence),
+            riskTag:    String(s.riskTag),
+            barTime:    new Date(String(s.barTime)).toISOString(),
+            grade:      s.grade as ("A+" | "A" | "B" | "Weak") | undefined,
+            patterns:   Array.isArray(s.patterns) ? (s.patterns as string[]) : undefined,
+            state:      (s.state as SignalNew["state"]) ?? "active",
+            exitPrice:  s.exitPrice == null ? null : Number(s.exitPrice),
+            exitBarTime: s.exitBarTime == null ? null : new Date(String(s.exitBarTime)).toISOString(),
+            exitReason:  s.exitReason == null ? null : String(s.exitReason),
+            isAiSignal:   isAi || undefined,
+            aiReasoning:  typeof meta.reasoning  === "string" ? meta.reasoning  : undefined,
+            aiMarketBias: typeof meta.marketBias === "string" ? meta.marketBias : undefined,
+          };
+        });
         setRestSignals(mapped);
       })
       .catch((e) => { if ((e as Error).name !== "AbortError") setRestSignals([]); });
@@ -351,9 +362,12 @@ export default function ChartPage() {
   // Deduplicate signals by signalId (WS + REST + optional mock merged).
   // Filter by activeSymbol so stale WS signals from a previously viewed
   // symbol can't bleed onto the new symbol's chart after switching.
-  const allSignals: SignalNew[] = [...wsSignals, ...restSignals, ...mockSignals]
+  const allSignalsDeduped = [...wsSignals, ...restSignals, ...mockSignals]
     .filter((sig) => !activeSymbol || sig.symbol === activeSymbol)
     .filter((sig, idx, arr) => arr.findIndex((s) => s.signalId === sig.signalId) === idx);
+
+  const ruleSignals = showRuleSignals ? allSignalsDeduped.filter((s) => !s.isAiSignal) : [];
+  const aiSignals   = showAiSignals   ? allSignalsDeduped.filter((s) =>  s.isAiSignal) : [];
 
   return (
     <div className="flex h-full" data-testid="chart-page">
@@ -416,6 +430,28 @@ export default function ChartPage() {
                 MOCK
               </button>
             )}
+          </div>
+
+          {/* Signal source filters */}
+          <div className="ml-auto flex items-center gap-3 pl-3 border-l border-white/5">
+            <label className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors">
+              <input
+                type="checkbox"
+                checked={showRuleSignals}
+                onChange={(e) => setShowRuleSignals(e.target.checked)}
+                className="accent-sky-500 w-3 h-3 cursor-pointer"
+              />
+              <span>⚡ Generate</span>
+            </label>
+            <label className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors">
+              <input
+                type="checkbox"
+                checked={showAiSignals}
+                onChange={(e) => setShowAiSignals(e.target.checked)}
+                className="accent-violet-500 w-3 h-3 cursor-pointer"
+              />
+              <span>🧠 AI</span>
+            </label>
           </div>
 
           {/* Active trade badge */}
@@ -531,7 +567,8 @@ export default function ChartPage() {
           <TradingChart
             key={`${activeSymbol}-${timeframe}`}
             bars={bars}
-            signals={allSignals}
+            signals={ruleSignals}
+            aiSignals={aiSignals}
             activeTrade={activeTrade}
             tradeResult={tradeResult}
             lastPrice={lastPrice}
