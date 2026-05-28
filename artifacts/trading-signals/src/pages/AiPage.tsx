@@ -76,6 +76,15 @@ function WrBar({ wins, total }: { wins: number; total: number }) {
   );
 }
 
+interface ClosedSignal {
+  signalId: string;
+  side: string;
+  pattern: string | null;
+  state: string;
+  barTime: string;
+  confidence: number;
+}
+
 export default function AiPage() {
   const { activeSymbol } = useActiveSymbol();
   const [status, setStatus]     = useState<AiStatus | null>(null);
@@ -88,6 +97,7 @@ export default function AiPage() {
   const [batching, setBatching]           = useState(false);
   const [batchResult, setBatchResult]     = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "regime" | "strategy" | "lessons">("overview");
+  const [closedSignals, setClosedSignals] = useState<ClosedSignal[]>([]);
 
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -115,6 +125,23 @@ export default function AiPage() {
   // Keep batch import symbol in sync with the chart's active symbol
   useEffect(() => {
     if (activeSymbol) setBatchSymbol(activeSymbol);
+  }, [activeSymbol]);
+
+  // Load closed signals for the reflect dropdown whenever the active symbol changes.
+  // Only closed trades can be reflected on — active ones haven't resolved yet.
+  useEffect(() => {
+    if (!activeSymbol) return;
+    fetch(`${BASE}/api/signals?symbol=${activeSymbol}&timeframe=5m&limit=200`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: ClosedSignal[]) => {
+        const closed = rows.filter(r => r.state !== "active");
+        setClosedSignals(closed);
+        // Auto-select the first closed signal so the button is ready immediately
+        if (closed.length > 0 && !reflectId) setReflectId(closed[0].signalId);
+      })
+      .catch(() => setClosedSignals([]));
+  // reflectId intentionally excluded — we only auto-select on symbol change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSymbol]);
 
   async function handleReflect() {
@@ -418,18 +445,32 @@ export default function AiPage() {
             </div>
             <p className="text-[11px] text-muted-foreground mb-2.5">
               {status?.available
-                ? "Enter a signal ID to run AI reflection with Ollama."
+                ? "Pick a closed trade for Ollama to reflect on."
                 : "Ollama offline — reflection will store trade without lesson."}
             </p>
-            <input
-              value={reflectId}
-              onChange={e => setReflectId(e.target.value)}
-              placeholder="Signal ID (e.g. AB3X7YKQ2NMP)"
-              className="w-full h-7 text-xs bg-background border border-border rounded px-2 mb-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
-            />
+
+            {closedSignals.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground italic mb-2">
+                No closed signals for {activeSymbol ?? "this symbol"} yet.
+                Run Generate on the Chart page first.
+              </p>
+            ) : (
+              <select
+                value={reflectId}
+                onChange={e => { setReflectId(e.target.value); setReflectResult(null); }}
+                className="w-full h-7 text-[11px] bg-background border border-border rounded px-1.5 mb-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {closedSignals.map(s => {
+                  const date = new Date(s.barTime).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  const label = `${s.side.toUpperCase()} · ${s.pattern ?? "signal"} · ${date} · ${s.state.replace("_", " ")}`;
+                  return <option key={s.signalId} value={s.signalId}>{label}</option>;
+                })}
+              </select>
+            )}
+
             <button
               onClick={handleReflect}
-              disabled={reflecting || !reflectId.trim()}
+              disabled={reflecting || !reflectId.trim() || closedSignals.length === 0}
               className="w-full h-7 text-xs rounded bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
               {reflecting
