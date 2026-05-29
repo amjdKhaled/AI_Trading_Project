@@ -516,18 +516,22 @@ components:
 
     AiDecision:
       type: object
-      required: [direction, confidence, entry, stopLoss, takeProfit, riskReward, technicalReasoning, marketStructureReasoning, historicalReasoning, successProbability]
+      required: [direction, confidence, entry, stopLoss, takeProfit1, takeProfit2, takeProfit3, riskReward, technicalReasoning, marketStructureReasoning, historicalReasoning, successProbability]
       properties:
         direction:
           type: string
-          enum: [BUY, SELL, NO_TRADE]
+          enum: [LONG, SHORT, NO_TRADE]
         confidence:
           type: integer
         entry:
           type: number
         stopLoss:
           type: number
-        takeProfit:
+        takeProfit1:
+          type: number
+        takeProfit2:
+          type: number
+        takeProfit3:
           type: number
         riskReward:
           type: number
@@ -539,6 +543,18 @@ components:
           type: string
         successProbability:
           type: integer
+        noTradeReason:
+          type: string
+        noTradeMissingCondition:
+          type: string
+        noTradeBreakoutLevel:
+          type: number
+        noTradeBreakdownLevel:
+          type: number
+        noTradeConfirmationCandle:
+          type: string
+        noTradeVolumeCondition:
+          type: string
 
     ChartAnalysisResponse:
       type: object

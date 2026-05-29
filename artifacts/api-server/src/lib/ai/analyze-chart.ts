@@ -143,7 +143,7 @@ export async function persistChartAnalysis(params: {
       direction:                decision?.direction ?? null,
       entryPrice:               decision?.entry ?? null,
       slPrice:                  decision?.stopLoss ?? null,
-      tpPrice:                  decision?.takeProfit ?? null,
+      tpPrice:                  decision?.takeProfit1 ?? null,
       rrRatio:                  decision?.riskReward ?? null,
       decisionConfidence:       decision?.confidence ?? null,
       successProbability:       decision?.successProbability ?? null,

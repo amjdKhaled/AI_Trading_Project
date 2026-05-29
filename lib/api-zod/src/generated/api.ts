@@ -218,16 +218,24 @@ export const AnalyzeChartResponse = zod.object({
   "recentOutcomes": zod.array(zod.string())
 })),
   "decision": zod.object({
-  "direction": zod.enum(['BUY', 'SELL', 'NO_TRADE']),
+  "direction": zod.enum(['LONG', 'SHORT', 'NO_TRADE']),
   "confidence": zod.number(),
   "entry": zod.number(),
   "stopLoss": zod.number(),
-  "takeProfit": zod.number(),
+  "takeProfit1": zod.number(),
+  "takeProfit2": zod.number(),
+  "takeProfit3": zod.number(),
   "riskReward": zod.number(),
   "technicalReasoning": zod.string(),
   "marketStructureReasoning": zod.string(),
   "historicalReasoning": zod.string(),
-  "successProbability": zod.number()
+  "successProbability": zod.number(),
+  "noTradeReason": zod.string().optional(),
+  "noTradeMissingCondition": zod.string().optional(),
+  "noTradeBreakoutLevel": zod.number().optional(),
+  "noTradeBreakdownLevel": zod.number().optional(),
+  "noTradeConfirmationCandle": zod.string().optional(),
+  "noTradeVolumeCondition": zod.string().optional()
 }).optional(),
   "decisionAvailable": zod.boolean().optional()
 })

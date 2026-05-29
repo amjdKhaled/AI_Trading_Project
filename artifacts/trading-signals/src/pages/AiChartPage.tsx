@@ -64,14 +64,14 @@ function TrendIcon({ trend }: { trend: string }) {
 
 function DirectionBadge({ direction }: { direction: string | null | undefined }) {
   if (!direction) return null;
-  if (direction === "BUY") return (
+  if (direction === "LONG") return (
     <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-      <ArrowUpCircle size={12} /> BUY
+      <ArrowUpCircle size={12} /> LONG
     </span>
   );
-  if (direction === "SELL") return (
+  if (direction === "SHORT") return (
     <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">
-      <ArrowDownCircle size={12} /> SELL
+      <ArrowDownCircle size={12} /> SHORT
     </span>
   );
   return (
@@ -151,9 +151,9 @@ function ChartAnnotation({
       const tradeLevels: { price: number; type: "entry" | "sl" | "tp" }[] = [];
       if (decision) {
         tradeLevels.push(
-          { price: decision.entry,      type: "entry" },
-          { price: decision.stopLoss,   type: "sl" },
-          { price: decision.takeProfit, type: "tp" },
+          { price: decision.entry,        type: "entry" },
+          { price: decision.stopLoss,     type: "sl" },
+          { price: decision.takeProfit1,  type: "tp" },
         );
       }
 
@@ -257,64 +257,165 @@ function drawTrendBadge(ctx: CanvasRenderingContext2D, trend: string, w: number,
 // ── Decision card ─────────────────────────────────────────────────
 
 function DecisionCard({ decision, isLive, updatedAt }: { decision: AiDecision; isLive?: boolean; updatedAt?: Date | null }) {
-  const dirColor = decision.direction === "BUY" ? "border-emerald-500/40 bg-emerald-500/5"
-    : decision.direction === "SELL" ? "border-red-500/40 bg-red-500/5"
-    : "border-amber-500/40 bg-amber-500/5";
+  const isLong    = decision.direction === "LONG";
+  const isShort   = decision.direction === "SHORT";
+  const isNoTrade = decision.direction === "NO_TRADE";
+
+  const bannerBg   = isLong ? "bg-emerald-500" : isShort ? "bg-red-500" : "bg-amber-500";
+  const bannerText = isLong ? "text-emerald-950" : isShort ? "text-red-950" : "text-amber-950";
+  const borderCol  = isLong ? "border-emerald-500/30" : isShort ? "border-red-500/30" : "border-amber-500/30";
+  const bgTint     = isLong ? "bg-emerald-500/5" : isShort ? "bg-red-500/5" : "bg-amber-500/5";
+  const dirIcon    = isLong ? "🟢" : isShort ? "🔴" : "🟡";
+  const dirLabel   = isLong ? "LONG" : isShort ? "SHORT" : "NO TRADE";
 
   return (
-    <div className={`border rounded p-4 space-y-4 ${dirColor}`}>
-      <div className="flex items-center justify-between">
+    <div className={`border rounded overflow-hidden ${borderCol} ${bgTint}`}>
+
+      {/* ── Prominent direction banner ── */}
+      <div className={`${bannerBg} ${bannerText} px-5 py-3 flex items-center justify-between`}>
+        <div className="flex items-center gap-3">
+          <span className="text-2xl leading-none">{dirIcon}</span>
+          <div>
+            <div className="text-xl font-black tracking-widest">{dirLabel}</div>
+            <div className="text-[11px] font-medium opacity-80">
+              Confidence: {decision.confidence}% · Success Probability: {decision.successProbability}%
+            </div>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
-          <Brain size={16} className="text-primary" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trade Decision</span>
           {isLive && (
-            <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+            <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-white/20 animate-pulse">
               <Radio size={8} /> LIVE
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-2">
           {updatedAt && (
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[10px] opacity-70">
               {updatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           )}
-          <DirectionBadge direction={decision.direction} />
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
-        {[
-          { label: "Entry",  value: decision.entry.toFixed(2),           color: "text-indigo-400" },
-          { label: "Stop",   value: decision.stopLoss.toFixed(2),         color: "text-red-400"  },
-          { label: "Target", value: decision.takeProfit.toFixed(2),       color: "text-emerald-400" },
-          { label: "R:R",    value: `1 : ${decision.riskReward.toFixed(1)}`, color: "text-foreground" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="bg-card border border-border rounded p-2 text-center">
-            <div className="text-[10px] text-muted-foreground mb-0.5">{label}</div>
-            <div className={`text-sm font-mono font-bold ${color}`}>{value}</div>
-          </div>
-        ))}
-      </div>
+      <div className="p-4 space-y-4">
 
-      <div className="space-y-2">
-        <ConfidenceMeter value={decision.confidence} label="Decision Confidence" />
-        <ConfidenceMeter value={decision.successProbability} label="Success Probability" />
-      </div>
-
-      <div className="space-y-2">
-        {[
-          { title: "Technical",         text: decision.technicalReasoning },
-          { title: "Market Structure",  text: decision.marketStructureReasoning },
-          { title: "Historical Context",text: decision.historicalReasoning },
-        ].map(({ title, text }) =>
-          text ? (
-            <div key={title} className="bg-card border border-border rounded p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{title}</div>
-              <p className="text-[11px] leading-relaxed text-foreground">{text}</p>
+        {/* ── LONG / SHORT trade plan ── */}
+        {!isNoTrade && decision.entry > 0 && (
+          <>
+            {/* Entry + SL row */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-card border border-indigo-500/20 rounded p-3 text-center">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">Entry</div>
+                <div className="text-lg font-mono font-bold text-indigo-300">{decision.entry.toFixed(2)}</div>
+              </div>
+              <div className="bg-card border border-red-500/20 rounded p-3 text-center">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-1">Stop Loss</div>
+                <div className="text-lg font-mono font-bold text-red-300">{decision.stopLoss.toFixed(2)}</div>
+              </div>
             </div>
-          ) : null
+
+            {/* TP1 / TP2 / TP3 row */}
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "TP 1", value: decision.takeProfit1, hint: "1st target" },
+                { label: "TP 2", value: decision.takeProfit2, hint: "extended" },
+                { label: "TP 3", value: decision.takeProfit3, hint: "runner" },
+              ].map(({ label, value, hint }) => (
+                <div key={label} className="bg-card border border-emerald-500/20 rounded p-3 text-center">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 mb-0.5">{label}</div>
+                  <div className={`text-sm font-mono font-bold ${value > 0 ? "text-emerald-300" : "text-muted-foreground"}`}>
+                    {value > 0 ? value.toFixed(2) : "—"}
+                  </div>
+                  <div className="text-[9px] text-muted-foreground/60 mt-0.5">{hint}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* R:R */}
+            <div className="flex items-center justify-center gap-2 py-1">
+              <span className="text-xs text-muted-foreground">Risk/Reward:</span>
+              <span className={`text-sm font-mono font-bold ${decision.riskReward >= 2 ? "text-emerald-400" : decision.riskReward >= 1.5 ? "text-amber-400" : "text-red-400"}`}>
+                1 : {decision.riskReward.toFixed(2)}
+              </span>
+            </div>
+
+            {/* Confidence meters */}
+            <div className="space-y-2">
+              <ConfidenceMeter value={decision.confidence} label="Decision Confidence" />
+              <ConfidenceMeter value={decision.successProbability} label="Success Probability" />
+            </div>
+          </>
         )}
+
+        {/* ── NO_TRADE explanation ── */}
+        {isNoTrade && (
+          <div className="space-y-3">
+            {decision.noTradeReason && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-400 mb-1">Why No Trade</div>
+                <p className="text-xs text-foreground leading-relaxed">{decision.noTradeReason}</p>
+              </div>
+            )}
+            {decision.noTradeMissingCondition && (
+              <div className="bg-card border border-border rounded p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Missing Condition</div>
+                <p className="text-xs text-foreground leading-relaxed">{decision.noTradeMissingCondition}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              {decision.noTradeBreakoutLevel != null && decision.noTradeBreakoutLevel > 0 && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded p-3">
+                  <div className="text-[10px] text-emerald-400 font-semibold uppercase mb-1">LONG trigger</div>
+                  <div className="text-base font-mono font-bold text-emerald-300">
+                    {decision.noTradeBreakoutLevel.toFixed(2)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Breakout above</div>
+                </div>
+              )}
+              {decision.noTradeBreakdownLevel != null && decision.noTradeBreakdownLevel > 0 && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded p-3">
+                  <div className="text-[10px] text-red-400 font-semibold uppercase mb-1">SHORT trigger</div>
+                  <div className="text-base font-mono font-bold text-red-300">
+                    {decision.noTradeBreakdownLevel.toFixed(2)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Breakdown below</div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              {decision.noTradeConfirmationCandle && (
+                <div className="bg-card border border-border rounded p-2.5">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Confirmation Candle</div>
+                  <p className="text-xs text-foreground">{decision.noTradeConfirmationCandle}</p>
+                </div>
+              )}
+              {decision.noTradeVolumeCondition && (
+                <div className="bg-card border border-border rounded p-2.5">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Volume Condition</div>
+                  <p className="text-xs text-foreground">{decision.noTradeVolumeCondition}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Reasoning (both directions) ── */}
+        <div className="space-y-2">
+          {[
+            { title: "Technical Analysis",   text: decision.technicalReasoning },
+            { title: "Market Structure",      text: decision.marketStructureReasoning },
+            { title: "Historical Context",    text: decision.historicalReasoning },
+          ].map(({ title, text }) =>
+            text ? (
+              <div key={title} className="bg-card border border-border rounded p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{title}</div>
+                <p className="text-[11px] leading-relaxed text-foreground">{text}</p>
+              </div>
+            ) : null
+          )}
+        </div>
+
       </div>
     </div>
   );

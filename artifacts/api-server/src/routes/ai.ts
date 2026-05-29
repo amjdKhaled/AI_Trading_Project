@@ -395,7 +395,7 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
           {
             symbol, model: MODEL, elapsedMs: phase2Ms, elapsedSec: Math.round(phase2Ms / 100) / 10,
             direction: decision.direction, confidence: decision.confidence,
-            entry: decision.entry, sl: decision.stopLoss, tp: decision.takeProfit, rr: decision.riskReward,
+            entry: decision.entry, sl: decision.stopLoss, tp: decision.takeProfit1, rr: decision.riskReward,
           },
           "[Phase 2 COMPLETE] Decision engine result",
         );

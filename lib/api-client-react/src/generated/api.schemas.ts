@@ -210,8 +210,8 @@ export type AiDecisionDirection = typeof AiDecisionDirection[keyof typeof AiDeci
 
 
 export const AiDecisionDirection = {
-  BUY: 'BUY',
-  SELL: 'SELL',
+  LONG: 'LONG',
+  SHORT: 'SHORT',
   NO_TRADE: 'NO_TRADE',
 } as const;
 
@@ -220,12 +220,20 @@ export interface AiDecision {
   confidence: number;
   entry: number;
   stopLoss: number;
-  takeProfit: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  takeProfit3: number;
   riskReward: number;
   technicalReasoning: string;
   marketStructureReasoning: string;
   historicalReasoning: string;
   successProbability: number;
+  noTradeReason?: string;
+  noTradeMissingCondition?: string;
+  noTradeBreakoutLevel?: number;
+  noTradeBreakdownLevel?: number;
+  noTradeConfirmationCandle?: string;
+  noTradeVolumeCondition?: string;
 }
 
 export interface SimilarityMatch {

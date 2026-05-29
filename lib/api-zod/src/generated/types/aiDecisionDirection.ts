@@ -10,7 +10,7 @@ export type AiDecisionDirection = typeof AiDecisionDirection[keyof typeof AiDeci
 
 
 export const AiDecisionDirection = {
-  BUY: 'BUY',
-  SELL: 'SELL',
+  LONG: 'LONG',
+  SHORT: 'SHORT',
   NO_TRADE: 'NO_TRADE',
 } as const;

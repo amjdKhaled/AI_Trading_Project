@@ -12,10 +12,18 @@ export interface AiDecision {
   confidence: number;
   entry: number;
   stopLoss: number;
-  takeProfit: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  takeProfit3: number;
   riskReward: number;
   technicalReasoning: string;
   marketStructureReasoning: string;
   historicalReasoning: string;
   successProbability: number;
+  noTradeReason?: string;
+  noTradeMissingCondition?: string;
+  noTradeBreakoutLevel?: number;
+  noTradeBreakdownLevel?: number;
+  noTradeConfirmationCandle?: string;
+  noTradeVolumeCondition?: string;
 }
