@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Database, BookOpen, BarChart2, Activity, RefreshCw,
   TrendingUp, TrendingDown, Minus, AlertTriangle, Clock, Filter,
+  GraduationCap, Zap,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -615,6 +616,8 @@ export default function AiMemoryPage() {
   const [error, setError]           = useState<string | null>(null);
   const [diag, setDiag]             = useState<DiagData | null>(null);
   const [diagOpen, setDiagOpen]     = useState(false);
+  const [learningAll, setLearningAll] = useState(false);
+  const [learnResult, setLearnResult] = useState<{ processed: number; errors: number; total: number; symbols: string[] } | null>(null);
 
   const fetchMemory = useCallback(async () => {
     try {
@@ -659,6 +662,27 @@ export default function AiMemoryPage() {
     setLoading(false);
   }, [fetchMemory, fetchTabData, fetchDiag]);
 
+  const handleLearnAll = useCallback(async () => {
+    setLearningAll(true);
+    setLearnResult(null);
+    try {
+      const r = await fetch(`${BASE}/api/ai/learn-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ useAi: false }),
+      });
+      const d = await r.json() as { ok: boolean; processed: number; errors: number; total: number; symbols: string[] };
+      if (d.ok) {
+        setLearnResult(d);
+        await fetchAll();
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLearningAll(false);
+    }
+  }, [fetchAll]);
+
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const handleTabChange = (tab: TabId) => {
@@ -695,7 +719,7 @@ export default function AiMemoryPage() {
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="px-5 py-3.5 border-b border-border flex-shrink-0">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Database size={15} className="text-primary" />
             <div>
@@ -703,11 +727,45 @@ export default function AiMemoryPage() {
               <p className="text-[11px] text-muted-foreground mt-0.5">Lessons · Pattern History · Market Regimes · Historical Setups</p>
             </div>
           </div>
-          <button onClick={fetchAll}
-            className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
-            <RefreshCw size={13} />
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Auto Learn status — always ON: server auto-reflects every closed trade */}
+            <span className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <Zap size={9} /> Auto Learn: ON
+            </span>
+
+            {/* Learn Everything — batch-reflect all closed trades */}
+            <button
+              onClick={handleLearnAll}
+              disabled={learningAll}
+              title="Analyze all historical trades and populate AI Memory with lessons"
+              className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors disabled:opacity-50 disabled:cursor-wait"
+            >
+              {learningAll
+                ? <RefreshCw size={11} className="animate-spin" />
+                : <GraduationCap size={11} />}
+              {learningAll ? "Learning…" : "Learn Everything"}
+            </button>
+
+            <button onClick={fetchAll}
+              className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+              <RefreshCw size={13} />
+            </button>
+          </div>
         </div>
+
+        {/* Learn-all result banner */}
+        {learnResult && (
+          <div className="mt-2 flex items-center gap-2 text-[11px] bg-emerald-500/10 border border-emerald-500/20 rounded px-3 py-1.5 text-emerald-400">
+            <GraduationCap size={12} />
+            <span>
+              Learned from <strong>{learnResult.processed}</strong> trades
+              {learnResult.errors > 0 ? `, ${learnResult.errors} skipped` : ""}
+              {" "}across {learnResult.symbols.length} symbol{learnResult.symbols.length !== 1 ? "s" : ""}
+              {" "}({learnResult.symbols.join(", ")})
+            </span>
+            <button onClick={() => setLearnResult(null)} className="ml-auto text-emerald-400/60 hover:text-emerald-400">×</button>
+          </div>
+        )}
 
         {/* KPIs */}
         <div className="grid grid-cols-4 gap-2 mt-3">

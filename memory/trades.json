@@ -1,8 +1,138 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-28T18:45:32.118Z",
-  "totalTrades": 795,
+  "updatedAt": "2026-05-29T15:55:08.958Z",
+  "totalTrades": 800,
   "trades": [
+    {
+      "id": "2P57L7NXJZQC",
+      "timestamp": "2025-12-17T18:10:00.000Z",
+      "symbol": "NVDA",
+      "timeframe": "5m",
+      "side": "short",
+      "strategy": "trend_pullback",
+      "regime": "trending-down",
+      "session": "midday",
+      "htfBias": "neutral",
+      "confluenceCount": 7,
+      "confidence": 100,
+      "grade": "A+",
+      "riskLevel": "Safe",
+      "rrRatio": 2.5,
+      "entryPrice": 171.89,
+      "slPrice": 172.96,
+      "tpPrice": 169.21,
+      "exitPrice": 172.96,
+      "outcome": "sl_hit",
+      "volumeState": "neutral",
+      "structureState": "downtrend",
+      "patterns": [
+        "Bearish Engulfing"
+      ]
+    },
+    {
+      "id": "EFSHNBDRPXXE",
+      "timestamp": "2025-12-12T18:20:00.000Z",
+      "symbol": "NVDA",
+      "timeframe": "5m",
+      "side": "short",
+      "strategy": "momentum",
+      "regime": "trending-down",
+      "session": "midday",
+      "htfBias": "neutral",
+      "confluenceCount": 6,
+      "confidence": 94,
+      "grade": "A",
+      "riskLevel": "Safe",
+      "rrRatio": 2.51,
+      "entryPrice": 177.36,
+      "slPrice": 178.33,
+      "tpPrice": 174.93,
+      "exitPrice": 174.93,
+      "outcome": "tp_hit",
+      "volumeState": "neutral",
+      "structureState": "downtrend",
+      "patterns": [
+        "Bearish Belt Hold"
+      ]
+    },
+    {
+      "id": "XAXHZR7SCXBZ",
+      "timestamp": "2025-12-08T17:25:00.000Z",
+      "symbol": "NVDA",
+      "timeframe": "5m",
+      "side": "long",
+      "strategy": "trend_pullback",
+      "regime": "trending-up",
+      "session": "midday",
+      "htfBias": "neutral",
+      "confluenceCount": 6,
+      "confidence": 100,
+      "grade": "A+",
+      "riskLevel": "Safe",
+      "rrRatio": 2.47,
+      "entryPrice": 183.41,
+      "slPrice": 182.82,
+      "tpPrice": 184.87,
+      "exitPrice": 184.87,
+      "outcome": "tp_hit",
+      "volumeState": "neutral",
+      "structureState": "mixed",
+      "patterns": [
+        "Hammer"
+      ]
+    },
+    {
+      "id": "Z8TFDRBLLCQM",
+      "timestamp": "2025-12-04T18:50:00.000Z",
+      "symbol": "NVDA",
+      "timeframe": "5m",
+      "side": "long",
+      "strategy": "trend_pullback",
+      "regime": "trending-up",
+      "session": "midday",
+      "htfBias": "neutral",
+      "confluenceCount": 7,
+      "confidence": 100,
+      "grade": "A",
+      "riskLevel": "Safe",
+      "rrRatio": 2.45,
+      "entryPrice": 183.42,
+      "slPrice": 182.98,
+      "tpPrice": 184.5,
+      "exitPrice": 182.98,
+      "outcome": "sl_hit",
+      "volumeState": "neutral",
+      "structureState": "mixed",
+      "patterns": [
+        "Double Bottom"
+      ]
+    },
+    {
+      "id": "S5YER3A48FL9",
+      "timestamp": "2025-12-03T15:05:00.000Z",
+      "symbol": "NVDA",
+      "timeframe": "5m",
+      "side": "short",
+      "strategy": "momentum",
+      "regime": "ranging",
+      "session": "open",
+      "htfBias": "neutral",
+      "confluenceCount": 5,
+      "confidence": 92,
+      "grade": "A",
+      "riskLevel": "Safe",
+      "rrRatio": 2.5,
+      "entryPrice": 180.38,
+      "slPrice": 181.98,
+      "tpPrice": 176.38,
+      "exitPrice": 181.98,
+      "outcome": "sl_hit",
+      "volumeState": "neutral",
+      "structureState": "downtrend",
+      "patterns": [
+        "Tweezer Top"
+      ]
+    },
     {
       "id": "ADY2NQNBMMSZ",
       "timestamp": "2026-05-22T16:35:00.000Z",
@@ -20690,19 +20820,19 @@
   ],
   "regimeStats": {
     "trending-down": {
-      "wins": 98,
-      "losses": 158,
-      "total": 256
+      "wins": 99,
+      "losses": 159,
+      "total": 258
     },
     "trending-up": {
-      "wins": 80,
-      "losses": 325,
-      "total": 405
+      "wins": 81,
+      "losses": 326,
+      "total": 407
     },
     "ranging": {
       "wins": 26,
-      "losses": 102,
-      "total": 128
+      "losses": 103,
+      "total": 129
     },
     "vol-expansion": {
       "wins": 3,
@@ -20712,9 +20842,9 @@
   },
   "strategyStats": {
     "trend_pullback": {
-      "wins": 112,
-      "losses": 290,
-      "total": 402
+      "wins": 113,
+      "losses": 292,
+      "total": 405
     },
     "breakout_retest": {
       "wins": 34,
@@ -20722,9 +20852,9 @@
       "total": 152
     },
     "momentum": {
-      "wins": 23,
-      "losses": 55,
-      "total": 78
+      "wins": 24,
+      "losses": 56,
+      "total": 80
     },
     "compression_pullback": {
       "wins": 14,
@@ -20754,9 +20884,9 @@
       "total": 345
     },
     "NVDA": {
-      "wins": 100,
-      "losses": 350,
-      "total": 450
+      "wins": 102,
+      "losses": 353,
+      "total": 455
     }
   },
   "recentLessons": [

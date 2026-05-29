@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Upload, X, Brain, TrendingUp, TrendingDown, Minus, Eye,
   ChevronDown, ChevronUp, Layers, CheckCircle, AlertTriangle,
-  ArrowUpCircle, ArrowDownCircle, MinusCircle,
+  ArrowUpCircle, ArrowDownCircle, MinusCircle, Radio, RefreshCw,
 } from "lucide-react";
 import {
   useListChartAnalyses,
@@ -29,7 +29,6 @@ function dataUrlToBase64(dataUrl: string): string {
   return dataUrl.split(",")[1] ?? dataUrl;
 }
 
-/** Shrink an image data-URL to a small thumbnail and return base64 PNG. */
 async function makeThumbnail(dataUrl: string, tw = 160, th = 100): Promise<string> {
   return new Promise(resolve => {
     const img = new Image();
@@ -149,12 +148,11 @@ function ChartAnnotation({
         ...analysis.supportLevels.map(p => ({ price: p, type: "support" as const })),
       ];
 
-      // Collect all prices to build the scale, including decision levels
       const tradeLevels: { price: number; type: "entry" | "sl" | "tp" }[] = [];
       if (decision) {
         tradeLevels.push(
-          { price: decision.entry,     type: "entry" },
-          { price: decision.stopLoss,  type: "sl" },
+          { price: decision.entry,      type: "entry" },
+          { price: decision.stopLoss,   type: "sl" },
           { price: decision.takeProfit, type: "tp" },
         );
       }
@@ -177,7 +175,6 @@ function ChartAnnotation({
       const supplySet = new Set(analysis.supplyZones);
       const demandSet = new Set(analysis.demandZones);
 
-      // Draw S/R lines
       for (const { price, type } of srLevels) {
         const y = priceToY(price);
         const isZone = supplySet.has(price) || demandSet.has(price);
@@ -197,7 +194,6 @@ function ChartAnnotation({
         ctx.fillText(price.toFixed(2), 6, y - 3);
       }
 
-      // Draw Entry / SL / TP dashed lines with bold labels
       for (const { price, type } of tradeLevels) {
         if (!price || price <= 0) continue;
         const y = priceToY(price);
@@ -216,7 +212,6 @@ function ChartAnnotation({
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Label pill
         ctx.font = "bold 10px monospace";
         const tw = ctx.measureText(label).width;
         const px = dims.w - tw - 16;
@@ -261,28 +256,38 @@ function drawTrendBadge(ctx: CanvasRenderingContext2D, trend: string, w: number,
 
 // ── Decision card ─────────────────────────────────────────────────
 
-function DecisionCard({ decision }: { decision: AiDecision }) {
+function DecisionCard({ decision, isLive, updatedAt }: { decision: AiDecision; isLive?: boolean; updatedAt?: Date | null }) {
   const dirColor = decision.direction === "BUY" ? "border-emerald-500/40 bg-emerald-500/5"
     : decision.direction === "SELL" ? "border-red-500/40 bg-red-500/5"
     : "border-amber-500/40 bg-amber-500/5";
 
   return (
     <div className={`border rounded p-4 space-y-4 ${dirColor}`}>
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Brain size={16} className="text-primary" />
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trade Decision</span>
+          {isLive && (
+            <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+              <Radio size={8} /> LIVE
+            </span>
+          )}
         </div>
-        <DirectionBadge direction={decision.direction} />
+        <div className="flex items-center gap-2">
+          {updatedAt && (
+            <span className="text-[10px] text-muted-foreground">
+              {updatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+          )}
+          <DirectionBadge direction={decision.direction} />
+        </div>
       </div>
 
-      {/* Entry / SL / TP / RR grid */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          { label: "Entry",  value: decision.entry.toFixed(2),      color: "text-indigo-400" },
-          { label: "Stop",   value: decision.stopLoss.toFixed(2),    color: "text-red-400"  },
-          { label: "Target", value: decision.takeProfit.toFixed(2),  color: "text-emerald-400" },
+          { label: "Entry",  value: decision.entry.toFixed(2),           color: "text-indigo-400" },
+          { label: "Stop",   value: decision.stopLoss.toFixed(2),         color: "text-red-400"  },
+          { label: "Target", value: decision.takeProfit.toFixed(2),       color: "text-emerald-400" },
           { label: "R:R",    value: `1 : ${decision.riskReward.toFixed(1)}`, color: "text-foreground" },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-card border border-border rounded p-2 text-center">
@@ -292,26 +297,24 @@ function DecisionCard({ decision }: { decision: AiDecision }) {
         ))}
       </div>
 
-      {/* Confidence + Success probability */}
       <div className="space-y-2">
         <ConfidenceMeter value={decision.confidence} label="Decision Confidence" />
         <ConfidenceMeter value={decision.successProbability} label="Success Probability" />
       </div>
 
-      {/* Reasoning sections */}
       <div className="space-y-2">
         {[
-          { title: "Technical", text: decision.technicalReasoning },
-          { title: "Market Structure", text: decision.marketStructureReasoning },
-          { title: "Historical Context", text: decision.historicalReasoning },
-        ].map(({ title, text }) => (
+          { title: "Technical",         text: decision.technicalReasoning },
+          { title: "Market Structure",  text: decision.marketStructureReasoning },
+          { title: "Historical Context",text: decision.historicalReasoning },
+        ].map(({ title, text }) =>
           text ? (
             <div key={title} className="bg-card border border-border rounded p-3">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{title}</div>
               <p className="text-[11px] leading-relaxed text-foreground">{text}</p>
             </div>
           ) : null
-        ))}
+        )}
       </div>
     </div>
   );
@@ -324,27 +327,28 @@ function ResultCard({
   decision,
   matches,
   imageDataUrl,
+  isLive,
+  liveUpdatedAt,
 }: {
   analysis: ChartAnalysis;
   decision?: AiDecision | null;
   matches: SimilarityMatch[];
   imageDataUrl: string;
+  isLive?: boolean;
+  liveUpdatedAt?: Date | null;
 }) {
   const trendColor = TREND_COLOR[analysis.trend] ?? "text-foreground";
 
   return (
     <div className="space-y-4">
-      {/* Decision at top if available */}
-      {decision && <DecisionCard decision={decision} />}
+      {decision && <DecisionCard decision={decision} isLive={isLive} updatedAt={liveUpdatedAt} />}
 
       <div className="grid grid-cols-2 gap-4">
-        {/* Left: annotated chart */}
         <div className="space-y-2">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Annotated Chart</div>
           <ChartAnnotation imageDataUrl={imageDataUrl} analysis={analysis} decision={decision} />
         </div>
 
-        {/* Right: vision summary */}
         <div className="space-y-3">
           <div className="bg-card border border-border rounded p-3">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Vision Analysis</div>
@@ -393,7 +397,6 @@ function ResultCard({
         </div>
       </div>
 
-      {/* Patterns */}
       {analysis.patterns.length > 0 && (
         <div className="bg-card border border-border rounded p-3">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Detected Patterns</div>
@@ -405,7 +408,6 @@ function ResultCard({
         </div>
       )}
 
-      {/* Supply / demand zones */}
       {(analysis.supplyZones.length > 0 || analysis.demandZones.length > 0) && (
         <div className="bg-card border border-border rounded p-3">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Supply / Demand Zones</div>
@@ -430,7 +432,6 @@ function ResultCard({
         </div>
       )}
 
-      {/* Historical similar setups */}
       {matches.length > 0 && (
         <div className="bg-card border border-border rounded p-3">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Historical Similar Setups</div>
@@ -475,7 +476,6 @@ function RecentCard({ item }: { item: ChartAnalysisRecord }) {
         onClick={() => setExpanded(e => !e)}
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/30 transition-colors text-left"
       >
-        {/* Thumbnail */}
         {item.thumbnailBase64 ? (
           <img
             src={`data:image/jpeg;base64,${item.thumbnailBase64}`}
@@ -488,7 +488,6 @@ function RecentCard({ item }: { item: ChartAnalysisRecord }) {
           </div>
         )}
 
-        {/* Middle: trend + meta */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <TrendIcon trend={item.trend} />
@@ -502,7 +501,6 @@ function RecentCard({ item }: { item: ChartAnalysisRecord }) {
           <div className="text-[10px] text-muted-foreground mt-0.5">{date}</div>
         </div>
 
-        {/* Right */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-[10px] font-mono">{item.confidence}%</span>
           {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -513,14 +511,13 @@ function RecentCard({ item }: { item: ChartAnalysisRecord }) {
         <div className="px-3 pb-3 border-t border-border/50 space-y-2">
           <p className="text-[11px] text-muted-foreground pt-2 leading-relaxed">{item.summary}</p>
 
-          {/* Trade plan if available */}
           {item.entryPrice != null && (
             <div className="grid grid-cols-4 gap-1">
               {[
-                { label: "Entry",  value: item.entryPrice?.toFixed(2),   color: "text-indigo-400" },
-                { label: "SL",     value: item.slPrice?.toFixed(2),       color: "text-red-400" },
-                { label: "TP",     value: item.tpPrice?.toFixed(2),       color: "text-emerald-400" },
-                { label: "R:R",    value: item.rrRatio != null ? `1:${item.rrRatio.toFixed(1)}` : "—", color: "text-foreground" },
+                { label: "Entry", value: item.entryPrice?.toFixed(2),  color: "text-indigo-400" },
+                { label: "SL",    value: item.slPrice?.toFixed(2),      color: "text-red-400" },
+                { label: "TP",    value: item.tpPrice?.toFixed(2),      color: "text-emerald-400" },
+                { label: "R:R",   value: item.rrRatio != null ? `1:${item.rrRatio.toFixed(1)}` : "—", color: "text-foreground" },
               ].map(({ label, value, color }) => (
                 <div key={label} className="bg-muted rounded p-1.5 text-center">
                   <div className="text-[9px] text-muted-foreground">{label}</div>
@@ -596,7 +593,7 @@ function UploadZone({ onImages }: { onImages: (imgs: QueuedImage[]) => void }) {
   );
 }
 
-// ── Progress indicator ────────────────────────────────────────────
+// ── Progress indicator ─────────────────────────────────────────────
 
 type Phase = "idle" | "uploading" | "vision" | "decision" | "done" | "error";
 
@@ -618,7 +615,7 @@ function PhaseBar({ phase, queuePos, queueLen }: { phase: Phase; queuePos: numbe
       )}
       <div className="flex items-center gap-2">
         {steps.map((step, i) => {
-          const done = activeIdx > i || phase === "done";
+          const done   = activeIdx > i || phase === "done";
           const active = i === activeIdx && phase !== "done" && phase !== "error";
           return (
             <div key={step.key} className="flex-1 flex flex-col items-center gap-1">
@@ -656,7 +653,20 @@ export default function AiChartPage() {
   const [visionModel, setVisionModel] = useState("qwen2.5-vl:7b");
   const [queuePos, setQueuePos]       = useState(0);
 
-  const abortRef   = useRef<AbortController | null>(null);
+  // Live analysis state — updated on every 30 s poll after initial analysis
+  const [liveDecision, setLiveDecision]   = useState<AiDecision | null>(null);
+  const [liveUpdatedAt, setLiveUpdatedAt] = useState<Date | null>(null);
+  const [livePolling, setLivePolling]     = useState(false);
+  // Model-loading hint — shows when vision phase has been running >20 s
+  const [showLoadingModel, setShowLoadingModel] = useState(false);
+  // Elapsed seconds while in vision phase — drives the loading hint
+  const [visionElapsed, setVisionElapsed] = useState(0);
+
+  const abortRef         = useRef<AbortController | null>(null);
+  const liveIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadingTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const elapsedTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const visionAnalysisRef = useRef<ChartAnalysis | null>(null);
   const recentQuery = useListChartAnalyses({ limit: 20 });
 
   useEffect(() => {
@@ -671,6 +681,44 @@ export default function AiChartPage() {
       .catch(() => setVisionAvailable(false));
   }, []);
 
+  // ── Live polling ───────────────────────────────────────────────
+
+  const stopLivePolling = useCallback(() => {
+    if (liveIntervalRef.current) { clearInterval(liveIntervalRef.current); liveIntervalRef.current = null; }
+    setLivePolling(false);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    stopLivePolling();
+    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+  }, [stopLivePolling]);
+
+  const startLivePolling = useCallback((sym: string, tf: string, analysis: ChartAnalysis) => {
+    stopLivePolling();
+    const poll = async () => {
+      try {
+        const r = await fetch(`${BASE}/api/ai/decision-refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: sym, timeframe: tf, visionAnalysis: analysis }),
+        });
+        if (!r.ok) return;
+        const d = await r.json() as { ok: boolean; decision: AiDecision; updatedAt: string };
+        if (d.ok) {
+          setLiveDecision(d.decision);
+          setLiveUpdatedAt(new Date(d.updatedAt));
+        }
+      } catch { /* best-effort */ }
+    };
+    void poll();
+    liveIntervalRef.current = setInterval(() => void poll(), 30_000);
+    setLivePolling(true);
+  }, [stopLivePolling]);
+
+  // ── Queue handlers ─────────────────────────────────────────────
+
   const handleImages = useCallback((imgs: QueuedImage[]) => {
     setQueue(prev => [...prev, ...imgs]);
   }, []);
@@ -679,16 +727,21 @@ export default function AiChartPage() {
     setQueue(prev => prev.filter(img => img.id !== id));
   }, []);
 
-  // Sequential queue processor — uses direct fetch so we can cancel via AbortController
+  // ── Main analysis pipeline ─────────────────────────────────────
+
   const handleAnalyze = useCallback(async () => {
     if (queue.length === 0 || processing) return;
     setProcessing(true);
     setResults([]);
     setCurrentResult(null);
     setErrorMsg(null);
+    setLiveDecision(null);
+    setLiveUpdatedAt(null);
+    stopLivePolling();
+    visionAnalysisRef.current = null;
 
-    const sym = symbol.trim().toUpperCase() || undefined;
-    const tf  = timeframe || undefined;
+    const sym   = symbol.trim().toUpperCase() || undefined;
+    const tf    = timeframe || undefined;
     const total = queue.length;
 
     for (let i = 0; i < total; i++) {
@@ -702,11 +755,16 @@ export default function AiChartPage() {
       try {
         // Phase 1: convert image to base64
         setPhase("uploading");
-        const base64 = img.file ? await fileToBase64(img.file) : dataUrlToBase64(img.dataUrl);
+        const base64      = img.file ? await fileToBase64(img.file) : dataUrlToBase64(img.dataUrl);
         const thumbBase64 = await makeThumbnail(img.dataUrl);
 
-        // Phase 2: vision model runs on the server (auto-advance to decision after 45s)
+        // Phase 2: vision model (may take 1–10 min; show loading hint after 20 s)
         setPhase("vision");
+        setShowLoadingModel(false);
+        setVisionElapsed(0);
+        loadingTimerRef.current = setTimeout(() => setShowLoadingModel(true), 20_000);
+        elapsedTimerRef.current = setInterval(() => setVisionElapsed(s => s + 1), 1_000);
+        // Auto-advance progress bar to Decision Engine after 45 s
         progressTimer = setTimeout(() => setPhase("decision"), 45_000);
 
         const res = await fetch(`${BASE}/api/ai/analyze-chart`, {
@@ -715,12 +773,17 @@ export default function AiChartPage() {
           body: JSON.stringify({ imageBase64: base64, thumbnailBase64: thumbBase64, symbol: sym, timeframe: tf }),
           signal: controller.signal,
         });
+
+        // Clear timers once the response arrives
         if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
+        if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
+        if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+        setShowLoadingModel(false);
 
         if (!res.ok) {
           const body = await res.text().catch(() => "");
           let msg = `HTTP ${res.status}`;
-          try { msg = (JSON.parse(body) as { error?: string }).error ?? msg; } catch { /**/ }
+          try { msg = (JSON.parse(body) as { error?: string }).error ?? msg; } catch { /* ignore */ }
           throw new Error(msg);
         }
 
@@ -734,21 +797,27 @@ export default function AiChartPage() {
         if (!response.ok) throw new Error(response.error ?? "Analysis failed");
 
         const result: AnalysisResult = {
-          analysis: response.analysis,
-          decision: response.decision ?? null,
-          matches:  response.historicalMatches ?? [],
+          analysis:    response.analysis,
+          decision:    response.decision ?? null,
+          matches:     response.historicalMatches ?? [],
           imageDataUrl: img.dataUrl,
         };
 
+        visionAnalysisRef.current = response.analysis;
         setCurrentResult(result);
         setResults(prev => [...prev, result]);
         setPhase("done");
 
-        // Brief pause before next image
+        // Start live polling when a symbol is known
+        if (sym) startLivePolling(sym, tf ?? "5m", response.analysis);
+
         if (i < total - 1) await new Promise(r => setTimeout(r, 800));
       } catch (err) {
         if (progressTimer) clearTimeout(progressTimer);
-        // Cancelled by user — reset silently
+        if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
+        if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+        setShowLoadingModel(false);
+
         if ((err as Error).name === "AbortError") {
           setPhase("idle");
           setProcessing(false);
@@ -763,191 +832,246 @@ export default function AiChartPage() {
 
     setProcessing(false);
     void recentQuery.refetch();
-  }, [queue, processing, symbol, timeframe, recentQuery]);
+  }, [queue, processing, symbol, timeframe, recentQuery, stopLivePolling, startLivePolling]);
 
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
-  }, []);
+    if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
+    if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+    setShowLoadingModel(false);
+    stopLivePolling();
+  }, [stopLivePolling]);
 
   const reset = useCallback(() => {
+    stopLivePolling();
+    if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
+    if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
     setQueue([]);
     setPhase("idle");
     setResults([]);
     setCurrentResult(null);
     setErrorMsg(null);
     setQueuePos(0);
-  }, []);
+    setShowLoadingModel(false);
+    setVisionElapsed(0);
+    setLiveDecision(null);
+    setLiveUpdatedAt(null);
+    visionAnalysisRef.current = null;
+  }, [stopLivePolling]);
+
+  // ── Render ─────────────────────────────────────────────────────
+
+  const effectiveDecision = liveDecision ?? currentResult?.decision ?? null;
 
   return (
-    <div className="p-4 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Layers size={20} className="text-primary" />
-        <div>
-          <h1 className="text-lg font-bold">AI Chart Analyzer</h1>
-          <p className="text-xs text-muted-foreground">
-            Vision model reads charts · Decision engine produces trade plans
-          </p>
-        </div>
-        {visionAvailable === false && (
-          <div className="ml-auto flex items-center gap-1.5 text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
-            <AlertTriangle size={12} />
-            <span className="text-xs font-mono">Vision offline — pull {visionModel}</span>
+    <div className="h-full overflow-y-auto">
+      <div className="p-4 space-y-6 pb-8">
+
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <Layers size={20} className="text-primary" />
+          <div>
+            <h1 className="text-lg font-bold">AI Chart Analyzer</h1>
+            <p className="text-xs text-muted-foreground">
+              Vision model reads charts · Decision engine produces trade plans · Live updates every 30 s
+            </p>
           </div>
-        )}
-        {visionAvailable === true && (
-          <div className="ml-auto flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded px-2 py-1">
-            <CheckCircle size={12} />
-            <span className="text-xs font-mono">{visionModel}</span>
+          {visionAvailable === false && (
+            <div className="ml-auto flex items-center gap-1.5 text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+              <AlertTriangle size={12} />
+              <span className="text-xs font-mono">Vision offline — pull {visionModel}</span>
+            </div>
+          )}
+          {visionAvailable === true && (
+            <div className="ml-auto flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded px-2 py-1">
+              <CheckCircle size={12} />
+              <span className="text-xs font-mono">{visionModel}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="flex gap-3 items-end flex-wrap">
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Symbol</label>
+            <input
+              value={symbol}
+              onChange={e => setSymbol(e.target.value)}
+              placeholder="TSLA"
+              className="bg-card border border-border rounded px-3 py-1.5 text-sm font-mono w-24 uppercase focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
           </div>
-        )}
-      </div>
-
-      {/* Controls */}
-      <div className="flex gap-3 items-end flex-wrap">
-        <div>
-          <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Symbol</label>
-          <input
-            value={symbol}
-            onChange={e => setSymbol(e.target.value)}
-            placeholder="TSLA"
-            className="bg-card border border-border rounded px-3 py-1.5 text-sm font-mono w-24 uppercase focus:outline-none focus:ring-1 focus:ring-primary/50"
-          />
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Timeframe</label>
+            <select
+              value={timeframe}
+              onChange={e => setTimeframe(e.target.value)}
+              className="bg-card border border-border rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary/50"
+            >
+              {["1m","2m","5m","15m","30m","1h","2h","4h","1D","1W"].map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Timeframe</label>
-          <select
-            value={timeframe}
-            onChange={e => setTimeframe(e.target.value)}
-            className="bg-card border border-border rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary/50"
-          >
-            {["1m","2m","5m","15m","30m","1h","2h","4h","1D","1W"].map(t => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-        </div>
-      </div>
 
-      {/* Upload + queue */}
-      {!processing && phase !== "done" && (
-        <div className="space-y-3">
-          <UploadZone onImages={handleImages} />
+        {/* Upload + queue */}
+        {!processing && phase !== "done" && (
+          <div className="space-y-3">
+            <UploadZone onImages={handleImages} />
 
-          {queue.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Queue — {queue.length} image{queue.length > 1 ? "s" : ""}
+            {queue.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Queue — {queue.length} image{queue.length > 1 ? "s" : ""}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {queue.map(img => (
+                    <div key={img.id} className="relative group">
+                      <img
+                        src={img.dataUrl}
+                        alt={img.name}
+                        className="w-20 h-14 object-cover rounded border border-border"
+                      />
+                      <button
+                        onClick={() => removeFromQueue(img.id)}
+                        className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={10} />
+                      </button>
+                      <div className="text-[9px] text-muted-foreground truncate max-w-[80px] text-center">{img.name}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={handleAnalyze}
+                  disabled={!visionAvailable}
+                  className="flex items-center gap-2 bg-primary text-primary-foreground rounded px-4 py-2 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Brain size={16} />
+                  Analyze {queue.length > 1 ? `${queue.length} Charts` : "Chart"}
+                </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {queue.map(img => (
-                  <div key={img.id} className="relative group">
-                    <img
-                      src={img.dataUrl}
-                      alt={img.name}
-                      className="w-20 h-14 object-cover rounded border border-border"
+            )}
+          </div>
+        )}
+
+        {/* Progress */}
+        {processing && (
+          <div className="bg-card border border-border rounded p-4 space-y-4">
+            <PhaseBar phase={phase} queuePos={queuePos} queueLen={queue.length} />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-muted-foreground animate-pulse">
+                  {phase === "uploading" && "Preparing image…"}
+                  {phase === "vision" && !showLoadingModel && `Running ${visionModel} — may take 1–10 min on first run…`}
+                  {phase === "vision" && showLoadingModel && (
+                    <span className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                      Loading model into VRAM — first run takes 1–5 min, retries automatically on failure
+                    </span>
+                  )}
+                  {phase === "decision" && "Running decision engine (qwen2.5:14b)…"}
+                </p>
+                {phase === "vision" && visionElapsed > 0 && (
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">
+                    {Math.floor(visionElapsed / 60) > 0
+                      ? `${Math.floor(visionElapsed / 60)}m ${visionElapsed % 60}s elapsed`
+                      : `${visionElapsed}s elapsed`}
+                    {visionElapsed >= 16 && " · will retry up to 3× on failure"}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleCancel}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors flex-shrink-0"
+              >
+                <X size={10} /> Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {phase === "error" && errorMsg && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded p-4 flex items-center justify-between">
+            <span className="text-sm text-destructive">{errorMsg}</span>
+            <button onClick={reset} className="text-xs underline text-muted-foreground">Reset</button>
+          </div>
+        )}
+
+        {/* Result(s) */}
+        {currentResult && !processing && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={14} className="text-emerald-400" />
+                <span className="text-sm font-semibold">
+                  {results.length > 1 ? `${results.length} analyses complete` : "Analysis complete"}
+                </span>
+                {livePolling && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 animate-pulse">
+                    <Radio size={8} /> LIVE
+                  </span>
+                )}
+                {liveUpdatedAt && (
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <RefreshCw size={9} />
+                    {liveUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                )}
+              </div>
+              <button onClick={reset} className="text-xs text-muted-foreground underline hover:text-foreground">
+                Analyze more
+              </button>
+            </div>
+
+            {results.length > 1 ? (
+              <div className="space-y-6">
+                {results.map((r, i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="text-xs font-semibold text-muted-foreground">Image {i + 1}</div>
+                    <ResultCard
+                      analysis={r.analysis}
+                      decision={i === results.length - 1 ? effectiveDecision : r.decision}
+                      matches={r.matches}
+                      imageDataUrl={r.imageDataUrl}
+                      isLive={i === results.length - 1 && livePolling}
+                      liveUpdatedAt={i === results.length - 1 ? liveUpdatedAt : null}
                     />
-                    <button
-                      onClick={() => removeFromQueue(img.id)}
-                      className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X size={10} />
-                    </button>
-                    <div className="text-[9px] text-muted-foreground truncate max-w-[80px] text-center">{img.name}</div>
                   </div>
                 ))}
               </div>
-
-              <button
-                onClick={handleAnalyze}
-                disabled={!visionAvailable}
-                className="flex items-center gap-2 bg-primary text-primary-foreground rounded px-4 py-2 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Brain size={16} />
-                Analyze {queue.length > 1 ? `${queue.length} Charts` : "Chart"}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Progress */}
-      {processing && (
-        <div className="bg-card border border-border rounded p-4 space-y-4">
-          <PhaseBar phase={phase} queuePos={queuePos} queueLen={queue.length} />
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground animate-pulse flex-1">
-              {phase === "uploading" && "Preparing image…"}
-              {phase === "vision"    && `Running ${visionModel} — may take 1–3 min…`}
-              {phase === "decision"  && "Running decision engine (qwen2.5:14b)…"}
-            </p>
-            <button
-              onClick={handleCancel}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors flex-shrink-0"
-            >
-              <X size={10} /> Cancel
-            </button>
+            ) : (
+              <ResultCard
+                analysis={currentResult.analysis}
+                decision={effectiveDecision}
+                matches={currentResult.matches}
+                imageDataUrl={currentResult.imageDataUrl}
+                isLive={livePolling}
+                liveUpdatedAt={liveUpdatedAt}
+              />
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Error */}
-      {phase === "error" && errorMsg && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded p-4 flex items-center justify-between">
-          <span className="text-sm text-destructive">{errorMsg}</span>
-          <button onClick={reset} className="text-xs underline text-muted-foreground">Reset</button>
-        </div>
-      )}
-
-      {/* Result(s) */}
-      {currentResult && !processing && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle size={14} className="text-emerald-400" />
-              <span className="text-sm font-semibold">
-                {results.length > 1 ? `${results.length} analyses complete` : "Analysis complete"}
-              </span>
+        {/* Recent analyses */}
+        {(recentQuery.data?.length ?? 0) > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Eye size={12} />
+              Recent Analyses
             </div>
-            <button onClick={reset} className="text-xs text-muted-foreground underline hover:text-foreground">
-              Analyze more
-            </button>
-          </div>
-
-          {/* Show all results when multiple were processed */}
-          {results.length > 1 ? (
-            <div className="space-y-6">
-              {results.map((r, i) => (
-                <div key={i} className="space-y-2">
-                  <div className="text-xs font-semibold text-muted-foreground">Image {i + 1}</div>
-                  <ResultCard analysis={r.analysis} decision={r.decision} matches={r.matches} imageDataUrl={r.imageDataUrl} />
-                </div>
+            <div className="space-y-2">
+              {recentQuery.data!.map(item => (
+                <RecentCard key={item.id} item={item} />
               ))}
             </div>
-          ) : (
-            <ResultCard
-              analysis={currentResult.analysis}
-              decision={currentResult.decision}
-              matches={currentResult.matches}
-              imageDataUrl={currentResult.imageDataUrl}
-            />
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Recent analyses */}
-      {(recentQuery.data?.length ?? 0) > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Eye size={12} />
-            Recent Analyses
-          </div>
-          <div className="space-y-2">
-            {recentQuery.data!.map(item => (
-              <RecentCard key={item.id} item={item} />
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -3,9 +3,16 @@ import { OLLAMA_BASE_URL } from "./ollama.js";
 
 // Preferred default — overridable by env var
 export const VISION_MODEL_DEFAULT = process.env.OLLAMA_VISION_MODEL ?? "qwen2.5-vl:7b";
-// Default 10 minutes — vision models on consumer GPUs can take 1–3 min per image.
-// Override with OLLAMA_TIMEOUT_MS env var if needed (0 = no timeout).
-const TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS ?? "600000", 10);
+// Default 0 = NO timeout. Ollama loads the model into VRAM on the first request
+// and may take several minutes. Set OLLAMA_TIMEOUT_MS to a positive number to
+// impose a hard limit (e.g. OLLAMA_TIMEOUT_MS=300000 for 5 min).
+const TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS ?? "0", 10);
+
+// Retry configuration — transient failures (network drop, Ollama restart, OOM)
+// are retried up to MAX_RETRIES times with linear backoff.
+// 4xx errors (model not found, bad request) are never retried.
+const MAX_RETRIES  = 3;
+const RETRY_BASE_MS = 8_000; // delay between attempts: 8 s → 16 s
 
 // ── Flexible model detection ──────────────────────────────────
 // Accepts any of the known naming variants Ollama may report:
@@ -76,23 +83,17 @@ export interface OllamaVisionResponse {
   done: boolean;
 }
 
-export async function ollamaVisionGenerate(
+// ── Inner single-attempt generator (no retry logic) ──────────────
+async function doVisionGenerate(
+  model: string,
   prompt: string,
   imageBase64: string,
   system?: string,
   numPredict = 512,
 ): Promise<string> {
-  // Always use the *actual* model name Ollama reports, not the hardcoded default
-  const model = (await resolveVisionModel()) ?? VISION_MODEL_DEFAULT;
-
-  logger.info(
-    { model, imageBytes: Math.round(imageBase64.length * 0.75), numPredict, timeoutMs: TIMEOUT_MS },
-    "Vision model called — sending image",
-  );
-
-  const t0 = Date.now();
   const controller = new AbortController();
   const timer = TIMEOUT_MS > 0 ? setTimeout(() => controller.abort(), TIMEOUT_MS) : null;
+  const t0 = Date.now();
 
   try {
     const body: Record<string, unknown> = {
@@ -100,11 +101,7 @@ export async function ollamaVisionGenerate(
       prompt,
       images: [imageBase64],
       stream: false,
-      options: {
-        temperature: 0.1,
-        top_p: 0.9,
-        num_predict: numPredict,
-      },
+      options: { temperature: 0.1, top_p: 0.9, num_predict: numPredict },
     };
     if (system) body.system = system;
 
@@ -112,7 +109,7 @@ export async function ollamaVisionGenerate(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: TIMEOUT_MS > 0 ? controller.signal : undefined,
     });
 
     if (!res.ok) {
@@ -123,22 +120,59 @@ export async function ollamaVisionGenerate(
     const data = (await res.json()) as OllamaVisionResponse;
     const responseText = data.response.trim();
     const elapsedMs = Date.now() - t0;
-
     logger.info(
       { model, responseChars: responseText.length, elapsedMs, elapsedSec: Math.round(elapsedMs / 100) / 10 },
       "Vision model response received",
     );
-
     return responseText;
   } catch (err) {
     const elapsedMs = Date.now() - t0;
     if ((err as Error).name === "AbortError") {
-      throw new Error(`Ollama vision timeout after ${elapsedMs}ms (limit: ${TIMEOUT_MS}ms) — increase OLLAMA_TIMEOUT_MS or use a faster model`);
+      throw new Error(`Ollama vision timeout after ${elapsedMs}ms (OLLAMA_TIMEOUT_MS=${TIMEOUT_MS}ms) — set OLLAMA_TIMEOUT_MS=0 to disable`);
     }
     throw err;
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+// ── Public entry point — retries up to MAX_RETRIES times ──────────
+export async function ollamaVisionGenerate(
+  prompt: string,
+  imageBase64: string,
+  system?: string,
+  numPredict = 512,
+): Promise<string> {
+  // Always use the *actual* model name Ollama reports, not the hardcoded default
+  const model = (await resolveVisionModel()) ?? VISION_MODEL_DEFAULT;
+
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    logger.info(
+      {
+        model, attempt, maxRetries: MAX_RETRIES,
+        imageBytes: Math.round(imageBase64.length * 0.75),
+        numPredict, timeoutMs: TIMEOUT_MS,
+      },
+      `Vision model called — attempt ${attempt}/${MAX_RETRIES}`,
+    );
+    try {
+      return await doVisionGenerate(model, prompt, imageBase64, system, numPredict);
+    } catch (err) {
+      lastErr = err;
+      const msg = (err as Error).message ?? String(err);
+      // Never retry on 4xx (model not found, bad request)
+      const is4xx = /HTTP 4\d\d/.test(msg);
+      if (attempt === MAX_RETRIES || is4xx) {
+        logger.error({ attempt, maxRetries: MAX_RETRIES, model, err: msg }, "Vision model failed — all retries exhausted");
+        throw err;
+      }
+      const delayMs = attempt * RETRY_BASE_MS;
+      logger.warn({ attempt, maxRetries: MAX_RETRIES, delayMs, err: msg }, "Vision attempt failed — retrying after delay");
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr; // unreachable — loop always throws or returns
 }
 
 // ── Log detected model at module load (startup) ───────────────

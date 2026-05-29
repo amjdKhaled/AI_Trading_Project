@@ -544,6 +544,163 @@ router.get("/ai/chart-analyses", async (req, res): Promise<void> => {
   }
 });
 
+// ── Candle-derived S/R and trend helpers ─────────────────────────
+
+type OhlcvBarLike = { open: number; high: number; low: number; close: number; time: number };
+
+function pivotHighs(bars: OhlcvBarLike[], window = 3): number[] {
+  const out: number[] = [];
+  for (let i = window; i < bars.length - window; i++) {
+    const h = bars[i].high;
+    let pivot = true;
+    for (let j = i - window; j <= i + window; j++) {
+      if (j !== i && bars[j].high >= h) { pivot = false; break; }
+    }
+    if (pivot) out.push(parseFloat(h.toFixed(2)));
+  }
+  return [...new Set(out)].slice(-6);
+}
+
+function pivotLows(bars: OhlcvBarLike[], window = 3): number[] {
+  const out: number[] = [];
+  for (let i = window; i < bars.length - window; i++) {
+    const l = bars[i].low;
+    let pivot = true;
+    for (let j = i - window; j <= i + window; j++) {
+      if (j !== i && bars[j].low <= l) { pivot = false; break; }
+    }
+    if (pivot) out.push(parseFloat(l.toFixed(2)));
+  }
+  return [...new Set(out)].slice(-6);
+}
+
+type CandleTrend = "strong_uptrend" | "uptrend" | "neutral" | "downtrend" | "strong_downtrend";
+function trendFromBars(bars: OhlcvBarLike[]): CandleTrend {
+  if (bars.length < 5) return "neutral";
+  const closes = bars.map(b => b.close);
+  const n = Math.min(20, closes.length);
+  const sma = closes.slice(-n).reduce((a, x) => a + x, 0) / n;
+  const last = closes[closes.length - 1];
+  const pct = (last - sma) / sma;
+  if (pct >  0.02)  return "strong_uptrend";
+  if (pct >  0.005) return "uptrend";
+  if (pct < -0.02)  return "strong_downtrend";
+  if (pct < -0.005) return "downtrend";
+  return "neutral";
+}
+
+function enrichAnalysisFromCandles(
+  analysis: import("../lib/ai/analyze-chart.js").ChartAnalysis,
+  bars: OhlcvBarLike[],
+): import("../lib/ai/analyze-chart.js").ChartAnalysis {
+  if (bars.length < 10) return analysis;
+  const resistance = pivotHighs(bars);
+  const support    = pivotLows(bars);
+  const trend      = trendFromBars(bars);
+  return {
+    ...analysis,
+    resistanceLevels: resistance.length > 0 ? resistance : analysis.resistanceLevels,
+    supportLevels:    support.length > 0    ? support    : analysis.supportLevels,
+    trend,
+  };
+}
+
+// ── POST /ai/decision-refresh ────────────────────────────────────────────
+// Re-runs the decision engine with fresh market candles for an ongoing analysis.
+// The vision model is NOT re-run — caller provides the original visionAnalysis.
+// Suitable to call every ~30 s after initial chart analysis to keep the trade
+// plan current as new candles form.
+router.post("/ai/decision-refresh", async (req, res): Promise<void> => {
+  const { symbol, timeframe = "5m", visionAnalysis } = req.body as {
+    symbol?: string;
+    timeframe?: string;
+    visionAnalysis?: import("../lib/ai/analyze-chart.js").ChartAnalysis;
+  };
+
+  if (!symbol || !visionAnalysis) {
+    res.status(400).json({ error: "symbol and visionAnalysis required" });
+    return;
+  }
+
+  const sym = symbol.toUpperCase();
+
+  try {
+    const bars = (await fetchHistory(sym, timeframe)) as OhlcvBarLike[];
+    const recent = bars.slice(-100);
+    const enriched = enrichAnalysisFromCandles(visionAnalysis, recent);
+
+    let similarSetups: Awaited<ReturnType<typeof findSimilarPatterns>> = [];
+    try {
+      similarSetups = await findSimilarPatterns({ symbol: sym, regime: "unknown", side: "long" }, 5);
+    } catch { /* similarity is best-effort */ }
+
+    const decision = await makeChartDecision(enriched, sym, timeframe, similarSetups);
+
+    req.log?.info(
+      { sym, timeframe, direction: decision.direction, confidence: decision.confidence, barsUsed: recent.length },
+      "Decision refresh complete",
+    );
+
+    res.json({
+      ok: true,
+      decision,
+      analysisUpdate: {
+        resistanceLevels: enriched.resistanceLevels,
+        supportLevels:    enriched.supportLevels,
+        trend:            enriched.trend,
+        confidence:       enriched.confidence,
+      },
+      barsUsed:  recent.length,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    req.log?.warn({ err, symbol: sym, timeframe }, "Decision refresh failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── POST /ai/learn-all ───────────────────────────────────────────────────
+// Batch-reflect on ALL closed signals from ALL symbols.
+// Populates AI Memory with lessons from the full trade history.
+// Pass useAi:true to run Ollama-backed reflection (slower but richer lessons).
+router.post("/ai/learn-all", async (req, res): Promise<void> => {
+  const { useAi = false, limit = 500 } = req.body as { useAi?: boolean; limit?: number };
+
+  try {
+    const rows = await db
+      .select()
+      .from(signalsTable)
+      .limit(Math.min(Number(limit), 2000));
+
+    const closed = rows.filter(r => r.state !== "active");
+    const symbols = [...new Set(closed.map(r => r.symbol))];
+
+    req.log?.info({ total: closed.length, symbols: symbols.length, useAi }, "Learn-all started");
+
+    const ollamaOk = useAi ? await isOllamaAvailable() : false;
+    let processed = 0;
+    let errors    = 0;
+
+    for (const row of closed) {
+      const trade = rowToTradeEntry(row);
+      try {
+        if (ollamaOk) {
+          await reflectOnTrade(trade);
+        } else {
+          await reflectWithoutAi(trade);
+        }
+        processed++;
+      } catch { errors++; }
+    }
+
+    req.log?.info({ processed, errors, total: closed.length, symbols }, "Learn-all complete");
+    res.json({ ok: true, processed, errors, total: closed.length, symbols, aiUsed: ollamaOk });
+  } catch (err) {
+    req.log?.warn({ err }, "Learn-all failed");
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
 // ── Helper ────────────────────────────────────────────────────
 
 function rowToTradeEntry(row: typeof signalsTable.$inferSelect): TradeMemoryEntry {
