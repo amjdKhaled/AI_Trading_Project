@@ -2,7 +2,11 @@ import { logger } from "../logger.js";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 const MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:14b";
-const TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS ?? "45000", 10);
+
+// No hard timeout — qwen2.5:14b needs to load into VRAM on first call and may
+// take several minutes on consumer GPUs.  Set OLLAMA_TIMEOUT_MS to a positive
+// number to impose a cap (e.g. OLLAMA_TIMEOUT_MS=1800000 for 30 min).
+const TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS ?? "0", 10);
 
 export interface OllamaResponse {
   model: string;
@@ -12,7 +16,8 @@ export interface OllamaResponse {
 
 export async function ollamaGenerate(prompt: string, system?: string, numPredict = 512): Promise<string> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = TIMEOUT_MS > 0 ? setTimeout(() => controller.abort(), TIMEOUT_MS) : null;
+  const t0 = Date.now();
 
   try {
     const body: Record<string, unknown> = {
@@ -31,7 +36,7 @@ export async function ollamaGenerate(prompt: string, system?: string, numPredict
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: TIMEOUT_MS > 0 ? controller.signal : undefined,
     });
 
     if (!res.ok) {
@@ -40,14 +45,20 @@ export async function ollamaGenerate(prompt: string, system?: string, numPredict
     }
 
     const data = (await res.json()) as OllamaResponse;
+    const elapsedMs = Date.now() - t0;
+    logger.info(
+      { model: MODEL, elapsedMs, elapsedSec: Math.round(elapsedMs / 100) / 10, responseChars: data.response.length },
+      "Ollama generate complete",
+    );
     return data.response.trim();
   } catch (err) {
+    const elapsedMs = Date.now() - t0;
     if ((err as Error).name === "AbortError") {
-      throw new Error(`Ollama timeout after ${TIMEOUT_MS}ms`);
+      throw new Error(`Ollama timeout after ${elapsedMs}ms (OLLAMA_TIMEOUT_MS=${TIMEOUT_MS}ms) — set OLLAMA_TIMEOUT_MS=0 to disable`);
     }
     throw err;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 

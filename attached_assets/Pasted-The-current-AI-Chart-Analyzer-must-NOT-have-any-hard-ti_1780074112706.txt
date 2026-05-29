@@ -1,0 +1,74 @@
+The current AI Chart Analyzer must NOT have any hard timeout while analyzing chart screenshots.
+
+Problem:
+The Vision Model (qwen2.5vl:7b) and Decision Engine (qwen2.5:14b) sometimes require more than 60 seconds to fully analyze a chart image, especially when processing complex TradingView screenshots, extracting candlestick structures, support/resistance zones, trend context, volume behavior, chart patterns, and comparing them with historical market memory.
+
+Currently the analysis fails with errors such as:
+
+* Ollama vision timeout after 60000ms
+* HTTP 500 Internal Server Error
+* Model may still be loading
+
+This behavior is unacceptable because I prefer accuracy over speed.
+
+Required Changes:
+
+1. Remove all hardcoded timeouts from the AI Chart analysis pipeline.
+
+   * No 60 second timeout.
+   * No 90 second timeout.
+   * No request cancellation based on elapsed time.
+   * The analysis must continue until the model finishes.
+
+2. If a timeout must exist for technical reasons, set it to a very large value:
+
+   * Minimum: 30 minutes (1800000 ms)
+   * Preferred: No timeout at all.
+
+3. While analysis is running:
+
+   * Show a loading state.
+   * Show current stage:
+
+     * Loading Vision Model
+     * Reading Screenshot
+     * Detecting Candlestick Patterns
+     * Detecting Support & Resistance
+     * Detecting Trend Structure
+     * Comparing Historical Memory
+     * Running Decision Engine
+     * Generating Trade Plan
+   * Show elapsed analysis time.
+
+4. Never cancel analysis because it is taking too long.
+   The user explicitly prefers waiting for a complete analysis rather than receiving a timeout error.
+
+5. If the model is still loading into VRAM, keep waiting.
+   Do not treat model loading time as a failure.
+
+6. If Ollama temporarily becomes unavailable:
+
+   * Retry automatically.
+   * Retry at least 3 times before reporting an error.
+
+7. The Analyze Chart button should remain disabled while analysis is running to prevent duplicate requests.
+
+8. When analysis finishes:
+
+   * Automatically render the result.
+   * Do not require page refresh.
+   * Preserve analysis history.
+
+9. Add detailed backend logging:
+
+   * Analysis started
+   * Vision model started
+   * Vision model completed
+   * Decision engine started
+   * Decision engine completed
+   * Total analysis duration
+
+10. The AI Chart page should prioritize analysis quality over response speed.
+
+Goal:
+The AI Chart Analyzer should behave like a professional institutional research assistant. It must be allowed to spend as much time as necessary to fully analyze the chart image before returning its final trade decision.

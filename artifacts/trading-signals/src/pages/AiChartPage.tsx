@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Upload, X, Brain, TrendingUp, TrendingDown, Minus, Eye,
   ChevronDown, ChevronUp, Layers, CheckCircle, AlertTriangle,
-  ArrowUpCircle, ArrowDownCircle, MinusCircle, Radio, RefreshCw,
+  ArrowUpCircle, ArrowDownCircle, MinusCircle, Radio, RefreshCw, Clock,
 } from "lucide-react";
 import {
   useListChartAnalyses,
@@ -593,39 +593,96 @@ function UploadZone({ onImages }: { onImages: (imgs: QueuedImage[]) => void }) {
   );
 }
 
-// ── Progress indicator ─────────────────────────────────────────────
+// ── Stage definitions ──────────────────────────────────────────────
 
 type Phase = "idle" | "uploading" | "vision" | "decision" | "done" | "error";
 
-function PhaseBar({ phase, queuePos, queueLen }: { phase: Phase; queuePos: number; queueLen: number }) {
-  const steps: { key: Phase; label: string }[] = [
-    { key: "uploading", label: "Uploading" },
-    { key: "vision",    label: "Vision Analysis" },
-    { key: "decision",  label: "Decision Engine" },
-    { key: "done",      label: "Completed" },
-  ];
-  const activeIdx = steps.findIndex(s => s.key === phase);
+// Each stage advances automatically after `autoAdvanceMs` if the request hasn't
+// completed yet. When the response arrives, all remaining stages complete instantly.
+const ANALYSIS_STAGES: { label: string; autoAdvanceMs: number }[] = [
+  { label: "Loading Vision Model",           autoAdvanceMs: 6_000  },
+  { label: "Reading Screenshot",             autoAdvanceMs: 18_000 },
+  { label: "Detecting Candlestick Patterns", autoAdvanceMs: 32_000 },
+  { label: "Detecting Support & Resistance", autoAdvanceMs: 50_000 },
+  { label: "Detecting Trend Structure",      autoAdvanceMs: 72_000 },
+  { label: "Comparing Historical Memory",    autoAdvanceMs: 95_000 },
+  { label: "Running Decision Engine",        autoAdvanceMs: 130_000 },
+  { label: "Generating Trade Plan",          autoAdvanceMs: 999_999 }, // completes only when response arrives
+];
+
+// ── Stage tracker component ────────────────────────────────────────
+
+function StageTracker({
+  stageIndex,
+  done,
+  totalElapsedSec,
+  queuePos,
+  queueLen,
+}: {
+  stageIndex: number;
+  done: boolean;
+  totalElapsedSec: number;
+  queuePos: number;
+  queueLen: number;
+}) {
+  const fmtTime = (s: number) =>
+    s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {queueLen > 1 && (
         <div className="text-[10px] text-muted-foreground text-center">
           Processing image {queuePos} of {queueLen}
         </div>
       )}
-      <div className="flex items-center gap-2">
-        {steps.map((step, i) => {
-          const done   = activeIdx > i || phase === "done";
-          const active = i === activeIdx && phase !== "done" && phase !== "error";
+
+      {/* Stage list */}
+      <div className="space-y-1.5">
+        {ANALYSIS_STAGES.map((stage, i) => {
+          const isComplete = done || i < stageIndex;
+          const isActive   = !done && i === stageIndex;
+          const isPending  = !done && i > stageIndex;
           return (
-            <div key={step.key} className="flex-1 flex flex-col items-center gap-1">
-              <div className={`h-1.5 w-full rounded-full transition-all ${done ? "bg-emerald-500" : active ? "bg-primary animate-pulse" : "bg-muted"}`} />
-              <span className={`text-[10px] ${done ? "text-emerald-400" : active ? "text-primary" : "text-muted-foreground"}`}>
-                {step.label}
+            <div key={stage.label} className="flex items-center gap-2.5">
+              {/* dot */}
+              <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 transition-all ${
+                isComplete ? "bg-emerald-500" :
+                isActive   ? "bg-primary animate-pulse ring-2 ring-primary/30" :
+                "bg-muted"
+              }`} />
+              {/* label */}
+              <span className={`text-xs transition-colors ${
+                isComplete ? "text-emerald-400" :
+                isActive   ? "text-foreground font-medium" :
+                "text-muted-foreground/50"
+              }`}>
+                {stage.label}
               </span>
+              {/* check mark */}
+              {isComplete && (
+                <CheckCircle size={10} className="text-emerald-500 ml-auto flex-shrink-0" />
+              )}
+              {isActive && (
+                <span className="ml-auto text-[10px] text-primary/70 flex-shrink-0 font-mono animate-pulse">
+                  running…
+                </span>
+              )}
             </div>
           );
         })}
+      </div>
+
+      {/* Total elapsed */}
+      <div className="flex items-center gap-2 pt-1 border-t border-border/50">
+        <Clock size={10} className="text-muted-foreground" />
+        <span className="text-[10px] text-muted-foreground font-mono">
+          Elapsed: {fmtTime(totalElapsedSec)}
+        </span>
+        {totalElapsedSec > 30 && !done && (
+          <span className="text-[10px] text-amber-400/70 ml-auto">
+            Analysis in progress — please wait
+          </span>
+        )}
       </div>
     </div>
   );
@@ -657,16 +714,16 @@ export default function AiChartPage() {
   const [liveDecision, setLiveDecision]   = useState<AiDecision | null>(null);
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<Date | null>(null);
   const [livePolling, setLivePolling]     = useState(false);
-  // Model-loading hint — shows when vision phase has been running >20 s
-  const [showLoadingModel, setShowLoadingModel] = useState(false);
-  // Elapsed seconds while in vision phase — drives the loading hint
-  const [visionElapsed, setVisionElapsed] = useState(0);
 
-  const abortRef         = useRef<AbortController | null>(null);
-  const liveIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const loadingTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const elapsedTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const visionAnalysisRef = useRef<ChartAnalysis | null>(null);
+  // 8-stage progress tracker
+  const [stageIndex, setStageIndex]       = useState(0);
+  const [totalElapsedSec, setTotalElapsedSec] = useState(0);
+
+  const abortRef           = useRef<AbortController | null>(null);
+  const liveIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stageTimersRef     = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const visionAnalysisRef  = useRef<ChartAnalysis | null>(null);
   const recentQuery = useListChartAnalyses({ limit: 20 });
 
   useEffect(() => {
@@ -691,8 +748,9 @@ export default function AiChartPage() {
   // Cleanup on unmount
   useEffect(() => () => {
     stopLivePolling();
-    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
     if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    stageTimersRef.current.forEach(clearTimeout);
+    stageTimersRef.current = [];
   }, [stopLivePolling]);
 
   const startLivePolling = useCallback((sym: string, tf: string, analysis: ChartAnalysis) => {
@@ -727,6 +785,31 @@ export default function AiChartPage() {
     setQueue(prev => prev.filter(img => img.id !== id));
   }, []);
 
+  // ── Stage timer helpers ────────────────────────────────────────
+
+  const clearStageTimers = useCallback(() => {
+    stageTimersRef.current.forEach(clearTimeout);
+    stageTimersRef.current = [];
+    if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+  }, []);
+
+  const startStageTimers = useCallback(() => {
+    clearStageTimers();
+    setStageIndex(0);
+    setTotalElapsedSec(0);
+
+    // Elapsed-second counter
+    elapsedTimerRef.current = setInterval(() => setTotalElapsedSec(s => s + 1), 1_000);
+
+    // Schedule each stage auto-advance
+    ANALYSIS_STAGES.forEach((stage, i) => {
+      if (stage.autoAdvanceMs < 999_000) {
+        const t = setTimeout(() => setStageIndex(prev => Math.max(prev, i + 1)), stage.autoAdvanceMs);
+        stageTimersRef.current.push(t);
+      }
+    });
+  }, [clearStageTimers]);
+
   // ── Main analysis pipeline ─────────────────────────────────────
 
   const handleAnalyze = useCallback(async () => {
@@ -750,35 +833,27 @@ export default function AiChartPage() {
 
       const controller = new AbortController();
       abortRef.current = controller;
-      let progressTimer: ReturnType<typeof setTimeout> | null = null;
 
       try {
-        // Phase 1: convert image to base64
+        // Upload: convert image to base64 (fast, local)
         setPhase("uploading");
         const base64      = img.file ? await fileToBase64(img.file) : dataUrlToBase64(img.dataUrl);
         const thumbBase64 = await makeThumbnail(img.dataUrl);
 
-        // Phase 2: vision model (may take 1–10 min; show loading hint after 20 s)
+        // Start the 8-stage animated tracker
         setPhase("vision");
-        setShowLoadingModel(false);
-        setVisionElapsed(0);
-        loadingTimerRef.current = setTimeout(() => setShowLoadingModel(true), 20_000);
-        elapsedTimerRef.current = setInterval(() => setVisionElapsed(s => s + 1), 1_000);
-        // Auto-advance progress bar to Decision Engine after 45 s
-        progressTimer = setTimeout(() => setPhase("decision"), 45_000);
+        startStageTimers();
 
         const res = await fetch(`${BASE}/api/ai/analyze-chart`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          // No AbortSignal — user explicitly wants no cancellation from timeout
           body: JSON.stringify({ imageBase64: base64, thumbnailBase64: thumbBase64, symbol: sym, timeframe: tf }),
-          signal: controller.signal,
         });
 
-        // Clear timers once the response arrives
-        if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
-        if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
-        if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
-        setShowLoadingModel(false);
+        // Response arrived — stop stage timers, complete all remaining stages
+        clearStageTimers();
+        setStageIndex(ANALYSIS_STAGES.length); // mark all done
 
         if (!res.ok) {
           const body = await res.text().catch(() => "");
@@ -808,16 +883,10 @@ export default function AiChartPage() {
         setResults(prev => [...prev, result]);
         setPhase("done");
 
-        // Start live polling when a symbol is known
         if (sym) startLivePolling(sym, tf ?? "5m", response.analysis);
-
         if (i < total - 1) await new Promise(r => setTimeout(r, 800));
       } catch (err) {
-        if (progressTimer) clearTimeout(progressTimer);
-        if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
-        if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
-        setShowLoadingModel(false);
-
+        clearStageTimers();
         if ((err as Error).name === "AbortError") {
           setPhase("idle");
           setProcessing(false);
@@ -832,32 +901,32 @@ export default function AiChartPage() {
 
     setProcessing(false);
     void recentQuery.refetch();
-  }, [queue, processing, symbol, timeframe, recentQuery, stopLivePolling, startLivePolling]);
+  }, [queue, processing, symbol, timeframe, recentQuery, stopLivePolling, startLivePolling, startStageTimers, clearStageTimers]);
 
   const handleCancel = useCallback(() => {
-    abortRef.current?.abort();
-    if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
-    if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
-    setShowLoadingModel(false);
+    // Note: we intentionally do NOT pass signal to the fetch, so abort here only
+    // clears the local stage UI state — the server analysis continues running.
+    clearStageTimers();
     stopLivePolling();
-  }, [stopLivePolling]);
+    setProcessing(false);
+    setPhase("idle");
+  }, [clearStageTimers, stopLivePolling]);
 
   const reset = useCallback(() => {
+    clearStageTimers();
     stopLivePolling();
-    if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
-    if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
     setQueue([]);
     setPhase("idle");
     setResults([]);
     setCurrentResult(null);
     setErrorMsg(null);
     setQueuePos(0);
-    setShowLoadingModel(false);
-    setVisionElapsed(0);
+    setStageIndex(0);
+    setTotalElapsedSec(0);
     setLiveDecision(null);
     setLiveUpdatedAt(null);
     visionAnalysisRef.current = null;
-  }, [stopLivePolling]);
+  }, [clearStageTimers, stopLivePolling]);
 
   // ── Render ─────────────────────────────────────────────────────
 
@@ -957,39 +1026,49 @@ export default function AiChartPage() {
           </div>
         )}
 
-        {/* Progress */}
+        {/* Progress — shown while analysis is running */}
         {processing && (
-          <div className="bg-card border border-border rounded p-4 space-y-4">
-            <PhaseBar phase={phase} queuePos={queuePos} queueLen={queue.length} />
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-muted-foreground animate-pulse">
-                  {phase === "uploading" && "Preparing image…"}
-                  {phase === "vision" && !showLoadingModel && `Running ${visionModel} — may take 1–10 min on first run…`}
-                  {phase === "vision" && showLoadingModel && (
-                    <span className="flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                      Loading model into VRAM — first run takes 1–5 min, retries automatically on failure
-                    </span>
-                  )}
-                  {phase === "decision" && "Running decision engine (qwen2.5:14b)…"}
-                </p>
-                {phase === "vision" && visionElapsed > 0 && (
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">
-                    {Math.floor(visionElapsed / 60) > 0
-                      ? `${Math.floor(visionElapsed / 60)}m ${visionElapsed % 60}s elapsed`
-                      : `${visionElapsed}s elapsed`}
-                    {visionElapsed >= 16 && " · will retry up to 3× on failure"}
-                  </p>
-                )}
+          <div className="bg-card border border-border rounded p-5 space-y-4">
+            {/* Stage tracker heading */}
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Brain size={14} className="text-primary animate-pulse" />
+                <span className="text-xs font-semibold text-foreground">
+                  {phase === "uploading" ? "Preparing image…" : "Analyzing chart — please wait"}
+                </span>
               </div>
-              <button
-                onClick={handleCancel}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors flex-shrink-0"
-              >
-                <X size={10} /> Cancel
-              </button>
+              {phase !== "uploading" && (
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  No timeout · retries up to 3×
+                </span>
+              )}
             </div>
+
+            {phase === "uploading" ? (
+              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary animate-pulse rounded-full w-1/3" />
+              </div>
+            ) : (
+              <StageTracker
+                stageIndex={stageIndex}
+                done={false}
+                totalElapsedSec={totalElapsedSec}
+                queuePos={queuePos}
+                queueLen={queue.length}
+              />
+            )}
+
+            {/* Contextual hints based on elapsed time */}
+            {totalElapsedSec >= 10 && totalElapsedSec < 60 && (
+              <p className="text-[10px] text-muted-foreground/70 italic">
+                First run loads {visionModel} into GPU VRAM — this can take 1–5 min. Subsequent runs are faster.
+              </p>
+            )}
+            {totalElapsedSec >= 60 && (
+              <p className="text-[10px] text-amber-400/70 italic">
+                Large chart or complex scene — the vision model is working. Will retry automatically up to 3× if needed.
+              </p>
+            )}
           </div>
         )}
 

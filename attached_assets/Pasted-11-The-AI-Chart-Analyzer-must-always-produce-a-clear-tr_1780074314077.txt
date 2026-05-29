@@ -1,0 +1,103 @@
+11. The AI Chart Analyzer must always produce a clear trading decision.
+
+Current behavior:
+The system sometimes returns:
+
+* Neutral
+* No Trade
+
+without providing a complete trade plan.
+
+Required behavior:
+
+The AI must always classify the chart into one of the following:
+
+* LONG
+* SHORT
+* NO_TRADE
+
+and explain exactly why.
+
+12. If the result is LONG:
+
+Return:
+
+* Direction: LONG
+* Entry Price
+* Stop Loss
+* Take Profit 1
+* Take Profit 2
+* Take Profit 3
+* Risk/Reward Ratio
+* Confidence %
+* Success Probability %
+
+13. If the result is SHORT:
+
+Return:
+
+* Direction: SHORT
+* Entry Price
+* Stop Loss
+* Take Profit 1
+* Take Profit 2
+* Take Profit 3
+* Risk/Reward Ratio
+* Confidence %
+* Success Probability %
+
+14. If the result is NO_TRADE:
+
+The AI must explain:
+
+* Why no trade exists.
+* What condition is missing.
+* What breakout level would create a LONG.
+* What breakdown level would create a SHORT.
+* What confirmation candle is required.
+* What volume condition is required.
+
+15. Display the decision prominently at the top of the page.
+
+Examples:
+
+🟢 LONG
+Confidence: 84%
+Entry: 440.50
+SL: 437.80
+TP1: 444.00
+TP2: 447.50
+TP3: 452.00
+
+🔴 SHORT
+Confidence: 81%
+Entry: 440.50
+SL: 443.20
+TP1: 436.00
+TP2: 432.00
+TP3: 428.00
+
+🟡 NO TRADE
+Reason:
+Price is trapped between support and resistance.
+Wait for a breakout above 444.00 for LONG confirmation.
+Wait for a breakdown below 437.00 for SHORT confirmation.
+
+16. The AI must determine direction using:
+
+* Chart image
+* Candlestick patterns
+* Market structure
+* Trend analysis
+* Volume analysis
+* Support & Resistance
+* Historical chart memory
+* Previous successful and failed setups
+* AI Memory lessons
+* News sentiment (if available)
+
+17. The final result should resemble a professional hedge fund trade plan, not a generic chart description.
+
+The AI's primary objective is to answer:
+
+"Would I take a LONG, SHORT, or NO_TRADE position right now, and where exactly should I enter, place stop loss, and take profit?"

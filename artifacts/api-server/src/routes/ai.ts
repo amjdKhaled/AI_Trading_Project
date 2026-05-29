@@ -350,20 +350,31 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
     return;
   }
 
+  const pipelineStart = Date.now();
+
   try {
     // Phase 1: Vision model reads the chart image + similarity lookup (parallel)
-    req.log?.info({ symbol, timeframe, visionModel: resolvedVision }, "Phase 1 — vision model + similarity lookup starting");
+    const phase1Start = Date.now();
+    req.log?.info(
+      { symbol, timeframe, visionModel: resolvedVision, imageSizeKb: Math.round(imageBase64.length * 0.75 / 1024) },
+      "[Phase 1 START] Vision model invoked — reading chart screenshot",
+    );
     const [visionAnalysis, historicalMatches] = await Promise.all([
       analyzeChart({ imageBase64, symbol, timeframe, signalId }),
       symbol
         ? findSimilarPatterns({ symbol, regime: "unknown", side: "long" }, 5)
         : Promise.resolve([]),
     ]);
+    const phase1Ms = Date.now() - phase1Start;
     req.log?.info(
-      { symbol, trend: visionAnalysis.trend, patterns: visionAnalysis.patterns,
+      {
+        symbol, visionModel: resolvedVision, elapsedMs: phase1Ms,
+        elapsedSec: Math.round(phase1Ms / 100) / 10,
+        trend: visionAnalysis.trend, patterns: visionAnalysis.patterns,
         resistance: visionAnalysis.resistanceLevels, support: visionAnalysis.supportLevels,
-        confidence: visionAnalysis.confidence },
-      "Phase 1 complete — vision analysis returned",
+        confidence: visionAnalysis.confidence, similarSetups: historicalMatches.length,
+      },
+      "[Phase 1 COMPLETE] Vision analysis + historical lookup done",
     );
 
     // Phase 2: Decision engine (qwen2.5:14b) produces a trade plan
@@ -371,14 +382,22 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
     let decisionAvailable = false;
     const decisionOk = await isOllamaAvailable();
     if (decisionOk) {
-      req.log?.info({ symbol, timeframe, model: MODEL }, "Phase 2 — decision engine starting");
+      const phase2Start = Date.now();
+      req.log?.info(
+        { symbol, timeframe, model: MODEL, trend: visionAnalysis.trend, confidence: visionAnalysis.confidence },
+        "[Phase 2 START] Decision engine invoked — generating trade plan",
+      );
       try {
         decision = await makeChartDecision(visionAnalysis, symbol, timeframe, historicalMatches);
         decisionAvailable = true;
+        const phase2Ms = Date.now() - phase2Start;
         req.log?.info(
-          { symbol, direction: decision.direction, confidence: decision.confidence,
-            entry: decision.entry, sl: decision.stopLoss, tp: decision.takeProfit, rr: decision.riskReward },
-          "Phase 2 complete — decision engine result",
+          {
+            symbol, model: MODEL, elapsedMs: phase2Ms, elapsedSec: Math.round(phase2Ms / 100) / 10,
+            direction: decision.direction, confidence: decision.confidence,
+            entry: decision.entry, sl: decision.stopLoss, tp: decision.takeProfit, rr: decision.riskReward,
+          },
+          "[Phase 2 COMPLETE] Decision engine result",
         );
       } catch (decErr) {
         req.log?.warn({ decErr }, "Phase 2 failed — decision engine error, returning vision-only result");
@@ -398,13 +417,23 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
       thumbnailBase64,
     });
 
+    const totalMs = Date.now() - pipelineStart;
     req.log?.info(
-      { symbol, timeframe, signalId, trend: visionAnalysis.trend, direction: decision?.direction },
-      "Chart analysis pipeline complete",
+      {
+        symbol, timeframe, signalId,
+        totalMs, totalSec: Math.round(totalMs / 100) / 10,
+        trend: visionAnalysis.trend, direction: decision?.direction,
+        decisionAvailable,
+      },
+      "[PIPELINE COMPLETE] Chart analysis finished — total duration",
     );
     res.json({ ok: true, analysis: visionAnalysis, historicalMatches, decision, decisionAvailable });
   } catch (err) {
-    req.log?.warn({ err: (err as Error).message, stack: (err as Error).stack?.slice(0, 500), symbol, timeframe }, "Chart analysis pipeline failed");
+    const totalMs = Date.now() - pipelineStart;
+    req.log?.warn(
+      { err: (err as Error).message, stack: (err as Error).stack?.slice(0, 500), symbol, timeframe, totalMs },
+      "[PIPELINE FAILED] Chart analysis error",
+    );
     res.status(500).json({ ok: false, error: (err as Error).message });
   }
 });
