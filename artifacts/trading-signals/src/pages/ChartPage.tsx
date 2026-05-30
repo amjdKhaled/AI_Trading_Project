@@ -64,6 +64,13 @@ export interface TradeResult {
   exitTime: number;
 }
 
+export interface ResolvedAiDecision {
+  candleTime:    number;
+  candidateSide: "long" | "short" | "no_trade";
+  outcome:       "tp_hit" | "sl_hit" | "expired";
+  confidence:    number;
+}
+
 export interface AiCandleDecision {
   symbol:            string;
   timeframe:         string;
@@ -271,9 +278,10 @@ export default function ChartPage() {
   const [activeTrade,    setActiveTrade]    = useState<ActiveTrade | null>(null);
   const [tradeResult,    setTradeResult]    = useState<TradeResult | null>(null);
   const signalFetchAbort = useRef<AbortController | null>(null);
-  const [aiDecisions,    setAiDecisions]    = useState<AiCandleDecision[]>([]);
-  const [aiAnalyzing,    setAiAnalyzing]    = useState(false);
-  const [latestApproved, setLatestApproved] = useState<AiCandleDecision | null>(null);
+  const [aiDecisions,       setAiDecisions]       = useState<AiCandleDecision[]>([]);
+  const [aiAnalyzing,       setAiAnalyzing]       = useState(false);
+  const [latestApproved,    setLatestApproved]    = useState<AiCandleDecision | null>(null);
+  const [resolvedDecisions, setResolvedDecisions] = useState<ResolvedAiDecision[]>([]);
 
   const isStocks = marketType === "stocks";
   const isCrypto = marketType === "crypto";
@@ -378,6 +386,18 @@ export default function ChartPage() {
       .then(r => r.ok ? r.json() : null)
       .then((data: { ok: boolean; decision: AiCandleDecision | null } | null) => {
         setLatestApproved(data?.decision ?? null);
+      })
+      .catch(() => {});
+  }, [activeSymbol, stockTf, isStocks]);
+
+  // ── Load resolved AI decision history from DB ─────────────────────────────
+  useEffect(() => {
+    if (!isStocks || !activeSymbol) { setResolvedDecisions([]); return; }
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    fetch(`${base}/api/signals/ai-decisions-history?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(stockTf)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { ok: boolean; decisions: ResolvedAiDecision[] } | null) => {
+        setResolvedDecisions(data?.decisions ?? []);
       })
       .catch(() => {});
   }, [activeSymbol, stockTf, isStocks]);
@@ -613,6 +633,7 @@ export default function ChartPage() {
             onCandleClose={isStocks ? handleCandleClose : undefined}
             aiAnalyzing={isStocks ? aiAnalyzing : false}
             activeApprovedDecision={isStocks ? latestApproved : null}
+            resolvedAiDecisions={isStocks ? resolvedDecisions : []}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

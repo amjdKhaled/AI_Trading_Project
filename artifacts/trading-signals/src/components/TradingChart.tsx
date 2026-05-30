@@ -5,7 +5,7 @@ import {
   type HistogramData, type Time, type AutoscaleInfo, type IPriceLine,
 } from "lightweight-charts";
 import type { PriceUpdate, SignalNew } from "@/hooks/useMarketSocket";
-import type { ActiveTrade, TradeResult, AiCandleDecision } from "@/pages/ChartPage";
+import type { ActiveTrade, TradeResult, AiCandleDecision, ResolvedAiDecision } from "@/pages/ChartPage";
 import { CandleStateManager, type CSMTelemetry } from "@/lib/CandleStateManager";
 
 interface Bar { time: number; open: number; high: number; low: number; close: number; volume: number; }
@@ -59,6 +59,14 @@ interface DecisionMarkerPos {
   decision:   AiCandleDecision;
 }
 
+interface ResolvedDecisionPos {
+  key:      string;
+  x:        number;
+  y:        number;
+  isLong:   boolean;
+  outcome:  "tp_hit" | "sl_hit" | "expired";
+}
+
 interface Props {
   bars: Bar[];
   signals: SignalNew[];
@@ -81,6 +89,8 @@ interface Props {
   aiAnalyzing?: boolean;
   /** Newest APPROVED AI candle-close decision from DB — shown with full R/R box + entry/SL/TP lines */
   activeApprovedDecision?: AiCandleDecision | null;
+  /** Resolved (outcome != null) APPROVED AI decisions — rendered as compact outcome markers */
+  resolvedAiDecisions?: ResolvedAiDecision[];
 }
 
 const PRICE_SCALE_W = 68;
@@ -106,7 +116,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [] }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -151,12 +161,14 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   barsRef.current        = bars;
 
   // Stable refs for candle-close AI decision pipeline
-  const onCandleCloseRef      = useRef(onCandleClose);
-  const aiDecisionsRef        = useRef<AiCandleDecision[]>([]);
-  const activeApprovedRef     = useRef<AiCandleDecision | null>(null);
-  onCandleCloseRef.current     = onCandleClose;
-  aiDecisionsRef.current       = aiDecisions;
-  activeApprovedRef.current    = activeApprovedDecision;
+  const onCandleCloseRef         = useRef(onCandleClose);
+  const aiDecisionsRef           = useRef<AiCandleDecision[]>([]);
+  const activeApprovedRef        = useRef<AiCandleDecision | null>(null);
+  const resolvedAiDecisionsRef   = useRef<ResolvedAiDecision[]>([]);
+  onCandleCloseRef.current        = onCandleClose;
+  aiDecisionsRef.current          = aiDecisions;
+  activeApprovedRef.current       = activeApprovedDecision;
+  resolvedAiDecisionsRef.current  = resolvedAiDecisions;
 
   const [barCount, setBarCount]   = useState(0);
   const [dateRange, setDateRange] = useState("");
@@ -169,6 +181,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const [hoveredAiKey, setHoveredAiKey] = useState<string | null>(null);
   const [decisionMarkers, setDecisionMarkers] = useState<DecisionMarkerPos[]>([]);
   const [selectedDecision, setSelectedDecision] = useState<AiCandleDecision | null>(null);
+  const [resolvedDecisionMarkers, setResolvedDecisionMarkers] = useState<ResolvedDecisionPos[]>([]);
 
   const removeSLTP = useCallback(() => {
     const cs = candleRef.current;
@@ -472,6 +485,58 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     setDecisionMarkers(positions);
   }, []);
 
+  const computeResolvedDecisionMarkers = useCallback(() => {
+    const chart  = chartRef.current;
+    const series = candleRef.current;
+    const el     = containerRef.current;
+    if (!chart || !series || !el) return;
+
+    const W    = el.offsetWidth;
+    const H    = el.offsetHeight;
+    const maxX = W - PRICE_SCALE_W;
+    const maxY = H * (1 - VOLUME_RATIO);
+    const snap = barsRef.current;
+
+    const byTime = new Map<number, Bar>();
+    for (const b of snap) byTime.set(b.time, b);
+    const nearestBar = (targetSec: number): Bar | undefined => {
+      const hit = byTime.get(targetSec);
+      if (hit) return hit;
+      let lo = 0, hi = snap.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (snap[mid].time < targetSec) lo = mid + 1; else hi = mid;
+      }
+      const cand = snap[lo];
+      if (!cand) return undefined;
+      const prev = snap[lo - 1];
+      if (prev && Math.abs(prev.time - targetSec) < Math.abs(cand.time - targetSec)) return prev;
+      return cand;
+    };
+
+    const positions: ResolvedDecisionPos[] = [];
+    for (const dec of resolvedAiDecisionsRef.current) {
+      const b = nearestBar(dec.candleTime);
+      if (!b) continue;
+      const x = chart.timeScale().timeToCoordinate(b.time as Time);
+      if (x === null || x < 0 || x > maxX) continue;
+
+      const isLong = dec.candidateSide === "long";
+      const priceRef = isLong ? b.low : b.high;
+      const y = series.priceToCoordinate(priceRef);
+      if (y === null || y < 0 || y > maxY) continue;
+
+      positions.push({
+        key:     `rdec-${dec.candleTime}`,
+        x,
+        y:       isLong ? y + 5 : y - 5,
+        isLong,
+        outcome: dec.outcome,
+      });
+    }
+    setResolvedDecisionMarkers(positions);
+  }, []);
+
   // Chart init
   useEffect(() => {
     if (!containerRef.current) return;
@@ -569,12 +634,14 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeAiMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeDecisionMarkers);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
       chartRef.current.applyOptions({ width: containerRef.current.offsetWidth, height: containerRef.current.offsetHeight || 500 });
       computeMarkers();
       computeAiMarkers();
       computeDecisionMarkers();
+      computeResolvedDecisionMarkers();
     });
     ro.observe(containerRef.current);
 
@@ -583,6 +650,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeAiMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeDecisionMarkers);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
       removeSLTP();
       tradeIdRef.current = null;
       csmRef.current?.detach();
@@ -590,7 +658,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.remove();
       chartRef.current = candleRef.current = volumeRef.current = null;
     };
-  }, [computeMarkers, removeSLTP, computeDecisionMarkers]);
+  }, [computeMarkers, removeSLTP, computeDecisionMarkers, computeResolvedDecisionMarkers]);
 
   // Load bar data — validates every bar before rendering to prevent corrupted OHLC
   // from reaching the chart engine.  Also resets live-bar tracking so stale WebSocket
@@ -643,7 +711,8 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     setTimeout(computeMarkers, 80);
     setTimeout(computeAiMarkers, 80);
     setTimeout(computeDecisionMarkers, 80);
-  }, [bars, computeMarkers, computeAiMarkers, computeDecisionMarkers, removeSLTP]);
+    setTimeout(computeResolvedDecisionMarkers, 80);
+  }, [bars, computeMarkers, computeAiMarkers, computeDecisionMarkers, computeResolvedDecisionMarkers, removeSLTP]);
 
   // Active trade → SL/TP lines
   useEffect(() => {
@@ -688,6 +757,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
   useEffect(() => { setTimeout(computeAiMarkers, 30); }, [aiSignals, activeApprovedDecision, computeAiMarkers]);
   useEffect(() => { setTimeout(computeDecisionMarkers, 30); }, [aiDecisions, computeDecisionMarkers]);
+  useEffect(() => { setTimeout(computeResolvedDecisionMarkers, 30); }, [resolvedAiDecisions, computeResolvedDecisionMarkers]);
 
   // ── Live tick ingestion ────────────────────────────────────────────────────
   //
@@ -960,6 +1030,31 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
               <g key={m.key}>
                 <polygon points={pts} fill={outcomeCol} opacity={0.75}
                   stroke={outcomeCol} strokeWidth={0.5} />
+              </g>
+            );
+          })}
+
+          {/* ── Resolved AI decision outcome markers ──────────────────────
+               Compact triangles at each resolved APPROVED AI decision bar.
+               Green = tp_hit, Red = sl_hit, Gray = expired.
+               Uses the same compact style as historical signal markers but
+               with a small "●" dot inside to distinguish them from signals. */}
+          {resolvedDecisionMarkers.map((m) => {
+            const col =
+              m.outcome === "tp_hit"  ? "#22c55e" :
+              m.outcome === "sl_hit"  ? "#ef5350" :
+              "#6b7280";
+            const mW = 5;
+            const mH = 8;
+            const pts = m.isLong
+              ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
+              : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
+            return (
+              <g key={m.key}>
+                <polygon points={pts} fill={col} opacity={0.85}
+                  stroke={col} strokeWidth={0.8} />
+                <circle cx={m.x} cy={m.isLong ? m.y - 3 : m.y + 3}
+                  r={1.5} fill="#000" opacity={0.6} />
               </g>
             );
           })}

@@ -495,6 +495,48 @@ router.get("/signals/ai-active", async (req, res): Promise<void> => {
   }
 });
 
+// ── GET /signals/ai-decisions-history ─────────────────────────
+// Returns resolved (outcome IS NOT NULL) APPROVED AI decisions for a symbol+timeframe.
+// Used by the chart to render outcome markers (tp_hit=green, sl_hit=red, expired=gray).
+router.get("/signals/ai-decisions-history", async (req, res): Promise<void> => {
+  const symbol    = typeof req.query.symbol    === "string" ? req.query.symbol    : null;
+  const timeframe = typeof req.query.timeframe === "string" ? req.query.timeframe : "5m";
+  if (!symbol) { res.status(400).json({ error: "symbol query param required" }); return; }
+
+  try {
+    const rows = await db
+      .select({
+        candleTime:    aiDecisionsTable.candleTime,
+        candidateSide: aiDecisionsTable.candidateSide,
+        outcome:       aiDecisionsTable.outcome,
+        confidence:    aiDecisionsTable.confidence,
+      })
+      .from(aiDecisionsTable)
+      .where(and(
+        eq(aiDecisionsTable.symbol,    symbol.toUpperCase().trim()),
+        eq(aiDecisionsTable.timeframe, timeframe),
+        eq(aiDecisionsTable.verdict,   "APPROVE"),
+        isNotNull(aiDecisionsTable.outcome),
+      ))
+      .orderBy(desc(aiDecisionsTable.candleTime))
+      .limit(200);
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      decisions: rows.map((r) => ({
+        candleTime:    Math.floor(new Date(r.candleTime).getTime() / 1000),
+        candidateSide: r.candidateSide ?? "no_trade",
+        outcome:       r.outcome,
+        confidence:    r.confidence,
+      })),
+    });
+  } catch (err) {
+    req.log?.error({ err, symbol, timeframe }, "ai-decisions-history lookup failed");
+    res.status(500).json({ error: "Failed to fetch AI decision history" });
+  }
+});
+
 // ── GET /signals/stats ────────────────────────────────────────
 router.get("/signals/stats", async (req, res): Promise<void> => {
   const query = GetSignalStatsQueryParams.safeParse(req.query);
