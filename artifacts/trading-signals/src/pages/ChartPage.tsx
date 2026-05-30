@@ -428,6 +428,13 @@ export default function ChartPage() {
           })
           .catch(() => {});
       }
+      // Re-fetch resolved decision markers so newly resolved outcomes appear on the chart
+      fetch(`${base}/api/signals/ai-decisions-history?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(stockTf)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then((data: { ok: boolean; decisions: ResolvedAiDecision[] } | null) => {
+          setResolvedDecisions(data?.decisions ?? []);
+        })
+        .catch(() => {});
     } catch {
       // never break the chart
     } finally {
