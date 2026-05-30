@@ -470,6 +470,46 @@ export default function ChartPage() {
     resultTimerRef.current = setTimeout(() => setTradeResult(null), 6000);
   }, [lastPrice, activeTrade]);
 
+  // ── Live-tick auto-exit: watch lastPrice against latestApproved AI decision ──
+  useEffect(() => {
+    if (!latestApproved || !lastPrice || !activeSymbol || !isStocks) return;
+    if (lastPrice.symbol !== latestApproved.symbol) return;
+
+    const { candidateSide, entryPrice, slPrice, tpPrice } = latestApproved;
+    if (entryPrice == null || slPrice == null || tpPrice == null) return;
+
+    const price  = lastPrice.price;
+    const isLong = candidateSide === "long";
+    const tpHit  = isLong ? price >= tpPrice : price <= tpPrice;
+    const slHit  = isLong ? price <= slPrice  : price >= slPrice;
+    if (!tpHit && !slHit) return;
+
+    const outcome      = tpHit ? "tp_hit" as const : "sl_hit" as const;
+    const outcomePrice = tpHit ? tpPrice : slPrice;
+
+    // Immediately remove from active display to prevent duplicate calls
+    setLatestApproved(null);
+
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    // Resolve in DB and fire reflection (fire-and-forget from frontend perspective)
+    fetch(`${base}/api/signals/ai-active/resolve`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: activeSymbol, timeframe: stockTf, outcome, outcomePrice }),
+    })
+      .then(() => new Promise<void>((r) => setTimeout(r, 800)))
+      .then(() =>
+        fetch(
+          `${base}/api/signals/ai-decisions-history?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(stockTf)}`,
+        ),
+      )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { ok: boolean; decisions: ResolvedAiDecision[] } | null) => {
+        setResolvedDecisions(data?.decisions ?? []);
+      })
+      .catch(() => {});
+  }, [lastPrice, latestApproved, activeSymbol, stockTf, isStocks]);
+
   const handleActivateTrade = useCallback((trade: ActiveTrade) => {
     if (activeTrade) return;
     setTradeResult(null);

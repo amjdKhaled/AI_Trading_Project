@@ -452,6 +452,7 @@ router.get("/signals/ai-active", async (req, res): Promise<void> => {
         eq(aiDecisionsTable.symbol,    symbol.toUpperCase().trim()),
         eq(aiDecisionsTable.timeframe, timeframe),
         eq(aiDecisionsTable.verdict,   "APPROVE"),
+        isNull(aiDecisionsTable.outcome),
       ))
       .orderBy(desc(aiDecisionsTable.createdAt))
       .limit(1);
@@ -494,6 +495,62 @@ router.get("/signals/ai-active", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err, symbol, timeframe }, "ai-active lookup failed");
     res.status(500).json({ error: "Failed to fetch active AI decision" });
+  }
+});
+
+// ── PATCH /signals/ai-active/resolve ──────────────────────────
+// Resolves all pending (no outcome) APPROVED AI decisions for a symbol+timeframe
+// with the given outcome (tp_hit | sl_hit). Called by the frontend when a live
+// price tick touches TP or SL. Fires auto-reflection fire-and-forget.
+router.patch("/signals/ai-active/resolve", async (req, res): Promise<void> => {
+  const { symbol, timeframe, outcome, outcomePrice } = req.body as {
+    symbol?: string; timeframe?: string;
+    outcome?: string; outcomePrice?: number;
+  };
+  if (!symbol || !timeframe || !outcome || outcomePrice == null) {
+    res.status(400).json({ error: "symbol, timeframe, outcome, outcomePrice required" });
+    return;
+  }
+  if (outcome !== "tp_hit" && outcome !== "sl_hit") {
+    res.status(400).json({ error: "outcome must be tp_hit or sl_hit" });
+    return;
+  }
+
+  try {
+    const rows = await db
+      .select()
+      .from(aiDecisionsTable)
+      .where(and(
+        eq(aiDecisionsTable.symbol,    symbol.toUpperCase().trim()),
+        eq(aiDecisionsTable.timeframe, timeframe),
+        eq(aiDecisionsTable.verdict,   "APPROVE"),
+        isNull(aiDecisionsTable.outcome),
+      ));
+
+    if (rows.length === 0) {
+      res.json({ ok: true, resolved: 0 });
+      return;
+    }
+
+    const resolvedAt = new Date();
+    for (const row of rows) {
+      await db
+        .update(aiDecisionsTable)
+        .set({ outcome: outcome as "tp_hit" | "sl_hit", outcomePrice, resolvedAt })
+        .where(eq(aiDecisionsTable.id, row.id));
+    }
+
+    const resolvedRows = rows.map(r => ({
+      ...r, outcome: outcome as "tp_hit" | "sl_hit", outcomePrice, resolvedAt, reflected: false,
+    }));
+    // Fire reflection asynchronously — never block the HTTP response
+    autoReflectResolved(resolvedRows, req.log).catch(() => {});
+
+    req.log?.info({ symbol, timeframe, outcome, count: rows.length }, "AI decisions resolved via live tick");
+    res.json({ ok: true, resolved: rows.length });
+  } catch (err) {
+    req.log?.error({ err }, "ai-active/resolve failed");
+    res.status(500).json({ error: "Failed to resolve AI decision" });
   }
 });
 

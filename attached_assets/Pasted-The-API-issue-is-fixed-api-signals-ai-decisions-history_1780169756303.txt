@@ -1,0 +1,70 @@
+The API issue is fixed. `/api/signals/ai-decisions-history` now returns 200.
+
+Now I want one UI/lifecycle fix only. Do not change the AI decision logic.
+
+Problems:
+
+1. The active AI trade is not displayed exactly like the old AI Decide trade box.
+2. When price touches TP or SL, the active trade should close automatically.
+3. After closing, it should become a historical completed trade marker like the old trades.
+
+Requirements:
+
+1. Active AI trade display
+   The newest active AI decision must use the exact old AI Decide visual style:
+
+* AI LONG / AI SHORT label
+* Confidence %
+* Entry line
+* Stop Loss line
+* Take Profit line
+* Shaded risk/reward area
+* Price labels on the right
+* Same old spacing, colors, and layout
+
+This is UI-only. Do not restore the AI Decide button or manual flow.
+
+2. Trade lifecycle
+   For every active AI trade:
+
+* Monitor live candles/ticks.
+* If price touches TP, close the trade as `tp_hit`.
+* If price touches SL, close the trade as `sl_hit`.
+* Update the database outcome.
+* Trigger auto-reflection / memory update.
+* Remove it from active trade display.
+* Render it as a historical completed trade.
+
+3. Historical display after close
+   After TP or SL:
+
+* Entry marker stays as BUY or SELL.
+* TP HIT or SL HIT appears as a separate marker at the actual hit price/time.
+* It should look like the old historical Generate-style markers.
+* Do not keep the active AI trade box after the trade is closed.
+
+4. SHORT layout
+   For active SHORT:
+
+* SL above entry.
+* TP below entry.
+* Red risk zone above entry.
+* Green profit zone below entry.
+
+5. LONG layout
+   For active LONG:
+
+* TP above entry.
+* SL below entry.
+* Green profit zone above entry.
+* Red risk zone below entry.
+
+6. Refresh behavior
+   After a trade closes:
+
+* The chart should update immediately without manual refresh.
+* `/api/signals/ai-active` should no longer return that closed trade as active.
+* `/api/signals/ai-decisions-history` should include it as resolved.
+
+Keep the new automatic candle-close AI architecture unchanged.
+Only fix active trade rendering and lifecycle transition from active → closed historical trade.
