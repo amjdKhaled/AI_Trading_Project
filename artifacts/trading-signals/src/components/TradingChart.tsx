@@ -854,16 +854,16 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
 
             return (
               <g key={`ai-svg-${m.key}`}>
-                {/* Profit zone fill */}
+                {/* Profit zone fill — always green (price moves toward TP, above for SHORT below for LONG) */}
                 <rect x={boxX} y={profitTop} width={boxW} height={profitHeight}
-                  fill={m.isLong ? "#00ff8808" : "#ff334608"} />
+                  fill="#00ff8808" />
                 <rect x={boxX} y={profitTop} width={boxW} height={profitHeight}
-                  fill="none" stroke={m.isLong ? "#00ff8820" : "#ff334620"} strokeWidth={0.8} />
-                {/* Loss zone fill */}
+                  fill="none" stroke="#00ff8820" strokeWidth={0.8} />
+                {/* Loss zone fill — always red (price moves toward SL, below for SHORT above for LONG) */}
                 <rect x={boxX} y={lossTop} width={boxW} height={lossHeight}
-                  fill={m.isLong ? "#ff334608" : "#00ff8808"} />
+                  fill="#ff334608" />
                 <rect x={boxX} y={lossTop} width={boxW} height={lossHeight}
-                  fill="none" stroke={m.isLong ? "#ff334620" : "#00ff8820"} strokeWidth={0.8} />
+                  fill="none" stroke="#ff334620" strokeWidth={0.8} />
                 {/* TP line */}
                 <line x1={boxX} y1={m.tpY} x2={m.rightX} y2={m.tpY}
                   stroke={G} strokeWidth={1} strokeDasharray="6 4" opacity={0.65} />

@@ -399,6 +399,15 @@ export default function ChartPage() {
         const filtered = prev.filter((d) => d.candleTime !== dec.candleTime);
         return [dec, ...filtered].slice(0, 50);
       });
+      // Refresh active approved decision overlay if this candle triggered an approval
+      if (dec.verdict === "APPROVE") {
+        fetch(`${base}/api/signals/ai-active?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(stockTf)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then((data: { ok: boolean; decision: AiCandleDecision | null } | null) => {
+            setLatestApproved(data?.decision ?? null);
+          })
+          .catch(() => {});
+      }
     } catch {
       // never break the chart
     } finally {
