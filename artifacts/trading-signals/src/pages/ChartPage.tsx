@@ -86,6 +86,9 @@ export interface AiCandleDecision {
   htfBias:           string;
   session:           string;
   patterns:          string[];
+  strengths:         string[];
+  weaknesses:        string[];
+  marketBias:        "bullish" | "bearish" | "neutral";
   technicalContext:  Record<string, unknown>;
 }
 

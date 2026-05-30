@@ -14,6 +14,7 @@ import { isOllamaAvailable } from "../lib/ai/ollama";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection";
 import { rowToTradeEntry } from "./ai";
 import { filterCandleWithAi } from "../lib/ai/filter";
+import { buildMarketContext, findSimilarHistoricalSetups } from "../lib/ai/market-context";
 import { getNewsSentiment } from "../lib/ai/news";
 import type { OhlcvBar } from "../lib/analyzer/types";
 
@@ -337,19 +338,17 @@ router.post("/signals/candle-decision", async (req, res): Promise<void> => {
     const bars    = barsRaw    as OhlcvBar[];
     const htfBars = htfBarsRaw as OhlcvBar[];
 
-    // ── 2. Run signal engine — get candidates ────────────────────────────
-    const { candidates } = generateSignals(bars, sym, timeframe, htfBars);
-
-    // Best candidate within ±1 bar of the closed candle
-    const candidate = candidates
-      .filter(c => Math.abs(c.time - candleTime) <= intervalSec)
-      .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
-
-    // ── 3. Fetch news (cached 22 min) ────────────────────────────────────
+    // ── 2. Market Analysis Engine — compute full deterministic context ────
     const news = await getNewsSentiment(sym);
+    const ctx  = buildMarketContext(bars, htfBars, HTF_MAP[timeframe] ?? "15m", sym, timeframe, candleTime, news);
 
-    // ── 4. Run Ollama filter ─────────────────────────────────────────────
-    const decision = await filterCandleWithAi(candidate, news, bars, sym, timeframe, candleTime);
+    // ── 3. Historical similar setups (async DB query) ────────────────────
+    const historicalStats = await findSimilarHistoricalSetups(
+      sym, ctx.regime, ctx.indicators.rsi14, ctx.candlestickPatterns,
+    );
+
+    // ── 4. Ollama Trade Intelligence Engine — full decision ───────────────
+    const decision = await filterCandleWithAi(ctx, historicalStats);
 
     // ── 5. Persist to DB (skip on duplicate) ────────────────────────────
     try {
@@ -365,7 +364,12 @@ router.post("/signals/candle-decision", async (req, res): Promise<void> => {
         tpPrice:           decision.tpPrice,
         invalidationLevel: decision.invalidationLevel,
         rrRatio:           decision.rrRatio,
-        technicalContext:  decision.technicalContext,
+        technicalContext:  {
+          ...decision.technicalContext,
+          strengths:   decision.strengths,
+          weaknesses:  decision.weaknesses,
+          marketBias:  decision.marketBias,
+        },
         aiReasoning:       decision.aiReasoning,
         rejectionReason:   decision.rejectionReason,
         newsSummary:       decision.newsSummary,
@@ -373,7 +377,7 @@ router.post("/signals/candle-decision", async (req, res): Promise<void> => {
         regime:            decision.regime,
         htfBias:           decision.htfBias,
         session:           decision.session,
-        candidateScore:    candidate?.confidence ?? 0,
+        candidateScore:    decision.confidence,
         patterns:          decision.patterns,
       });
     } catch (dbErr) {

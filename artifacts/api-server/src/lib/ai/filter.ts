@@ -3,8 +3,12 @@ import { getRelevantContextFromDb, getStrategyWinRateFromDb, getRegimeWinRateFro
 import { getRelevantContext, getStrategyWinRate, getRegimeWinRate, loadMemory } from "./memory.js";
 import { logger } from "../logger.js";
 import type { AiSignalVerdict, AiCandleDecision, CandleVerdict } from "./types.js";
-import type { SignalCandidate, OhlcvBar } from "../analyzer/types.js";
-import type { NewsSentiment } from "./news.js";
+import type { MarketContext, HistoricalSetupStats } from "./market-context.js";
+
+// ── Signal pre-filter (evaluates a signal candidate from the engine) ──────────
+// Legacy path: still used when the signal engine fires a candidate.
+// Preserved so existing signal reflection + AI filter flows keep working.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const SYSTEM = `You are a professional institutional trading analyst with 20 years of experience. You evaluate intraday momentum setups with discipline. You respond ONLY with valid JSON — no preamble, no markdown outside the JSON block. Be concise and data-driven.`;
 
@@ -147,207 +151,295 @@ export async function filterSignalWithAi(ctx: SignalContext): Promise<AiSignalVe
   }
 }
 
-// ── Candle-close AI decision ─────────────────────────────────────────────────
-// Called after every candle close. Returns APPROVE / REJECT / WAIT.
-// Hard rules (applied before Ollama):
-//   - confidence < 80 → WAIT (never force a low-confidence trade)
-//   - R:R < 1.5       → REJECT immediately
-//   - Ollama offline  → WAIT (safe default, no capital risked)
+// ── Candle-close Trade Intelligence Engine ────────────────────────────────────
+// The Market Analysis Engine (buildMarketContext) computes all indicators.
+// Ollama reads the full market context and generates LONG / SHORT / WAIT.
+//
+// Hard rules applied AFTER Ollama (server-side enforcement):
+//   - R:R < 2.0                      → WAIT
+//   - LONG within 0.5% of resistance → WAIT
+//   - SHORT within 0.5% of support   → WAIT
+//   - confidence ≥ 80                → APPROVE
+//   - confidence 65–79               → WAIT
+//   - confidence < 65                → REJECT
+//   - Ollama offline                 → WAIT
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CANDLE_SYSTEM = `You are a professional trading risk manager. A technical engine generated a trade candidate. Your ONLY job: evaluate it and return APPROVE, REJECT, or WAIT. Respond ONLY with valid JSON. No markdown, no preamble.`;
+const CANDLE_SYSTEM = `You are an institutional Trade Intelligence Engine with 20 years of market experience. A deterministic Market Analysis Engine has computed complete context for you. Your sole job: read ALL the data and generate a precise LONG, SHORT, or WAIT decision. Respond ONLY with valid JSON. No preamble, no markdown, no text outside the JSON object.`;
 
-function buildCandlePrompt(
-  candidate: SignalCandidate,
-  news: NewsSentiment,
-  bars: OhlcvBar[],
-  symbol: string,
-  timeframe: string,
-): string {
-  const meta    = (candidate.metadata ?? {}) as Record<string, unknown>;
-  const risk    = Math.abs(candidate.entryPrice - candidate.slPrice) || 1;
-  const reward  = Math.abs(candidate.tpPrice - candidate.entryPrice);
-  const rrRatio = (reward / risk).toFixed(2);
-  const last5   = bars.slice(-5)
-    .map(b => `O:${b.open.toFixed(4)} H:${b.high.toFixed(4)} L:${b.low.toFixed(4)} C:${b.close.toFixed(4)}`)
-    .join(" | ");
+function buildMarketContextPrompt(ctx: MarketContext, stats: HistoricalSetupStats): string {
+  const { indicators: ind, structure: str, htf } = ctx;
+  const price = ctx.currentBar.close;
 
-  return `Evaluate this ${timeframe} signal on ${symbol}.
+  const obStr = ctx.orderBlocks.length > 0
+    ? ctx.orderBlocks.map(o =>
+        `${o.type.toUpperCase()} OB [${o.low.toFixed(4)}–${o.high.toFixed(4)}]${o.inZone ? " ← PRICE IN ZONE" : ""}`
+      ).join(", ")
+    : "none";
 
-CANDIDATE:
-  Side: ${candidate.side.toUpperCase()} | Entry: ${candidate.entryPrice.toFixed(4)} | SL: ${candidate.slPrice.toFixed(4)} | TP: ${candidate.tpPrice.toFixed(4)}
-  R:R: ${rrRatio} | Engine confidence: ${candidate.confidence}/100 | Grade: ${candidate.grade}
-  Strategy: ${candidate.strategy ?? "N/A"} | Regime: ${String(meta.regime ?? "?")}
-  HTF Bias: ${String(meta.htfBias ?? "neutral")} | Session: ${String(meta.session ?? "?")}
-  Volume: ${String(meta.volumeState ?? "?")} | Structure: ${String(meta.structureState ?? "?")}
-  Patterns: ${candidate.patterns.slice(0, 8).join(", ") || "none"}
-  Confluence pillars: ${String(meta.confluenceCount ?? "?")}
+  const fvgStr = ctx.fairValueGaps.length > 0
+    ? ctx.fairValueGaps.map(f =>
+        `${f.type.toUpperCase()} FVG [${f.low.toFixed(4)}–${f.high.toFixed(4)}]${f.filled ? " (filled)" : f.inZone ? " ← PRICE IN ZONE" : ""}`
+      ).join(", ")
+    : "none";
 
-LAST 5 BARS: ${last5}
+  const recent15 = ctx.recentBars.slice(-15).map(b =>
+    `  ${new Date(b.time * 1000).toISOString().slice(11, 16)} ` +
+    `O:${b.open.toFixed(4)} H:${b.high.toFixed(4)} L:${b.low.toFixed(4)} C:${b.close.toFixed(4)} V:${b.volume.toFixed(0)}`
+  ).join("\n");
 
-NEWS (secondary — technical structure takes priority):
-  Sentiment: ${news.sentiment} (${news.score.toFixed(2)}) | ${news.summary}
+  const resWarn = str.distanceToResistancePct != null && str.distanceToResistancePct < 0.5
+    ? `\n  ⚠ PRICE IS ${str.distanceToResistancePct.toFixed(2)}% FROM RESISTANCE — NO LONG` : "";
+  const supWarn = str.distanceToSupportPct != null && str.distanceToSupportPct < 0.5
+    ? `\n  ⚠ PRICE IS ${str.distanceToSupportPct.toFixed(2)}% FROM SUPPORT — NO SHORT` : "";
 
-HARD REJECTION RULES — reject if ANY applies:
-1. R:R < 1.5
-2. Entry is directly at key S/R (within 0.3% of recent swing high/low)
-3. Regime is "chop" with no strong pattern
-4. HTF bias strongly opposes the direction (e.g., LONG in "bear" HTF)
-5. News strongly opposes the direction AND setup is already marginal
-6. Price just completed 5+ consecutive bars in same direction (post-extended)
+  return `══════════════════════════════════════════════
+MARKET ANALYSIS — ${ctx.symbol} ${ctx.timeframe}
+Candle: ${new Date(ctx.candleTime * 1000).toISOString()} | Session: ${ctx.session}
+══════════════════════════════════════════════
 
-WAIT if: confidence feels below 80, entry quality is ambiguous, or mixed signals.
-APPROVE only when: clean structure, R:R ≥ 1.5, aligned HTF, volume confirms.
+CURRENT BAR
+  O:${ctx.currentBar.open.toFixed(4)}  H:${ctx.currentBar.high.toFixed(4)}  L:${ctx.currentBar.low.toFixed(4)}  C:${price.toFixed(4)}
+  Volume: ${ctx.currentBar.volume.toFixed(0)} (${ind.relativeVolume}x 20-bar avg)
 
-Return ONLY this JSON (numbers must be numeric, not strings):
+INDICATORS (last 100 ${ctx.timeframe} bars)
+  RSI(14):  ${ind.rsi14}${ind.rsi14 > 70 ? " ← OVERBOUGHT" : ind.rsi14 < 30 ? " ← OVERSOLD" : ""}
+  EMA20: ${ind.ema20}  EMA50: ${ind.ema50}  EMA200: ${ind.ema200}
+  vs EMAs: ${price > ind.ema20 ? "ABOVE" : "BELOW"} EMA20 / ${price > ind.ema50 ? "ABOVE" : "BELOW"} EMA50 / ${price > ind.ema200 ? "ABOVE" : "BELOW"} EMA200
+  MACD: ${ind.macdLine} / ${ind.macdSignal} / hist ${ind.macdHist}${ind.macdHist > 0 ? " (bullish)" : " (bearish)"}
+  ATR(14): ${ind.atr14}  |  VWAP: ${ind.vwap} (price ${price > ind.vwap ? "ABOVE ↑" : "BELOW ↓"})
+
+MARKET STRUCTURE (last 100 bars)
+  Trend: ${str.trendDirection.toUpperCase()}  |  Regime: ${ctx.regime}
+  Swing Highs: [${str.swingHighs.join(", ") || "none"}]
+  Swing Lows:  [${str.swingLows.join(", ") || "none"}]
+  Nearest Resistance: ${str.nearestResistance?.toFixed(4) ?? "none"}${str.distanceToResistancePct != null ? ` (+${str.distanceToResistancePct.toFixed(2)}% from price)` : ""}${resWarn}
+  Nearest Support:    ${str.nearestSupport?.toFixed(4) ?? "none"}${str.distanceToSupportPct != null ? ` (-${str.distanceToSupportPct.toFixed(2)}% from price)` : ""}${supWarn}
+
+TREND EVOLUTION: ${ctx.trendEvolution}
+VOLUME BEHAVIOR: ${ctx.volumeEvolution}
+
+LAST 15 BARS (${ctx.timeframe}):
+${recent15}
+
+HIGHER TIMEFRAME — ${htf.timeframe}
+  Trend: ${htf.trendDirection.toUpperCase()}  |  Bias: ${htf.bias.toUpperCase()}
+  RSI: ${htf.rsi14}  |  EMA20: ${htf.ema20}  EMA50: ${htf.ema50}  EMA200: ${htf.ema200}
+  HTF Highs: [${htf.swingHighs.join(", ") || "none"}]
+  HTF Lows:  [${htf.swingLows.join(", ") || "none"}]
+
+INSTITUTIONAL ZONES
+  Order Blocks: ${obStr}
+  Fair Value Gaps: ${fvgStr}
+  Candlestick Patterns: ${ctx.candlestickPatterns.join(", ") || "none"}
+
+NEWS
+  Sentiment: ${ctx.news.sentiment}${ctx.news.score != null ? ` (score: ${ctx.news.score.toFixed(2)})` : ""}
+  Summary: ${ctx.news.summary || "No news data"}
+
+HISTORICAL PERFORMANCE (${ctx.symbol})
+  ${stats.summary}
+  Closed trades: ${stats.samples}  |  Win Rate: ${(stats.winRate * 100).toFixed(1)}%
+  Avg R:R (wins): ${stats.avgRR.toFixed(2)}  |  Avg loss: ${stats.avgLoss.toFixed(2)}R
+  Regime "${ctx.regime}" AI approve rate: ${(stats.regimeApproveRate * 100).toFixed(0)}%
+
+══════════════════════════════════════════════
+MANDATORY DECISION RULES — ALL MUST BE APPLIED
+══════════════════════════════════════════════
+1. R:R MUST be ≥ 2.0 — if your R:R < 2.0, set decision = "WAIT"
+2. confidence ≥ 80 → APPROVE  |  65–79 → WAIT  |  < 65 → REJECT
+3. NO LONG if price is within 0.5% of nearest resistance
+4. NO SHORT if price is within 0.5% of nearest support
+5. Reduce confidence if HTF bias strongly opposes your direction
+6. Use historical win rate and regime approve rate to calibrate confidence
+7. Consider the last 15 bars — where is the highest-probability trade setup?
+8. For LONG: entry near close or pullback, SL below nearest swing low, TP ≥ 2× risk
+9. For SHORT: entry near close or retest, SL above nearest swing high, TP ≥ 2× risk
+
+Return ONLY this JSON (all numeric fields must be numbers, not strings; use null for WAIT):
 {
-  "verdict": "APPROVE" | "REJECT" | "WAIT",
-  "confidence": 0-100,
-  "entry": <number>,
-  "stopLoss": <number>,
-  "takeProfit": <number>,
-  "invalidation": <price that voids the setup>,
-  "reasoning": "<2 sentences max>",
-  "rejectionReason": null | "<brief reason>"
+  "decision": "LONG" | "SHORT" | "WAIT",
+  "confidence": <0-100>,
+  "entry": <number | null>,
+  "stopLoss": <number | null>,
+  "takeProfit": <number | null>,
+  "riskReward": <number | null>,
+  "reasoning": "<2-3 sentences explaining the decision>",
+  "strengths": ["<supporting factor>", "..."],
+  "weaknesses": ["<risk or opposing factor>", "..."],
+  "marketBias": "BULLISH" | "BEARISH" | "NEUTRAL"
 }`;
 }
 
-function noTradeDecision(
-  symbol: string, timeframe: string, candleTimeSec: number, reason: string,
+function noTrade(
+  ctx:     MarketContext,
+  reason:  string,
+  conf     = 0,
+  verdict: CandleVerdict = "WAIT",
 ): AiCandleDecision {
+  const techCtx: Record<string, unknown> = {
+    rsi14:    ctx.indicators.rsi14,  ema20:    ctx.indicators.ema20,
+    ema50:    ctx.indicators.ema50,  ema200:   ctx.indicators.ema200,
+    macdHist: ctx.indicators.macdHist, atr14:  ctx.indicators.atr14,
+    vwap:     ctx.indicators.vwap,   relVol:   ctx.indicators.relativeVolume,
+    trend:    ctx.structure.trendDirection,
+    nearRes:  ctx.structure.nearestResistance,
+    nearSup:  ctx.structure.nearestSupport,
+    htfBias:  ctx.htf.bias, htfRsi: ctx.htf.rsi14, htfTrend: ctx.htf.trendDirection,
+  };
   return {
-    symbol, timeframe, candleTime: candleTimeSec,
-    candidateSide: "no_trade", verdict: "WAIT", confidence: 0,
+    symbol: ctx.symbol, timeframe: ctx.timeframe, candleTime: ctx.candleTime,
+    candidateSide: "no_trade", verdict, confidence: conf,
     entryPrice: null, slPrice: null, tpPrice: null,
     invalidationLevel: null, rrRatio: null,
-    aiReasoning: reason, rejectionReason: null,
-    newsSentiment: "neutral", newsSummary: "",
-    regime: "unknown", htfBias: "neutral", session: "unknown",
-    patterns: [], technicalContext: {},
+    aiReasoning: reason,
+    rejectionReason: verdict !== "WAIT" ? reason : null,
+    newsSentiment: ctx.news.sentiment, newsSummary: ctx.news.summary,
+    regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
+    patterns: ctx.candlestickPatterns,
+    strengths: [], weaknesses: [],
+    marketBias: ctx.htf.bias === "bullish" ? "bullish" : ctx.htf.bias === "bearish" ? "bearish" : "neutral",
+    technicalContext: techCtx,
   };
 }
 
-/**
- * Run Ollama verdict after a candle closes.
- * Returns an AiCandleDecision — always resolves, never throws.
- */
 export async function filterCandleWithAi(
-  candidate:     SignalCandidate | null,
-  news:          NewsSentiment,
-  bars:          OhlcvBar[],
-  symbol:        string,
-  timeframe:     string,
-  candleTimeSec: number,
+  ctx:   MarketContext,
+  stats: HistoricalSetupStats,
 ): Promise<AiCandleDecision> {
-  // No setup from the engine → WAIT, no Ollama call needed
-  if (!candidate) {
-    return noTradeDecision(symbol, timeframe, candleTimeSec,
-      "Engine found no qualifying setup at this candle close.");
-  }
-
-  const meta    = (candidate.metadata ?? {}) as Record<string, unknown>;
-  const risk    = Math.abs(candidate.entryPrice - candidate.slPrice) || 1;
-  const reward  = Math.abs(candidate.tpPrice - candidate.entryPrice);
-  const rrRatio = Math.round((reward / risk) * 100) / 100;
-
-  const base = {
-    symbol, timeframe, candleTime: candleTimeSec,
-    candidateSide:  candidate.side as "long" | "short",
-    confidence:     candidate.confidence,
-    entryPrice:     candidate.entryPrice,
-    slPrice:        candidate.slPrice,
-    tpPrice:        candidate.tpPrice,
-    invalidationLevel: null as number | null,
-    rrRatio,
-    newsSentiment:  news.sentiment,
-    newsSummary:    news.summary,
-    regime:         String(meta.regime   ?? "unknown"),
-    htfBias:        String(meta.htfBias  ?? "neutral"),
-    session:        String(meta.session  ?? "unknown"),
-    patterns:       candidate.patterns,
-    technicalContext: {
-      confidence:      candidate.confidence,
-      grade:           candidate.grade,
-      strategy:        candidate.strategy ?? null,
-      volumeState:     meta.volumeState    ?? null,
-      structureState:  meta.structureState ?? null,
-      confluenceCount: meta.confluenceCount ?? null,
-      rrRatio,
-    } as Record<string, unknown>,
-  };
-
-  // Hard confidence gate — below 80 = WAIT, no Ollama call
-  if (candidate.confidence < 80) {
-    return {
-      ...base, verdict: "WAIT",
-      aiReasoning:    `Confidence ${candidate.confidence}/100 is below the 80 threshold — waiting for a cleaner setup.`,
-      rejectionReason: `Confidence below threshold (${candidate.confidence})`,
-    };
-  }
-
-  // R:R gate — reject < 1.5 immediately
-  if (rrRatio < 1.5) {
-    return {
-      ...base, verdict: "REJECT",
-      aiReasoning:    `R:R of ${rrRatio} is below 1.5 minimum — trade skipped.`,
-      rejectionReason: `R:R too low: ${rrRatio}`,
-    };
-  }
-
-  // Ollama availability
   const ollamaOk = await isOllamaAvailable();
   if (!ollamaOk) {
-    return {
-      ...base, verdict: "WAIT",
-      aiReasoning:    "Ollama is offline — cannot evaluate. Defaulting to WAIT.",
-      rejectionReason: null,
-    };
+    return noTrade(ctx, "Ollama is offline — defaulting to WAIT to protect capital.");
   }
 
-  // Call Ollama (30 s timeout — tight enough not to stall the chart)
+  const techCtx: Record<string, unknown> = {
+    rsi14:    ctx.indicators.rsi14,  ema20:    ctx.indicators.ema20,
+    ema50:    ctx.indicators.ema50,  ema200:   ctx.indicators.ema200,
+    macdHist: ctx.indicators.macdHist, atr14:  ctx.indicators.atr14,
+    vwap:     ctx.indicators.vwap,   relVol:   ctx.indicators.relativeVolume,
+    trend:    ctx.structure.trendDirection,
+    nearRes:  ctx.structure.nearestResistance,
+    nearSup:  ctx.structure.nearestSupport,
+    htfBias:  ctx.htf.bias, htfRsi: ctx.htf.rsi14, htfTrend: ctx.htf.trendDirection,
+    regime:   ctx.regime,
+  };
+
   let raw = "";
   try {
-    raw = await ollamaGenerate(buildCandlePrompt(candidate, news, bars, symbol, timeframe), CANDLE_SYSTEM);
+    raw = await ollamaGenerate(buildMarketContextPrompt(ctx, stats), CANDLE_SYSTEM);
   } catch (err) {
-    logger.warn({ symbol, timeframe, err }, "Ollama candle-decision timed out — WAIT");
-    return {
-      ...base, verdict: "WAIT",
-      aiReasoning:    "Ollama request timed out — defaulting to WAIT to protect capital.",
-      rejectionReason: null,
-    };
+    logger.warn({ symbol: ctx.symbol, timeframe: ctx.timeframe, err }, "Ollama candle decision timed out");
+    return noTrade(ctx, "Ollama request timed out — defaulting to WAIT.");
   }
 
-  // Parse JSON
   try {
     const p = parseJsonFromResponse(raw) as Record<string, unknown>;
 
-    const verdict: CandleVerdict = (["APPROVE", "REJECT", "WAIT"] as const).includes(p.verdict as CandleVerdict)
-      ? (p.verdict as CandleVerdict)
-      : "WAIT";
+    const rawDec    = typeof p.decision === "string" ? p.decision.toUpperCase() : "WAIT";
+    const direction: "long" | "short" | "no_trade" =
+      rawDec === "LONG" ? "long" : rawDec === "SHORT" ? "short" : "no_trade";
 
-    const aiConf = typeof p.confidence === "number"
-      ? Math.max(0, Math.min(100, Math.round(p.confidence))) : candidate.confidence;
+    const conf = typeof p.confidence === "number"
+      ? Math.max(0, Math.min(100, Math.round(p.confidence))) : 0;
 
-    // Re-apply confidence gate on AI's own self-assessment
-    const finalVerdict: CandleVerdict = aiConf < 80 && verdict === "APPROVE" ? "WAIT" : verdict;
+    const entry      = typeof p.entry      === "number" ? p.entry      : null;
+    const stopLoss   = typeof p.stopLoss   === "number" ? p.stopLoss   : null;
+    const takeProfit = typeof p.takeProfit === "number" ? p.takeProfit : null;
+    const risk       = entry !== null && stopLoss   !== null ? Math.abs(entry - stopLoss)   : null;
+    const reward     = entry !== null && takeProfit !== null ? Math.abs(takeProfit - entry) : null;
+    const rr         = risk && reward && risk > 0
+      ? Math.round((reward / risk) * 100) / 100
+      : typeof p.riskReward === "number" ? p.riskReward : null;
+
+    const strengths  = Array.isArray(p.strengths)  ? (p.strengths  as string[]).slice(0, 6) : [];
+    const weaknesses = Array.isArray(p.weaknesses) ? (p.weaknesses as string[]).slice(0, 6) : [];
+    const biasRaw    = typeof p.marketBias === "string" ? p.marketBias.toLowerCase() : "neutral";
+    const marketBias: "bullish" | "bearish" | "neutral" =
+      biasRaw === "bullish" ? "bullish" : biasRaw === "bearish" ? "bearish" : "neutral";
+    const reasoning  = typeof p.reasoning === "string" ? p.reasoning : "No reasoning provided.";
+
+    // WAIT: Ollama itself decided WAIT
+    if (direction === "no_trade") {
+      return {
+        symbol: ctx.symbol, timeframe: ctx.timeframe, candleTime: ctx.candleTime,
+        candidateSide: "no_trade", verdict: "WAIT",
+        confidence: conf, entryPrice: entry, slPrice: stopLoss, tpPrice: takeProfit,
+        invalidationLevel: null, rrRatio: rr,
+        aiReasoning: reasoning, rejectionReason: null,
+        newsSentiment: ctx.news.sentiment, newsSummary: ctx.news.summary,
+        regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
+        patterns: ctx.candlestickPatterns,
+        strengths, weaknesses, marketBias, technicalContext: techCtx,
+      };
+    }
+
+    // R:R gate: < 2.0 → WAIT
+    if (rr !== null && rr < 2.0) {
+      return {
+        symbol: ctx.symbol, timeframe: ctx.timeframe, candleTime: ctx.candleTime,
+        candidateSide: direction, verdict: "WAIT",
+        confidence: conf, entryPrice: entry, slPrice: stopLoss, tpPrice: takeProfit,
+        invalidationLevel: null, rrRatio: rr,
+        aiReasoning: `R:R of ${rr.toFixed(2)} is below the 2.0 minimum — waiting for a better setup.`,
+        rejectionReason: `R:R ${rr.toFixed(2)} < 2.0`,
+        newsSentiment: ctx.news.sentiment, newsSummary: ctx.news.summary,
+        regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
+        patterns: ctx.candlestickPatterns,
+        strengths, weaknesses, marketBias, technicalContext: techCtx,
+      };
+    }
+
+    // S/R proximity gates
+    const dR = ctx.structure.distanceToResistancePct;
+    const dS = ctx.structure.distanceToSupportPct;
+    if (direction === "long" && dR !== null && dR < 0.5) {
+      return {
+        symbol: ctx.symbol, timeframe: ctx.timeframe, candleTime: ctx.candleTime,
+        candidateSide: direction, verdict: "WAIT",
+        confidence: conf, entryPrice: entry, slPrice: stopLoss, tpPrice: takeProfit,
+        invalidationLevel: null, rrRatio: rr,
+        aiReasoning: `LONG blocked — entry is within ${dR.toFixed(2)}% of resistance at ${ctx.structure.nearestResistance?.toFixed(4)}. Waiting for clear breakout.`,
+        rejectionReason: `Near resistance (${dR.toFixed(2)}%)`,
+        newsSentiment: ctx.news.sentiment, newsSummary: ctx.news.summary,
+        regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
+        patterns: ctx.candlestickPatterns,
+        strengths, weaknesses, marketBias, technicalContext: techCtx,
+      };
+    }
+    if (direction === "short" && dS !== null && dS < 0.5) {
+      return {
+        symbol: ctx.symbol, timeframe: ctx.timeframe, candleTime: ctx.candleTime,
+        candidateSide: direction, verdict: "WAIT",
+        confidence: conf, entryPrice: entry, slPrice: stopLoss, tpPrice: takeProfit,
+        invalidationLevel: null, rrRatio: rr,
+        aiReasoning: `SHORT blocked — entry is within ${dS.toFixed(2)}% of support at ${ctx.structure.nearestSupport?.toFixed(4)}. Waiting for breakdown confirmation.`,
+        rejectionReason: `Near support (${dS.toFixed(2)}%)`,
+        newsSentiment: ctx.news.sentiment, newsSummary: ctx.news.summary,
+        regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
+        patterns: ctx.candlestickPatterns,
+        strengths, weaknesses, marketBias, technicalContext: techCtx,
+      };
+    }
+
+    // Confidence → verdict
+    const verdict: CandleVerdict =
+      conf >= 80 ? "APPROVE" :
+      conf >= 65 ? "WAIT"    : "REJECT";
 
     return {
-      ...base,
-      confidence:        aiConf,
-      entryPrice:        typeof p.entry        === "number" ? p.entry        : candidate.entryPrice,
-      slPrice:           typeof p.stopLoss      === "number" ? p.stopLoss     : candidate.slPrice,
-      tpPrice:           typeof p.takeProfit    === "number" ? p.takeProfit   : candidate.tpPrice,
-      invalidationLevel: typeof p.invalidation  === "number" ? p.invalidation : null,
-      verdict:           finalVerdict,
-      aiReasoning:       typeof p.reasoning       === "string" ? p.reasoning       : "No reasoning provided.",
-      rejectionReason:   typeof p.rejectionReason === "string" ? p.rejectionReason : null,
+      symbol: ctx.symbol, timeframe: ctx.timeframe, candleTime: ctx.candleTime,
+      candidateSide: direction, verdict,
+      confidence: conf, entryPrice: entry, slPrice: stopLoss, tpPrice: takeProfit,
+      invalidationLevel: null, rrRatio: rr,
+      aiReasoning: reasoning,
+      rejectionReason: verdict === "REJECT" ? `Confidence too low (${conf}/100)` : null,
+      newsSentiment: ctx.news.sentiment, newsSummary: ctx.news.summary,
+      regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
+      patterns: ctx.candlestickPatterns,
+      strengths, weaknesses, marketBias, technicalContext: techCtx,
     };
   } catch (parseErr) {
-    logger.warn({ parseErr, raw, symbol }, "Candle decision JSON parse failed — WAIT");
-    return {
-      ...base, verdict: "WAIT",
-      aiReasoning:    "AI response could not be parsed — defaulting to WAIT.",
-      rejectionReason: null,
-    };
+    logger.warn({ parseErr, raw, symbol: ctx.symbol }, "Candle decision JSON parse failed — WAIT");
+    return noTrade(ctx, "AI response could not be parsed — defaulting to WAIT.");
   }
 }

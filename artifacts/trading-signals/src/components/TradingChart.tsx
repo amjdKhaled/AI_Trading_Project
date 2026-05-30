@@ -399,6 +399,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
 
     const positions: DecisionMarkerPos[] = [];
     for (const dec of aiDecisionsRef.current) {
+      if (dec.verdict === "WAIT") continue;
       const b = nearestBar(dec.candleTime);
       if (!b) continue;
       const x = chart.timeScale().timeToCoordinate(b.time as Time);
@@ -1268,6 +1269,37 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
                   </span>
                 ))}
               </div>
+
+              {/* Market Bias */}
+              {dec.marketBias && (
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                  <span style={{ fontSize:8, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em" }}>Market Bias:</span>
+                  <span style={{
+                    fontSize:9, fontWeight:700,
+                    color: dec.marketBias === "bullish" ? G : dec.marketBias === "bearish" ? R : A,
+                  }}>{dec.marketBias.toUpperCase()}</span>
+                </div>
+              )}
+
+              {/* Strengths */}
+              {(dec.strengths?.length ?? 0) > 0 && (
+                <div style={{ marginBottom:7, background:"#00ff8806", borderRadius:4, padding:"6px 8px", border:"1px solid #00ff8818" }}>
+                  <div style={{ fontSize:7, color:"#00ff88", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>Strengths</div>
+                  {dec.strengths.map((s, i) => (
+                    <div key={i} style={{ fontSize:8, color:"#9ca3af", lineHeight:1.5 }}>+ {s}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Weaknesses */}
+              {(dec.weaknesses?.length ?? 0) > 0 && (
+                <div style={{ marginBottom:7, background:"#ff333608", borderRadius:4, padding:"6px 8px", border:"1px solid #ff333620" }}>
+                  <div style={{ fontSize:7, color:"#ff3346", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>Weaknesses</div>
+                  {dec.weaknesses.map((w, i) => (
+                    <div key={i} style={{ fontSize:8, color:"#9ca3af", lineHeight:1.5 }}>− {w}</div>
+                  ))}
+                </div>
+              )}
 
               {/* Patterns */}
               {dec.patterns?.length > 0 && (
