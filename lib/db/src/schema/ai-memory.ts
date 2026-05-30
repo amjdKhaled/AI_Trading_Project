@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, real, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, real, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -154,6 +154,10 @@ export const aiDecisionsTable = pgTable("ai_decisions", {
   session:           text("session"),
   candidateScore:    integer("candidate_score"),
   patterns:          jsonb("patterns").$type<string[]>().notNull().default([]),
+  outcome:           text("outcome"),
+  outcomePrice:      real("outcome_price"),
+  resolvedAt:        timestamp("resolved_at", { withTimezone: true }),
+  reflected:         boolean("reflected").notNull().default(false),
   createdAt:         timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

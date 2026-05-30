@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, type SQL } from "drizzle-orm";
+import { eq, desc, and, isNull, isNotNull, type SQL } from "drizzle-orm";
 import { db, signalsTable, aiDecisionsTable } from "@workspace/db";
 import {
   ListSignalsQueryParams,
@@ -16,6 +16,8 @@ import { rowToTradeEntry } from "./ai";
 import { filterCandleWithAi } from "../lib/ai/filter";
 import { buildMarketContext, findSimilarHistoricalSetups } from "../lib/ai/market-context";
 import { getNewsSentiment } from "../lib/ai/news";
+import { checkOpenDecisions } from "../lib/ai/lifecycle-checker";
+import { autoReflectResolved } from "../lib/ai/auto-reflect";
 import type { OhlcvBar } from "../lib/analyzer/types";
 
 // Find the bar index whose time equals (or is closest to) the signal's barTime.
@@ -391,6 +393,42 @@ router.post("/signals/candle-decision", async (req, res): Promise<void> => {
     );
 
     res.json(decision);
+
+    // ── Fire-and-forget: lifecycle check + auto-reflect ───────────────────
+    // Run after response is sent so it never delays the client.
+    void (async () => {
+      try {
+        const latestBar = bars[bars.length - 1];
+
+        // 1. Detect newly resolved open decisions
+        const newlyResolved = await checkOpenDecisions(sym, timeframe, latestBar);
+
+        // 2. Retry any previously-failed reflections (outcome set, reflected = false)
+        const pendingRetry = await db
+          .select()
+          .from(aiDecisionsTable)
+          .where(
+            and(
+              eq(aiDecisionsTable.symbol,    sym),
+              eq(aiDecisionsTable.timeframe, timeframe),
+              eq(aiDecisionsTable.verdict,   "APPROVE"),
+              isNotNull(aiDecisionsTable.outcome),
+              eq(aiDecisionsTable.reflected, false),
+            ),
+          );
+
+        // Merge, deduplicate (newlyResolved rows are already in pendingRetry)
+        const newIds = new Set(newlyResolved.map((r) => r.id));
+        const toReflect = [
+          ...newlyResolved,
+          ...pendingRetry.filter((r) => !newIds.has(r.id)),
+        ];
+
+        await autoReflectResolved(toReflect, req.log);
+      } catch (bgErr) {
+        req.log?.warn({ bgErr, sym, timeframe }, "lifecycle/reflect background task failed");
+      }
+    })();
   } catch (err) {
     req.log?.error({ err, sym, timeframe, candleTime }, "candle-decision error");
     res.status(500).json({ error: "Internal error during candle decision" });
