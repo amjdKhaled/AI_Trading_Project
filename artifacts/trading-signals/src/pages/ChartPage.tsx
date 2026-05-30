@@ -472,12 +472,10 @@ export default function ChartPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bars.length, restSignals.length, wsSignals.length, connected]);
 
+  // All historical signals → compact marker layer; no split needed.
   const allSignals = [...wsSignals, ...restSignals]
     .filter((sig) => !activeSymbol || sig.symbol === activeSymbol)
     .filter((sig, idx, arr) => arr.findIndex((s) => s.signalId === sig.signalId) === idx);
-
-  const ruleSignals = allSignals.filter((s) => !s.isAiSignal);
-  const aiSignals   = allSignals.filter((s) =>  s.isAiSignal);
 
   const livePrice = lastPrice?.price ?? null;
 
@@ -600,8 +598,8 @@ export default function ChartPage() {
           <TradingChart
             key={`${displaySymbol}-${displayTimeframe}`}
             bars={bars}
-            signals={isStocks ? ruleSignals : []}
-            aiSignals={isStocks ? aiSignals : []}
+            signals={isStocks ? allSignals : []}
+            aiSignals={[]}
             activeTrade={isStocks ? activeTrade : null}
             tradeResult={isStocks ? tradeResult : null}
             lastPrice={isStocks ? lastPrice : null}
