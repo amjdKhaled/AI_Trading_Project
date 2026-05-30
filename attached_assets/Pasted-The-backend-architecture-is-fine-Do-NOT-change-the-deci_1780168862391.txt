@@ -1,0 +1,78 @@
+The backend architecture is fine. Do NOT change the decision logic or AI pipeline.
+
+This request is UI-only for the chart rendering.
+
+Current problem:
+The historical entry markers are showing TP/SL text directly on the same entry marker. This is wrong.
+
+I want the chart visuals to behave like this:
+
+1. Historical completed trades
+   Use the old Generate-style markers only for entries:
+
+* Green BUY marker for LONG entry
+* Red SELL marker for SHORT entry
+* Do not write SL or TP on the entry marker
+* Entry marker should only show BUY or SELL
+
+Then show TP/SL results as separate outcome markers:
+
+* TP HIT marker at the take-profit price/time
+* SL HIT marker at the stop-loss price/time
+* TP marker should be green
+* SL marker should be red
+* They must be visually separate from the entry marker
+
+2. Current active AI trade
+   The latest active AI trade should look exactly like the old AI Decide visual style.
+
+Use the same old AI Decide UI shape:
+
+* AI LONG or AI SHORT label
+* Confidence %
+* Entry line
+* Stop Loss line
+* Take Profit line
+* Risk/Reward box / shaded area
+* Same visual style as before
+
+Important:
+I only want the old AI Decide visual style back for the active trade display.
+Do NOT restore the old AI Decide button.
+Do NOT restore the old manual AI Decide logic.
+Do NOT change the new automatic candle-close AI system.
+
+3. SHORT layout
+   For SHORT active trade:
+
+* Entry line at entry price
+* Stop Loss line above entry
+* Take Profit line below entry
+* Red risk zone above entry
+* Green profit zone below entry
+
+4. LONG layout
+   For LONG active trade:
+
+* Entry line at entry price
+* Take Profit line above entry
+* Stop Loss line below entry
+* Green profit zone above entry
+* Red risk zone below entry
+
+5. Keep architecture unchanged
+   Do not change:
+
+* buildMarketContext()
+* filterCandleWithAi()
+* candle-close AI decision system
+* database schema
+* AI Memory
+* backend trade logic
+
+Only fix chart rendering and marker styling.
+
+Goal:
+Historical trades should look like the old Generate entry markers.
+Current active AI trade should look like the old AI Decide trade box.
+TP and SL must be separate markers, not text attached to the entry marker.

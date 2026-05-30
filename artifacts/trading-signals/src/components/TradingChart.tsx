@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, Fragment } from "react";
 import {
   createChart, CrosshairMode, CandlestickSeries, HistogramSeries,
   type IChartApi, type ISeriesApi, type CandlestickData,
@@ -1021,9 +1021,9 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
               );
             }
 
-            // ── Historical signal: labeled arrow marker ───────────────────
-            // Color by direction so BUY=green / SELL=red is immediately clear.
-            // Outcome badge (TP✓ / SL✗ / EXP) shown below the label.
+            // ── Historical signal: entry arrow + separate exit circle ────
+            // Entry marker is direction-only (BUY/SELL label, no outcome text).
+            // Outcome is shown as a separate circle at the actual exit price/bar.
             const col = m.isLong ? "#22c55e" : "#ef5350";
             const flt = m.isLong ? "url(#gGreen)" : "url(#gRed)";
             const mW = 11;
@@ -1031,28 +1031,60 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
             const pts = m.isLong
               ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
               : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
-            const labelY   = m.isLong ? m.y + mH + 12 : m.y - mH - 4;
-            const outcomeY = m.isLong ? m.y + mH + 22 : m.y - mH - 14;
-            const outcomeStr =
-              m.outcome === "tp_hit"  ? "TP✓" :
-              m.outcome === "sl_hit"  ? "SL✗" :
-              m.outcome === "expired" ? "EXP" : "";
-            const outcomeColor = m.outcome === "tp_hit" ? "#22c55e" : "#ef5350";
+            const labelY = m.isLong ? m.y + mH + 12 : m.y - mH - 4;
+
+            // Exit circle — rendered only when the signal has an exit bar in viewport
+            const hasExit = m.exitX !== undefined && m.exitY !== undefined && !!m.outcome;
+            const exitCol = m.outcome === "tp_hit" ? "#22c55e" : "#ef5350";
+            const exitFlt = m.outcome === "tp_hit" ? "url(#gGreen)" : "url(#gRed)";
+            const exitLabel = m.outcome === "tp_hit" ? "TP✓" : m.outcome === "sl_hit" ? "SL✗" : "EXP";
+            // Place label on the OUTSIDE of the R:R zone relative to entry price:
+            // LONG TP hit → exit above entry → label above circle
+            // LONG SL hit → exit below entry → label below circle
+            // SHORT TP hit → exit below entry → label below circle
+            // SHORT SL hit → exit above entry → label above circle
+            // Expired → always below (exit price unpredictable)
+            const exitLabelY = m.outcome === "expired"
+              ? (m.exitY ?? 0) + 18
+              : ((m.outcome === "tp_hit") === m.isLong)
+                ? (m.exitY ?? 0) - 13   // outside zone, above circle
+                : (m.exitY ?? 0) + 18;  // outside zone, below circle
+
             return (
-              <g key={m.key}>
-                <polygon points={pts} fill={col} opacity={0.85}
-                  stroke={col} strokeWidth={0.8} filter={flt} />
-                <text x={m.x} y={labelY} textAnchor="middle" fill={col}
-                  fontSize={10} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="800" opacity={0.92}>
-                  {m.isLong ? "BUY" : "SELL"}
-                </text>
-                {outcomeStr && (
-                  <text x={m.x} y={outcomeY} textAnchor="middle" fill={outcomeColor}
-                    fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.8}>
-                    {outcomeStr}
+              <Fragment key={m.key}>
+                {/* Entry arrow */}
+                <g>
+                  <polygon points={pts} fill={col} opacity={0.85}
+                    stroke={col} strokeWidth={0.8} filter={flt} />
+                  <text x={m.x} y={labelY} textAnchor="middle" fill={col}
+                    fontSize={10} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="800" opacity={0.92}>
+                    {m.isLong ? "BUY" : "SELL"}
                   </text>
+                </g>
+                {/* Exit outcome circle — at actual exit price on exit bar */}
+                {hasExit && (
+                  <g>
+                    {/* Thin connecting line from entry bar to exit bar at exit price */}
+                    <line
+                      x1={m.x} y1={m.exitY!}
+                      x2={m.exitX!} y2={m.exitY!}
+                      stroke={exitCol} strokeWidth={0.6} strokeDasharray="3 3" opacity={0.4}
+                    />
+                    <circle cx={m.exitX!} cy={m.exitY!} r={8}
+                      fill={`${exitCol}18`} stroke={exitCol} strokeWidth={1.5}
+                      filter={m.outcome !== "expired" ? exitFlt : undefined} opacity={0.9}
+                    />
+                    <text x={m.exitX!} y={(m.exitY ?? 0) + 1} textAnchor="middle" dominantBaseline="middle"
+                      fill={exitCol} fontSize={7} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="800">
+                      {m.outcome === "tp_hit" ? "✓" : "✗"}
+                    </text>
+                    <text x={m.exitX!} y={exitLabelY} textAnchor="middle"
+                      fill={exitCol} fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.85}>
+                      {exitLabel}
+                    </text>
+                  </g>
                 )}
-              </g>
+              </Fragment>
             );
           })}
 
