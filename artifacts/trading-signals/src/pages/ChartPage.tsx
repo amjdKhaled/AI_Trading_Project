@@ -66,6 +66,29 @@ export interface TradeResult {
   exitTime: number;
 }
 
+export interface AiCandleDecision {
+  symbol:            string;
+  timeframe:         string;
+  candleTime:        number;
+  candidateSide:     "long" | "short" | "no_trade";
+  verdict:           "APPROVE" | "REJECT" | "WAIT";
+  confidence:        number;
+  entryPrice:        number | null;
+  slPrice:           number | null;
+  tpPrice:           number | null;
+  invalidationLevel: number | null;
+  rrRatio:           number | null;
+  aiReasoning:       string;
+  rejectionReason:   string | null;
+  newsSentiment:     "bullish" | "bearish" | "neutral";
+  newsSummary:       string;
+  regime:            string;
+  htfBias:           string;
+  session:           string;
+  patterns:          string[];
+  technicalContext:  Record<string, unknown>;
+}
+
 // ── DEV mock signals ──────────────────────────────────────────────────────────
 
 function makeMockSignals(bars: OhlcvBar[], symbol: string): SignalNew[] {
@@ -307,6 +330,8 @@ export default function ChartPage() {
   const [aiResult,     setAiResult]     = useState<AiDecideResult | null>(null);
   const [showRuleSignals, setShowRuleSignals] = useState(true);
   const [showAiSignals,   setShowAiSignals]   = useState(true);
+  const [aiDecisions,  setAiDecisions]  = useState<AiCandleDecision[]>([]);
+  const [aiAnalyzing,  setAiAnalyzing]  = useState(false);
 
   const isStocks = marketType === "stocks";
   const isCrypto = marketType === "crypto";
@@ -394,11 +419,37 @@ export default function ChartPage() {
       .catch((e) => { if ((e as Error).name !== "AbortError") setRestSignals([]); });
   }, [activeSymbol, stockTf, refetchKey, isStocks]);
 
-  // ── Clear active trade on symbol/timeframe switch ─────────────────────────
+  // ── Clear active trade + AI decisions on symbol/timeframe switch ─────────────────────────
   useEffect(() => {
     setActiveTrade(null);
     setTradeResult(null);
+    setAiDecisions([]);
+    setAiAnalyzing(false);
   }, [activeSymbol, stockTf]);
+
+  // ── Candle-close AI pipeline ───────────────────────────────────────────────
+  const handleCandleClose = useCallback(async (barTime: number) => {
+    if (!isStocks || !activeSymbol || aiAnalyzing) return;
+    setAiAnalyzing(true);
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    try {
+      const res = await fetch(`${base}/api/signals/candle-decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: activeSymbol, timeframe: stockTf, candleTime: barTime }),
+      });
+      if (!res.ok) return;
+      const dec = await res.json() as AiCandleDecision;
+      setAiDecisions((prev) => {
+        const filtered = prev.filter((d) => d.candleTime !== dec.candleTime);
+        return [dec, ...filtered].slice(0, 50);
+      });
+    } catch {
+      // never break the chart
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }, [isStocks, activeSymbol, stockTf, aiAnalyzing]);
 
   // ── Auto-exit: watch live price for SL/TP hits ────────────────────────────
   const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -777,6 +828,9 @@ export default function ChartPage() {
             isMarketOpen={isMarketOpen}
             realtimeAvailable={realtimeAvailable}
             cryptoLiveBar={cryptoLiveBar}
+            aiDecisions={isStocks ? aiDecisions : []}
+            onCandleClose={isStocks ? handleCandleClose : undefined}
+            aiAnalyzing={isStocks ? aiAnalyzing : false}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

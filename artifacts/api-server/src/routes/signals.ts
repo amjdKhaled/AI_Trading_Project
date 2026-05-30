@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, type SQL } from "drizzle-orm";
-import { db, signalsTable } from "@workspace/db";
+import { db, signalsTable, aiDecisionsTable } from "@workspace/db";
 import {
   ListSignalsQueryParams,
   ListSignalsResponse,
@@ -13,6 +13,9 @@ import { fetchHistory } from "./history";
 import { isOllamaAvailable } from "../lib/ai/ollama";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection";
 import { rowToTradeEntry } from "./ai";
+import { filterCandleWithAi } from "../lib/ai/filter";
+import { getNewsSentiment } from "../lib/ai/news";
+import type { OhlcvBar } from "../lib/analyzer/types";
 
 // Find the bar index whose time equals (or is closest to) the signal's barTime.
 // Signals carry epoch-seconds matching the bar grid, so an exact match is
@@ -285,6 +288,108 @@ router.patch("/signals/:signalId/state", async (req, res): Promise<void> => {
         // Best-effort — errors must not affect the main response
       }
     });
+  }
+});
+
+// ── POST /signals/candle-decision ────────────────────────────
+// Called by the frontend after every candle close.
+// Runs the full AI evaluation pipeline and stores the verdict in the DB.
+// Rate-limit safe: bars are sourced from fetchHistory which has a 24 h
+// disk+memory cache and stale-fallback on 429 — never breaks the chart.
+const HTF_MAP: Record<string, string> = { "5m": "15m", "15m": "1h", "1h": "1d" };
+const TF_INTERVAL_SEC: Record<string, number> = { "5m": 300, "15m": 900, "1h": 3600, "1d": 86400 };
+
+router.post("/signals/candle-decision", async (req, res): Promise<void> => {
+  const { symbol, timeframe, candleTime } = req.body as {
+    symbol?: unknown; timeframe?: unknown; candleTime?: unknown;
+  };
+
+  if (!symbol || typeof symbol !== "string" || symbol.length > 12) {
+    res.status(400).json({ error: "symbol is required (≤12 chars)" }); return;
+  }
+  if (!timeframe || typeof timeframe !== "string") {
+    res.status(400).json({ error: "timeframe is required" }); return;
+  }
+  if (!candleTime || typeof candleTime !== "number" || !isFinite(candleTime)) {
+    res.status(400).json({ error: "candleTime (epoch seconds) is required" }); return;
+  }
+
+  // Guard: the candle must already be closed before we evaluate it
+  const intervalSec = TF_INTERVAL_SEC[timeframe] ?? 300;
+  const nowSec      = Math.floor(Date.now() / 1000);
+  if (candleTime + intervalSec > nowSec) {
+    res.status(400).json({ error: "Candle has not closed yet — wait for the bar to finish." }); return;
+  }
+
+  const sym = symbol.toUpperCase().trim();
+
+  try {
+    // ── 1. Fetch bars (uses 24 h cache; stale-fallback on 429) ────────────
+    const [barsRaw, htfBarsRaw] = await Promise.all([
+      fetchHistory(sym, timeframe),
+      fetchHistory(sym, HTF_MAP[timeframe] ?? "15m"),
+    ]);
+
+    if (!Array.isArray(barsRaw) || barsRaw.length < 50) {
+      res.status(422).json({ error: "Insufficient bars for analysis" }); return;
+    }
+
+    const bars    = barsRaw    as OhlcvBar[];
+    const htfBars = htfBarsRaw as OhlcvBar[];
+
+    // ── 2. Run signal engine — get candidates ────────────────────────────
+    const { candidates } = generateSignals(bars, sym, timeframe, htfBars);
+
+    // Best candidate within ±1 bar of the closed candle
+    const candidate = candidates
+      .filter(c => Math.abs(c.time - candleTime) <= intervalSec)
+      .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+
+    // ── 3. Fetch news (cached 22 min) ────────────────────────────────────
+    const news = await getNewsSentiment(sym);
+
+    // ── 4. Run Ollama filter ─────────────────────────────────────────────
+    const decision = await filterCandleWithAi(candidate, news, bars, sym, timeframe, candleTime);
+
+    // ── 5. Persist to DB (skip on duplicate) ────────────────────────────
+    try {
+      await db.insert(aiDecisionsTable).values({
+        symbol:            sym,
+        timeframe,
+        candleTime:        new Date(candleTime * 1000),
+        candidateSide:     decision.candidateSide,
+        verdict:           decision.verdict,
+        confidence:        decision.confidence,
+        entryPrice:        decision.entryPrice,
+        slPrice:           decision.slPrice,
+        tpPrice:           decision.tpPrice,
+        invalidationLevel: decision.invalidationLevel,
+        rrRatio:           decision.rrRatio,
+        technicalContext:  decision.technicalContext,
+        aiReasoning:       decision.aiReasoning,
+        rejectionReason:   decision.rejectionReason,
+        newsSummary:       decision.newsSummary,
+        newsSentiment:     decision.newsSentiment,
+        regime:            decision.regime,
+        htfBias:           decision.htfBias,
+        session:           decision.session,
+        candidateScore:    candidate?.confidence ?? 0,
+        patterns:          decision.patterns,
+      });
+    } catch (dbErr) {
+      // Duplicate candleTime — already processed, just return the decision
+      req.log?.warn({ sym, timeframe, candleTime, dbErr }, "Duplicate candle decision — skipping insert");
+    }
+
+    req.log?.info(
+      { sym, timeframe, candleTime, verdict: decision.verdict, confidence: decision.confidence },
+      "Candle decision complete",
+    );
+
+    res.json(decision);
+  } catch (err) {
+    req.log?.error({ err, sym, timeframe, candleTime }, "candle-decision error");
+    res.status(500).json({ error: "Internal error during candle decision" });
   }
 });
 

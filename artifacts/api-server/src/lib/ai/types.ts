@@ -74,6 +74,34 @@ export interface AiDecision {
   marketBias: "BULLISH" | "BEARISH" | "NEUTRAL";
 }
 
+// ── Candle-close AI decision (APPROVE / REJECT / WAIT) ───────────────────────
+// Produced by filterCandleWithAi() after every candle close.
+// Stored in ai_decisions table and broadcast to the frontend for chart display.
+export type CandleVerdict = "APPROVE" | "REJECT" | "WAIT";
+
+export interface AiCandleDecision {
+  symbol:           string;
+  timeframe:        string;
+  candleTime:       number;              // epoch seconds — the CLOSED candle
+  candidateSide:    "long" | "short" | "no_trade";
+  verdict:          CandleVerdict;
+  confidence:       number;              // 0–100; < 80 → forced WAIT
+  entryPrice:       number | null;
+  slPrice:          number | null;
+  tpPrice:          number | null;
+  invalidationLevel:number | null;       // price that voids the setup
+  rrRatio:          number | null;
+  aiReasoning:      string;
+  rejectionReason:  string | null;
+  newsSentiment:    "bullish" | "bearish" | "neutral";
+  newsSummary:      string;
+  regime:           string;
+  htfBias:          string;
+  session:          string;
+  patterns:         string[];
+  technicalContext: Record<string, unknown>;
+}
+
 export interface MemoryStore {
   version: number;
   updatedAt: string;

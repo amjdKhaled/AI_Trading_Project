@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './aiCandleDecision';
+export * from './aiCandleDecisionCandidateSide';
+export * from './aiCandleDecisionNewsSentiment';
+export * from './aiCandleDecisionTechnicalContext';
+export * from './aiCandleDecisionVerdict';
 export * from './aiDecision';
 export * from './aiDecisionDirection';
 export * from './aiLesson';
@@ -17,6 +22,7 @@ export * from './aiMemorySummarySymbolStats';
 export * from './aiPattern';
 export * from './aiStatusExtended';
 export * from './bar';
+export * from './candleDecisionRequest';
 export * from './chartAnalysis';
 export * from './chartAnalysisMarketStructure';
 export * from './chartAnalysisRecord';

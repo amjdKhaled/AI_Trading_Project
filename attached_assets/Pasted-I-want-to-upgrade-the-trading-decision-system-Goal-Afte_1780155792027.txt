@@ -1,0 +1,125 @@
+I want to upgrade the trading decision system.
+
+Goal:
+After every candle closes, the system must generate a real-time trade decision directly on the chart using live market data.
+
+Do this architecture:
+
+Live OHLCV candle closes
+→ Generate Engine creates candidate setup
+→ Technical filters analyze the setup
+→ Ollama AI acts as final approval filter
+→ Final decision appears on the chart
+
+Requirements:
+
+1. Improve signals.ts
+   Add these concepts into the signal engine:
+
+* Liquidity sweeps
+* Order blocks
+* Fair Value Gaps
+* Session analysis
+* News sentiment
+* Higher timeframe trend confirmation
+* Volume confirmation
+* Nearby support/resistance risk filter
+
+2. Ollama must be the final trade filter
+   Do not let Ollama randomly generate trades from zero.
+
+Flow:
+
+* signals.ts generates a candidate LONG / SHORT / NO_TRADE.
+* Then send the candidate to Ollama with all context.
+* Ollama must return:
+
+  * APPROVE
+  * REJECT
+  * WAIT
+  * confidence
+  * reason
+  * entry
+  * stop loss
+  * take profit
+  * invalidation level
+
+If Ollama rejects the trade, do not show it as a valid entry.
+
+3. Decision after every candle close
+   Every time a 5m or 15m candle closes:
+
+* Recalculate indicators.
+* Generate candidate signal.
+* Send candidate to Ollama.
+* Save AI decision in database.
+* Display decision immediately on chart.
+
+4. Chart display
+   Show AI decision directly on the candle:
+
+* Green arrow = approved LONG
+* Red arrow = approved SHORT
+* Gray icon = WAIT / NO_TRADE
+
+When user clicks the marker, show:
+
+* Entry
+* Stop Loss
+* Take Profit
+* Confidence
+* Technical reasons
+* AI reasoning
+* Rejection reason if rejected
+* Market condition
+* News sentiment
+
+5. Real-time data
+   Make sure decisions are based on live updated candles:
+
+* Current candle updates tick-by-tick.
+* Decision is made only after candle close.
+* Do not make final decision on unfinished candles.
+* Do not use stale cached data.
+
+6. Database
+   Store every candle-close decision in the database:
+
+* symbol
+* timeframe
+* candle time
+* candidate side
+* final AI decision
+* approved/rejected/wait
+* confidence
+* entry
+* stop loss
+* take profit
+* technical context
+* AI reasoning
+* news sentiment
+* createdAt
+
+7. Avoid bad trades
+   Ollama should reject trades if:
+
+* Entry is directly into resistance/support
+* Risk reward is poor
+* Market is choppy
+* Volume is weak
+* Higher timeframe disagrees
+* News sentiment is strongly against the trade
+* Signal appears after a huge extended move
+* Candle is not closed yet
+
+8. Final result
+   The system should feel like this:
+
+After every candle close:
+“AI is analyzing…”
+Then chart shows:
+APPROVED LONG / APPROVED SHORT / WAIT
+
+Do not modify UI style too much.
+Keep the chart clean and professional.
+Only add decision markers and clickable analysis details.

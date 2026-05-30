@@ -20,6 +20,8 @@ import { analyzeTrendMomentumVolatility, emaArray } from "./trend";
 import { vwapArray } from "./vwap";
 import { classifyRegimes, type Regime } from "./regime";
 import { sessionFor, type Session } from "./session";
+import { detectOrderBlocks } from "./orderblocks";
+import { detectFVGs } from "./fvg";
 
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function genId(): string {
@@ -354,6 +356,8 @@ export function generateSignals(
     const vol    = analyzeVolume(bars, i);
     const consol = detectConsolidation(bars, i);
     const pa     = detectBreakoutRetest(bars, i);
+    const ob     = detectOrderBlocks(bars, i);
+    const fvg    = detectFVGs(bars, i);
 
     // ── Trend persistence model ───────────────────────────────────────────
     // Count consecutive Higher-High + Higher-Low pairs in last 8 bars.
@@ -532,8 +536,10 @@ export function generateSignals(
       if (consol.contracting)               bullScore += 6;
       if (consol.expanding && bullEmaAlign) bullScore += 7;
 
-      if (pa?.bullish)   bullScore += 14;
-      if (structBull)    bullScore += 10;
+      if (pa?.bullish)      bullScore += 14;
+      if (structBull)       bullScore += 10;
+      if (ob.inBullishOB)  { bullScore += 14; reasons.push("Order Block"); }
+      if (fvg.inBullishFVG){ bullScore += 10; reasons.push("FVG Fill"); }
 
       // ── VWAP bonuses ──────────────────────────────────────────────────
       if (vwapReclaim) { bullScore += 14; reasons.push("VWAP Reclaim"); }
@@ -736,8 +742,10 @@ export function generateSignals(
       if (consol.contracting)               bearScore += 6;
       if (consol.expanding && bearEmaAlign) bearScore += 7;
 
-      if (pa && !pa.bullish)  bearScore += 14;
-      if (structBear)         bearScore += 10;
+      if (pa && !pa.bullish)   bearScore += 14;
+      if (structBear)          bearScore += 10;
+      if (ob.inBearishOB)     { bearScore += 14; reasons.push("Order Block"); }
+      if (fvg.inBearishFVG)   { bearScore += 10; reasons.push("FVG Fill"); }
 
       // VWAP
       if (vwapRejection) { bearScore += 14; reasons.push("VWAP Rejection"); }

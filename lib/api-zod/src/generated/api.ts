@@ -104,6 +104,49 @@ export const GetSignalStatsResponse = zod.object({
 
 
 /**
+ * Called by the frontend immediately after a live candle closes.
+Fetches bars (rate-limit-safe cache), runs the signal engine,
+evaluates with Ollama, and stores the verdict in the database.
+Always returns 200 with a verdict of APPROVE, REJECT, or WAIT.
+
+ * @summary Run AI decision pipeline after a candle closes
+ */
+export const PostCandleDecisionBody = zod.object({
+  "symbol": zod.string().describe('Ticker symbol (e.g. TSLA)'),
+  "timeframe": zod.string().describe('Bar timeframe (5m, 15m, 1h)'),
+  "candleTime": zod.number().describe('Epoch seconds of the CLOSED candle\'s open time')
+})
+
+export const postCandleDecisionResponseConfidenceMin = 0;
+export const postCandleDecisionResponseConfidenceMax = 100;
+
+
+
+export const PostCandleDecisionResponse = zod.object({
+  "symbol": zod.string(),
+  "timeframe": zod.string(),
+  "candleTime": zod.number().describe('Epoch seconds of the closed candle'),
+  "candidateSide": zod.enum(['long', 'short', 'no_trade']),
+  "verdict": zod.enum(['APPROVE', 'REJECT', 'WAIT']),
+  "confidence": zod.number().min(postCandleDecisionResponseConfidenceMin).max(postCandleDecisionResponseConfidenceMax),
+  "entryPrice": zod.number().nullish(),
+  "slPrice": zod.number().nullish(),
+  "tpPrice": zod.number().nullish(),
+  "invalidationLevel": zod.number().nullish(),
+  "rrRatio": zod.number().nullish(),
+  "aiReasoning": zod.string(),
+  "rejectionReason": zod.string().nullish(),
+  "newsSentiment": zod.enum(['bullish', 'bearish', 'neutral']),
+  "newsSummary": zod.string(),
+  "regime": zod.string(),
+  "htfBias": zod.string(),
+  "session": zod.string(),
+  "patterns": zod.array(zod.string()),
+  "technicalContext": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+
+/**
  * @summary Get OHLCV bars for a symbol
  */
 export const listBarsQueryTimeframeDefault = `5m`;

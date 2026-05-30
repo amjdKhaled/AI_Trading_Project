@@ -20,9 +20,11 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AiCandleDecision,
   AiMemorySummary,
   AiStatusExtended,
   Bar,
+  CandleDecisionRequest,
   ChartAnalysisRecord,
   ChartAnalysisRequest,
   ChartAnalysisResponse,
@@ -513,6 +515,82 @@ export function useGetSignalStats<TData = Awaited<ReturnType<typeof getSignalSta
 
 
 
+
+export const getPostCandleDecisionUrl = () => {
+
+
+
+
+  return `/api/signals/candle-decision`
+}
+
+/**
+ * Called by the frontend immediately after a live candle closes.
+Fetches bars (rate-limit-safe cache), runs the signal engine,
+evaluates with Ollama, and stores the verdict in the database.
+Always returns 200 with a verdict of APPROVE, REJECT, or WAIT.
+
+ * @summary Run AI decision pipeline after a candle closes
+ */
+export const postCandleDecision = async (candleDecisionRequest: CandleDecisionRequest, options?: RequestInit): Promise<AiCandleDecision> => {
+
+  return customFetch<AiCandleDecision>(getPostCandleDecisionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      candleDecisionRequest,)
+  }
+);}
+
+
+
+
+export const getPostCandleDecisionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postCandleDecision>>, TError,{data: BodyType<CandleDecisionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postCandleDecision>>, TError,{data: BodyType<CandleDecisionRequest>}, TContext> => {
+
+const mutationKey = ['postCandleDecision'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postCandleDecision>>, {data: BodyType<CandleDecisionRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  postCandleDecision(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostCandleDecisionMutationResult = NonNullable<Awaited<ReturnType<typeof postCandleDecision>>>
+    export type PostCandleDecisionMutationBody = BodyType<CandleDecisionRequest>
+    export type PostCandleDecisionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Run AI decision pipeline after a candle closes
+ */
+export const usePostCandleDecision = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postCandleDecision>>, TError,{data: BodyType<CandleDecisionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postCandleDecision>>,
+        TError,
+        {data: BodyType<CandleDecisionRequest>},
+        TContext
+      > => {
+      return useMutation(getPostCandleDecisionMutationOptions(options));
+    }
 
 export const getListBarsUrl = (params: ListBarsParams,) => {
   const normalizedParams = new URLSearchParams();

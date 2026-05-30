@@ -128,3 +128,35 @@ export const aiChartAnalysesTable = pgTable("ai_chart_analyses", {
 export const insertAiChartAnalysisSchema = createInsertSchema(aiChartAnalysesTable).omit({ id: true, createdAt: true });
 export type InsertAiChartAnalysis = z.infer<typeof insertAiChartAnalysisSchema>;
 export type AiChartAnalysis = typeof aiChartAnalysesTable.$inferSelect;
+
+// ── ai_decisions ─────────────────────────────────────────────────────────────
+// One row per candle-close AI decision — full pipeline output for each closed bar.
+export const aiDecisionsTable = pgTable("ai_decisions", {
+  id:                serial("id").primaryKey(),
+  symbol:            text("symbol").notNull(),
+  timeframe:         text("timeframe").notNull().default("5m"),
+  candleTime:        timestamp("candle_time", { withTimezone: true }).notNull(),
+  candidateSide:     text("candidate_side"),
+  verdict:           text("verdict").notNull(),
+  confidence:        integer("confidence").notNull().default(0),
+  entryPrice:        real("entry_price"),
+  slPrice:           real("sl_price"),
+  tpPrice:           real("tp_price"),
+  invalidationLevel: real("invalidation_level"),
+  rrRatio:           real("rr_ratio"),
+  technicalContext:  jsonb("technical_context").$type<Record<string, unknown>>(),
+  aiReasoning:       text("ai_reasoning"),
+  rejectionReason:   text("rejection_reason"),
+  newsSummary:       text("news_summary"),
+  newsSentiment:     text("news_sentiment"),
+  regime:            text("regime"),
+  htfBias:           text("htf_bias"),
+  session:           text("session"),
+  candidateScore:    integer("candidate_score"),
+  patterns:          jsonb("patterns").$type<string[]>().notNull().default([]),
+  createdAt:         timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertAiDecisionSchema = createInsertSchema(aiDecisionsTable).omit({ id: true, createdAt: true });
+export type InsertAiDecision = z.infer<typeof insertAiDecisionSchema>;
+export type AiDecisionRow = typeof aiDecisionsTable.$inferSelect;

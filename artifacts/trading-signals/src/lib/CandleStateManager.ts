@@ -36,6 +36,7 @@ interface CSMOptions {
   getHistoryAtrRange: () => number;
   getLastHistoricalClose: () => number | null;
   getLastHistoricalTime: () => number;
+  onCandleClose?: (bar: ImmutableBar) => void;
 }
 
 function isValidOhlc(o: number, h: number, l: number, c: number): boolean {
@@ -170,6 +171,9 @@ export class CandleStateManager {
     this.telemetry.barsFinalized += 1;
     this.telemetry.lastFinalizedTime = frozen.time;
     this.liveBar = null;
+    // Fire candle-close callback after state is fully committed.
+    // The callback runs asynchronously so it cannot block tick processing.
+    try { this.opts.onCandleClose?.(frozen); } catch { /* never propagate */ }
   }
 
   private writeToSeries(bar: ImmutableBar): void {

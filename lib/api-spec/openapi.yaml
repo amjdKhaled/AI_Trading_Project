@@ -125,6 +125,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/SignalStats"
 
+  /signals/candle-decision:
+    post:
+      operationId: postCandleDecision
+      tags: [signals]
+      summary: Run AI decision pipeline after a candle closes
+      description: |
+        Called by the frontend immediately after a live candle closes.
+        Fetches bars (rate-limit-safe cache), runs the signal engine,
+        evaluates with Ollama, and stores the verdict in the database.
+        Always returns 200 with a verdict of APPROVE, REJECT, or WAIT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandleDecisionRequest"
+      responses:
+        "200":
+          description: AI candle decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCandleDecision"
+
   /bars:
     get:
       operationId: listBars
@@ -767,3 +791,84 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SimilarityMatch"
+
+    CandleDecisionRequest:
+      type: object
+      required: [symbol, timeframe, candleTime]
+      properties:
+        symbol:
+          type: string
+          description: Ticker symbol (e.g. TSLA)
+        timeframe:
+          type: string
+          description: Bar timeframe (5m, 15m, 1h)
+        candleTime:
+          type: number
+          description: Epoch seconds of the CLOSED candle's open time
+
+    AiCandleDecision:
+      type: object
+      required:
+        - symbol
+        - timeframe
+        - candleTime
+        - candidateSide
+        - verdict
+        - confidence
+        - aiReasoning
+        - newsSentiment
+        - newsSummary
+        - regime
+        - htfBias
+        - session
+        - patterns
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        candleTime:
+          type: number
+          description: Epoch seconds of the closed candle
+        candidateSide:
+          type: string
+          enum: [long, short, no_trade]
+        verdict:
+          type: string
+          enum: [APPROVE, REJECT, WAIT]
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+        entryPrice:
+          type: ["number", "null"]
+        slPrice:
+          type: ["number", "null"]
+        tpPrice:
+          type: ["number", "null"]
+        invalidationLevel:
+          type: ["number", "null"]
+        rrRatio:
+          type: ["number", "null"]
+        aiReasoning:
+          type: string
+        rejectionReason:
+          type: ["string", "null"]
+        newsSentiment:
+          type: string
+          enum: [bullish, bearish, neutral]
+        newsSummary:
+          type: string
+        regime:
+          type: string
+        htfBias:
+          type: string
+        session:
+          type: string
+        patterns:
+          type: array
+          items:
+            type: string
+        technicalContext:
+          type: object
+          additionalProperties: true

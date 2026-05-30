@@ -368,6 +368,78 @@ export interface SimilarityResponse {
   matches: SimilarityMatch[];
 }
 
+export interface CandleDecisionRequest {
+  /** Ticker symbol (e.g. TSLA) */
+  symbol: string;
+  /** Bar timeframe (5m, 15m, 1h) */
+  timeframe: string;
+  /** Epoch seconds of the CLOSED candle's open time */
+  candleTime: number;
+}
+
+export type AiCandleDecisionCandidateSide = typeof AiCandleDecisionCandidateSide[keyof typeof AiCandleDecisionCandidateSide];
+
+
+export const AiCandleDecisionCandidateSide = {
+  long: 'long',
+  short: 'short',
+  no_trade: 'no_trade',
+} as const;
+
+export type AiCandleDecisionVerdict = typeof AiCandleDecisionVerdict[keyof typeof AiCandleDecisionVerdict];
+
+
+export const AiCandleDecisionVerdict = {
+  APPROVE: 'APPROVE',
+  REJECT: 'REJECT',
+  WAIT: 'WAIT',
+} as const;
+
+export type AiCandleDecisionNewsSentiment = typeof AiCandleDecisionNewsSentiment[keyof typeof AiCandleDecisionNewsSentiment];
+
+
+export const AiCandleDecisionNewsSentiment = {
+  bullish: 'bullish',
+  bearish: 'bearish',
+  neutral: 'neutral',
+} as const;
+
+export type AiCandleDecisionTechnicalContext = { [key: string]: unknown };
+
+export interface AiCandleDecision {
+  symbol: string;
+  timeframe: string;
+  /** Epoch seconds of the closed candle */
+  candleTime: number;
+  candidateSide: AiCandleDecisionCandidateSide;
+  verdict: AiCandleDecisionVerdict;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  confidence: number;
+  /** @nullable */
+  entryPrice?: number | null;
+  /** @nullable */
+  slPrice?: number | null;
+  /** @nullable */
+  tpPrice?: number | null;
+  /** @nullable */
+  invalidationLevel?: number | null;
+  /** @nullable */
+  rrRatio?: number | null;
+  aiReasoning: string;
+  /** @nullable */
+  rejectionReason?: string | null;
+  newsSentiment: AiCandleDecisionNewsSentiment;
+  newsSummary: string;
+  regime: string;
+  htfBias: string;
+  session: string;
+  patterns: string[];
+  technicalContext?: AiCandleDecisionTechnicalContext;
+}
+
 export type ListSignalsParams = {
 symbol?: string;
 limit?: number;

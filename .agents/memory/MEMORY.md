@@ -13,3 +13,4 @@
 - [Shared memory DB architecture](shared-memory-db-arch.md) — ai_lessons/ai_patterns/ai_chart_analyses/ai_market_regimes; JSON file kept as read-only fallback; both DB and JSON written on reflect.
 - [Vision model client](vision-model.md) — ollama-vision.ts calls /api/generate with images[] array; isVisionAvailable() checks /api/tags for model name prefix match.
 - [Chart analysis pipeline](chart-analysis-pipeline.md) — vision (analyzeChart) and persist (persistChartAnalysis) are separate functions; route orchestrates vision → decision → single DB insert.
+- [ollamaGenerate arg order](ollama-generate-arg-order.md) — `ollamaGenerate(prompt, system?, numPredict?)` — prompt first, no per-call timeout object.

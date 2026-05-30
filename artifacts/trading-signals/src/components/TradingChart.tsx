@@ -5,7 +5,7 @@ import {
   type HistogramData, type Time, type AutoscaleInfo, type IPriceLine,
 } from "lightweight-charts";
 import type { PriceUpdate, SignalNew } from "@/hooks/useMarketSocket";
-import type { ActiveTrade, TradeResult } from "@/pages/ChartPage";
+import type { ActiveTrade, TradeResult, AiCandleDecision } from "@/pages/ChartPage";
 import { CandleStateManager, type CSMTelemetry } from "@/lib/CandleStateManager";
 
 interface Bar { time: number; open: number; high: number; low: number; close: number; volume: number; }
@@ -48,6 +48,17 @@ export interface CryptoLiveBar {
   time: number; open: number; high: number; low: number; close: number;
 }
 
+interface DecisionMarkerPos {
+  key:        string;
+  x:          number;
+  y:          number;
+  isLong:     boolean;
+  isShort:    boolean;
+  verdict:    "APPROVE" | "REJECT" | "WAIT";
+  confidence: number;
+  decision:   AiCandleDecision;
+}
+
 interface Props {
   bars: Bar[];
   signals: SignalNew[];
@@ -62,6 +73,12 @@ interface Props {
   realtimeAvailable: boolean;
   /** When set, directly updates the chart with full OHLCV — used for Binance crypto live klines */
   cryptoLiveBar?: CryptoLiveBar | null;
+  /** AI candle-close decisions to render as chart markers (APPROVE/REJECT/WAIT) */
+  aiDecisions?: AiCandleDecision[];
+  /** Called by the CSM after every live candle closes — triggers the AI pipeline */
+  onCandleClose?: (barTime: number) => void;
+  /** Show "AI analyzing…" spinner in the chart header */
+  aiAnalyzing?: boolean;
 }
 
 const PRICE_SCALE_W = 68;
@@ -87,7 +104,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -131,6 +148,12 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   tradeResultRef.current = tradeResult;
   barsRef.current        = bars;
 
+  // Stable refs for candle-close AI decision pipeline
+  const onCandleCloseRef  = useRef(onCandleClose);
+  const aiDecisionsRef    = useRef<AiCandleDecision[]>([]);
+  onCandleCloseRef.current = onCandleClose;
+  aiDecisionsRef.current   = aiDecisions;
+
   const [barCount, setBarCount]   = useState(0);
   const [dateRange, setDateRange] = useState("");
   const [markers, setMarkers]     = useState<MarkerPos[]>([]);
@@ -140,6 +163,8 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   } | null>(null);
   const [aiMarkers, setAiMarkers]     = useState<AiMarkerPos[]>([]);
   const [hoveredAiKey, setHoveredAiKey] = useState<string | null>(null);
+  const [decisionMarkers, setDecisionMarkers] = useState<DecisionMarkerPos[]>([]);
+  const [selectedDecision, setSelectedDecision] = useState<AiCandleDecision | null>(null);
 
   const removeSLTP = useCallback(() => {
     const cs = candleRef.current;
@@ -343,6 +368,61 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     setAiMarkers(positions);
   }, []);
 
+  const computeDecisionMarkers = useCallback(() => {
+    const chart  = chartRef.current;
+    const series = candleRef.current;
+    const el     = containerRef.current;
+    if (!chart || !series || !el) return;
+
+    const W    = el.offsetWidth;
+    const H    = el.offsetHeight;
+    const maxX = W - PRICE_SCALE_W;
+    const maxY = H * (1 - VOLUME_RATIO);
+    const snap = barsRef.current;
+
+    const byTime = new Map<number, Bar>();
+    for (const b of snap) byTime.set(b.time, b);
+    const nearestBar = (targetSec: number): Bar | undefined => {
+      const hit = byTime.get(targetSec);
+      if (hit) return hit;
+      let lo = 0, hi = snap.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (snap[mid].time < targetSec) lo = mid + 1; else hi = mid;
+      }
+      const cand = snap[lo];
+      if (!cand) return undefined;
+      const prev = snap[lo - 1];
+      if (prev && Math.abs(prev.time - targetSec) < Math.abs(cand.time - targetSec)) return prev;
+      return cand;
+    };
+
+    const positions: DecisionMarkerPos[] = [];
+    for (const dec of aiDecisionsRef.current) {
+      const b = nearestBar(dec.candleTime);
+      if (!b) continue;
+      const x = chart.timeScale().timeToCoordinate(b.time as Time);
+      if (x === null || x < 0 || x > maxX) continue;
+
+      const isLong  = dec.candidateSide === "long";
+      const isShort = dec.candidateSide === "short";
+      const priceRef = isLong ? b.low : isShort ? b.high : (b.high + b.low) / 2;
+      const y = series.priceToCoordinate(priceRef);
+      if (y === null || y < 0 || y > maxY) continue;
+
+      positions.push({
+        key:        `dec-${dec.candleTime}`,
+        x,
+        y:          isLong ? y + 12 : isShort ? y - 12 : y,
+        isLong, isShort,
+        verdict:    dec.verdict,
+        confidence: dec.confidence,
+        decision:   dec,
+      });
+    }
+    setDecisionMarkers(positions);
+  }, []);
+
   // Chart init
   useEffect(() => {
     if (!containerRef.current) return;
@@ -432,17 +512,20 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       getHistoryAtrRange:     () => avgBarRange(barsRef.current, 50),
       getLastHistoricalClose: () => barsRef.current[barsRef.current.length - 1]?.close ?? null,
       getLastHistoricalTime:  () => lastHistTimeRef.current,
+      onCandleClose: (bar) => { try { onCandleCloseRef.current?.(bar.time); } catch {} },
     });
     csm.attachSeries(candle);
     csmRef.current = csm;
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeAiMarkers);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(computeDecisionMarkers);
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
       chartRef.current.applyOptions({ width: containerRef.current.offsetWidth, height: containerRef.current.offsetHeight || 500 });
       computeMarkers();
       computeAiMarkers();
+      computeDecisionMarkers();
     });
     ro.observe(containerRef.current);
 
@@ -450,6 +533,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       ro.disconnect();
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeAiMarkers);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeDecisionMarkers);
       removeSLTP();
       tradeIdRef.current = null;
       csmRef.current?.detach();
@@ -457,7 +541,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.remove();
       chartRef.current = candleRef.current = volumeRef.current = null;
     };
-  }, [computeMarkers, removeSLTP]);
+  }, [computeMarkers, removeSLTP, computeDecisionMarkers]);
 
   // Load bar data — validates every bar before rendering to prevent corrupted OHLC
   // from reaching the chart engine.  Also resets live-bar tracking so stale WebSocket
@@ -509,7 +593,8 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     tradeIdRef.current = null;
     setTimeout(computeMarkers, 80);
     setTimeout(computeAiMarkers, 80);
-  }, [bars, computeMarkers, computeAiMarkers, removeSLTP]);
+    setTimeout(computeDecisionMarkers, 80);
+  }, [bars, computeMarkers, computeAiMarkers, computeDecisionMarkers, removeSLTP]);
 
   // Active trade → SL/TP lines
   useEffect(() => {
@@ -553,6 +638,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
   useEffect(() => { setTimeout(computeAiMarkers, 30); }, [aiSignals, computeAiMarkers]);
+  useEffect(() => { setTimeout(computeDecisionMarkers, 30); }, [aiDecisions, computeDecisionMarkers]);
 
   // ── Live tick ingestion ────────────────────────────────────────────────────
   //
@@ -630,6 +716,11 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
               <span className="text-amber-500/70 ml-2">⚠{telemetry.ticksRejected}</span>
             )}
             <span className="text-muted-foreground/40 ml-2">·{telemetry.barsFinalized}f</span>
+          </span>
+        )}
+        {aiAnalyzing && (
+          <span className="text-[10px] text-violet-400/80 font-mono tracking-widest animate-pulse">
+            AI…
           </span>
         )}
         {!realtimeAvailable ? (
@@ -1022,6 +1113,194 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
             </div>
           );
         })}
+
+        {/* ── AI candle-close decision marker badges ──────────────────────
+             Small pill labels (APPROVE ▲/▼, WAIT –, REJECT ×) rendered as
+             absolutely-positioned divs on top of the SVG so they get
+             pointer-events and can open the detail popup on click. */}
+        {decisionMarkers.map((m) => {
+          const G = "#00ff88"; const R = "#ff3346"; const W = "#6b7280";
+          const isApprove = m.verdict === "APPROVE";
+          const col = !isApprove ? W : m.isLong ? G : R;
+          const glyph = m.verdict === "APPROVE"
+            ? (m.isLong ? "▲" : "▼")
+            : m.verdict === "WAIT" ? "–" : "×";
+          // Small pill offset slightly outside the bar
+          const topPx = m.isLong ? m.y + 2 : m.y - 20;
+
+          return (
+            <div
+              key={`cdec-${m.key}`}
+              onClick={() => setSelectedDecision(prev => prev?.candleTime === m.decision.candleTime ? null : m.decision)}
+              style={{
+                position:      "absolute",
+                left:          m.x - 13,
+                top:           topPx,
+                zIndex:        22,
+                pointerEvents: "auto",
+                cursor:        "pointer",
+                userSelect:    "none",
+                display:       "flex",
+                alignItems:    "center",
+                gap:           3,
+                background:    `${col}18`,
+                border:        `1px solid ${col}50`,
+                borderRadius:  3,
+                padding:       "1px 4px",
+                backdropFilter:"blur(4px)",
+              }}
+            >
+              <span style={{
+                fontFamily:  "'JetBrains Mono', Menlo, monospace",
+                fontSize:    9,
+                fontWeight:  900,
+                color:       col,
+                lineHeight:  1,
+              }}>{glyph}</span>
+              <span style={{
+                fontFamily:  "'JetBrains Mono', Menlo, monospace",
+                fontSize:    8,
+                fontWeight:  700,
+                color:       col,
+                opacity:     0.85,
+                lineHeight:  1,
+              }}>AI</span>
+            </div>
+          );
+        })}
+
+        {/* ── AI candle-close decision detail popup ───────────────────────
+             Shown when a decision badge is clicked. Dismissed by clicking
+             the badge again or the × button. */}
+        {selectedDecision && (() => {
+          const dec = selectedDecision;
+          const isApprove = dec.verdict === "APPROVE";
+          const isLong    = dec.candidateSide === "long";
+          const G = "#00ff88"; const R = "#ff3346"; const A = "#f59e0b"; const GR = "#6b7280";
+          const vCol  = isApprove ? (isLong ? G : R) : dec.verdict === "WAIT" ? A : GR;
+          const vIcon = isApprove ? (isLong ? "▲" : "▼") : dec.verdict === "WAIT" ? "⏳" : "✗";
+          const sentCol = dec.newsSentiment === "bullish" ? G : dec.newsSentiment === "bearish" ? R : A;
+
+          return (
+            <div
+              style={{
+                position:      "absolute",
+                top:           "50%",
+                left:          "50%",
+                transform:     "translate(-50%, -50%)",
+                zIndex:        50,
+                background:    "#0b0e14f8",
+                border:        `1px solid ${vCol}35`,
+                borderRadius:  10,
+                padding:       "14px 16px",
+                width:         310,
+                maxHeight:     "82%",
+                overflowY:     "auto",
+                boxShadow:     `0 16px 56px #00000095, 0 0 24px ${vCol}18`,
+                backdropFilter:"blur(14px)",
+                fontFamily:    "'JetBrains Mono', Menlo, monospace",
+              }}
+            >
+              {/* Header */}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                  <span style={{
+                    fontSize:9, fontWeight:900, color:vCol,
+                    background:`${vCol}18`, border:`1px solid ${vCol}50`,
+                    borderRadius:4, padding:"2px 7px",
+                  }}>
+                    {vIcon} {dec.verdict}
+                  </span>
+                  {isApprove && (
+                    <span style={{ fontSize:9, fontWeight:700, color:vCol }}>
+                      {isLong ? "LONG" : "SHORT"}
+                    </span>
+                  )}
+                  <span style={{ fontSize:8, color:"#4b5563" }}>
+                    {new Date(dec.candleTime * 1000).toLocaleTimeString()}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedDecision(null)}
+                  style={{ background:"none", border:"none", cursor:"pointer", color:"#6b7280", fontSize:13, lineHeight:1, padding:2 }}
+                >×</button>
+              </div>
+
+              {/* Confidence bar */}
+              <div style={{ marginBottom:10 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+                  <span style={{ fontSize:8, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em" }}>Confidence</span>
+                  <span style={{ fontSize:9, fontWeight:700, color: dec.confidence >= 80 ? G : dec.confidence >= 65 ? A : GR }}>
+                    {dec.confidence}%
+                  </span>
+                </div>
+                <div style={{ height:3, background:"#1f2937", borderRadius:2 }}>
+                  <div style={{ height:3, borderRadius:2, width:`${dec.confidence}%`, background: dec.confidence >= 80 ? G : dec.confidence >= 65 ? A : GR, transition:"width 0.3s" }} />
+                </div>
+              </div>
+
+              {/* Levels grid */}
+              {isApprove && (dec.entryPrice !== null || dec.slPrice !== null || dec.tpPrice !== null) && (
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:4, marginBottom:10 }}>
+                  {([
+                    ["Entry", dec.entryPrice?.toFixed(2) ?? "—", "#e5e7eb"],
+                    ["SL",    dec.slPrice?.toFixed(2)    ?? "—", R],
+                    ["TP",    dec.tpPrice?.toFixed(2)    ?? "—", G],
+                    ["R:R",   dec.rrRatio?.toFixed(2)    ?? "—", "#60a5fa"],
+                  ] as const).map(([lbl, val, clr]) => (
+                    <div key={lbl} style={{ textAlign:"center", background:"#ffffff08", borderRadius:4, padding:"4px 0" }}>
+                      <div style={{ fontSize:7, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:2 }}>{lbl}</div>
+                      <div style={{ fontSize:9, fontWeight:700, color:clr }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Context row */}
+              <div style={{ display:"flex", gap:6, marginBottom:9, flexWrap:"wrap" }}>
+                {[
+                  dec.regime   && { label:"Regime",  val: dec.regime },
+                  dec.htfBias  && { label:"HTF",     val: dec.htfBias },
+                  dec.session  && { label:"Session",  val: dec.session },
+                ].filter(Boolean).map((item) => item && (
+                  <span key={item.label} style={{ fontSize:8, color:"#9ca3af", background:"#ffffff08", borderRadius:3, padding:"2px 6px" }}>
+                    <span style={{ color:"#4b5563" }}>{item.label}: </span>{item.val}
+                  </span>
+                ))}
+              </div>
+
+              {/* Patterns */}
+              {dec.patterns?.length > 0 && (
+                <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:9 }}>
+                  {dec.patterns.map((p) => (
+                    <span key={p} style={{ fontSize:8, color:"#60a5fa", background:"#60a5fa18", border:"1px solid #60a5fa30", borderRadius:3, padding:"1px 5px" }}>{p}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* News */}
+              {dec.newsSummary && (
+                <div style={{ marginBottom:9, background:"#ffffff05", borderRadius:5, padding:"7px 9px" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                    <span style={{ fontSize:8, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em" }}>News</span>
+                    <span style={{ fontSize:8, fontWeight:700, color:sentCol }}>{dec.newsSentiment}</span>
+                  </div>
+                  <div style={{ fontSize:8, color:"#9ca3af", lineHeight:1.5 }}>
+                    {dec.newsSummary.length > 160 ? dec.newsSummary.slice(0, 160) + "…" : dec.newsSummary}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Reasoning */}
+              <div style={{ borderTop:"1px solid #1f2937", paddingTop:9 }}>
+                <div style={{ fontSize:8, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:5 }}>AI Reasoning</div>
+                <div style={{ fontSize:8.5, color:"#d1d5db", lineHeight:1.6 }}>
+                  {dec.aiReasoning || dec.rejectionReason || "—"}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Legend overlay — top-left of chart canvas */}
         <div
