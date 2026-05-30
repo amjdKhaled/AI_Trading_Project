@@ -1,0 +1,224 @@
+I want a major upgrade to the AI Trading Project.
+
+========================================
+1. ADD CRYPTO CHARTS USING BINANCE
+========================================
+
+Integrate Binance Spot API and Binance WebSocket streams.
+
+Reference:
+https://developers.binance.com/docs/binance-spot-api-docs/rest-api/general-api-information
+
+Requirements:
+
+- Add a new market type selector:
+  - Stocks
+  - Crypto
+
+- When Crypto is selected:
+  - Load symbols from Binance
+  - Examples:
+    BTCUSDT
+    ETHUSDT
+    SOLUSDT
+    BNBUSDT
+    XRPUSDT
+
+- Use the SAME chart component currently used for stocks.
+
+- Crypto charts must support:
+  - 1m
+  - 5m
+  - 15m
+  - 30m
+  - 1h
+  - 4h
+  - 1d
+
+- Historical candles:
+  Use Binance klines REST endpoint.
+
+- Live candles:
+  Use Binance WebSocket kline streams.
+
+Example:
+wss://stream.binance.com:9443/ws/btcusdt@kline_5m
+
+Requirements:
+- Live candles update tick-by-tick.
+- No polling.
+- Real-time updates.
+- Update OHLC and volume continuously.
+- Candle closes correctly at interval end.
+- Same AI analysis engine must work on crypto.
+
+========================================
+2. FULL AI HISTORY DETAILS
+========================================
+
+Currently AI history only shows summary.
+
+I want every AI analysis saved completely.
+
+When user clicks a history item:
+
+Show full analysis panel containing:
+
+- Market Structure
+- Trend
+- Support Levels
+- Resistance Levels
+- Pattern Detection
+- Candlestick Analysis
+- RSI Analysis
+- EMA Analysis
+- Volume Analysis
+- Risk Assessment
+- Confidence Score
+- Entry
+- Stop Loss
+- Take Profit
+- Risk Reward
+- AI Reasoning
+
+The user should be able to reopen any previous analysis exactly as it was generated.
+
+========================================
+3. MOVE STORAGE FROM FILES TO DATABASE
+========================================
+
+Currently the project stores data in:
+
+- trades.json
+- memory files
+- bar cache json files
+
+Remove file-based persistence.
+
+Create database tables:
+
+analyses
+signals
+watchlists
+trade_history
+ai_memory
+market_cache
+
+Use Drizzle ORM.
+
+Store everything in database.
+
+Requirements:
+
+- No JSON file persistence.
+- No local file memory.
+- Everything survives restart.
+- Faster queries.
+- Indexed tables.
+
+========================================
+4. REAL-TIME STOCK DATA IMPROVEMENTS
+========================================
+
+Current stock charts are not updating truly live.
+
+Fix the stock market data pipeline.
+
+Requirements:
+
+- Keep chart updated continuously.
+- Update current candle whenever new trade data arrives.
+- No delayed refresh feeling.
+- WebSocket based updates whenever possible.
+
+Implement:
+
+Market Data Service
+
+Responsibilities:
+- Historical candles
+- Live candles
+- Reconnection logic
+- Heartbeat monitoring
+- Symbol subscriptions
+- Timeframe synchronization
+
+Requirements:
+- Auto reconnect.
+- No duplicate candles.
+- No missing candles.
+- No frozen charts.
+
+========================================
+5. REAL-TIME AI ENGINE
+========================================
+
+When new candle arrives:
+
+Recalculate:
+- RSI
+- EMA
+- Volume Profile
+- Market Structure
+- Trend
+
+Automatically update AI decision.
+
+If trade signal changes:
+
+Generate new signal.
+
+Store signal in database.
+
+========================================
+6. PERFORMANCE
+========================================
+
+Create a unified architecture:
+
+MarketDataProvider
+  ├─ StocksProvider
+  ├─ BinanceProvider
+
+AnalysisEngine
+SignalEngine
+AIEngine
+HistoryService
+DatabaseService
+
+Requirements:
+- No memory leaks.
+- Handle thousands of candles.
+- Smooth chart rendering.
+- Fast switching between symbols.
+
+========================================
+7. FINAL GOAL
+========================================
+
+The platform should support:
+
+Stocks:
+- TSLA
+- NVDA
+- AMD
+- AAPL
+- QQQ
+- ADI
+
+Crypto:
+- BTCUSDT
+- ETHUSDT
+- SOLUSDT
+- BNBUSDT
+- XRPUSDT
+
+All charts must:
+- Look identical
+- Use same indicators
+- Use same AI engine
+- Have real-time updates
+- Save everything in database
+- Allow reopening any previous AI analysis in full detail
+
+Implement production-quality code and refactor existing architecture where necessary.
