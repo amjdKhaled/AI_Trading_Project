@@ -104,6 +104,32 @@ export const GetSignalStatsResponse = zod.object({
 
 
 /**
+ * @summary Get AI Trade Intelligence Engine performance statistics
+ */
+export const GetAiDecisionStatsQueryParams = zod.object({
+  "symbol": zod.coerce.string().optional(),
+  "timeframe": zod.coerce.string().optional()
+})
+
+export const GetAiDecisionStatsResponse = zod.object({
+  "total": zod.number().describe('All ai_decisions rows matching the filter'),
+  "resolved": zod.number().describe('Rows with a non-null outcome'),
+  "tp_hit": zod.number(),
+  "sl_hit": zod.number(),
+  "expired": zod.number(),
+  "winRate": zod.number().describe('tp_hit \/ (tp_hit + sl_hit), 0 when no closed decisions'),
+  "avgRR": zod.number().describe('Average R:R ratio of resolved decisions with an rrRatio set'),
+  "byRegime": zod.record(zod.string(), zod.object({
+  "tp_hit": zod.number(),
+  "sl_hit": zod.number(),
+  "expired": zod.number(),
+  "total": zod.number(),
+  "winRate": zod.number()
+}))
+})
+
+
+/**
  * Called by the frontend immediately after a live candle closes.
 Fetches bars (rate-limit-safe cache), runs the signal engine,
 evaluates with Ollama, and stores the verdict in the database.

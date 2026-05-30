@@ -21,6 +21,7 @@ import type {
 
 import type {
   AiCandleDecision,
+  AiDecisionStats,
   AiMemorySummary,
   AiStatusExtended,
   Bar,
@@ -28,6 +29,7 @@ import type {
   ChartAnalysisRecord,
   ChartAnalysisRequest,
   ChartAnalysisResponse,
+  GetAiDecisionStatsParams,
   GetSignalStatsParams,
   HealthStatus,
   ListBarsParams,
@@ -504,6 +506,90 @@ export function useGetSignalStats<TData = Awaited<ReturnType<typeof getSignalSta
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSignalStatsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetAiDecisionStatsUrl = (params?: GetAiDecisionStatsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/signals/ai-decision-stats?${stringifiedParams}` : `/api/signals/ai-decision-stats`
+}
+
+/**
+ * @summary Get AI Trade Intelligence Engine performance statistics
+ */
+export const getAiDecisionStats = async (params?: GetAiDecisionStatsParams, options?: RequestInit): Promise<AiDecisionStats> => {
+
+  return customFetch<AiDecisionStats>(getGetAiDecisionStatsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiDecisionStatsQueryKey = (params?: GetAiDecisionStatsParams,) => {
+    return [
+    `/api/signals/ai-decision-stats`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiDecisionStatsQueryOptions = <TData = Awaited<ReturnType<typeof getAiDecisionStats>>, TError = ErrorType<unknown>>(params?: GetAiDecisionStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiDecisionStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiDecisionStatsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiDecisionStats>>> = ({ signal }) => getAiDecisionStats(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiDecisionStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiDecisionStatsQueryResult = NonNullable<Awaited<ReturnType<typeof getAiDecisionStats>>>
+export type GetAiDecisionStatsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get AI Trade Intelligence Engine performance statistics
+ */
+
+export function useGetAiDecisionStats<TData = Awaited<ReturnType<typeof getAiDecisionStats>>, TError = ErrorType<unknown>>(
+ params?: GetAiDecisionStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiDecisionStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiDecisionStatsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -125,6 +125,30 @@ paths:
               schema:
                 $ref: "#/components/schemas/SignalStats"
 
+  /signals/ai-decision-stats:
+    get:
+      operationId: getAiDecisionStats
+      tags: [signals]
+      summary: Get AI Trade Intelligence Engine performance statistics
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: timeframe
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AI decision performance statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiDecisionStats"
+
   /signals/candle-decision:
     post:
       operationId: postCandleDecision
@@ -376,6 +400,48 @@ components:
           type: number
         avgRR:
           type: number
+
+    AiDecisionRegimeStat:
+      type: object
+      required: [tp_hit, sl_hit, expired, total, winRate]
+      properties:
+        tp_hit:
+          type: integer
+        sl_hit:
+          type: integer
+        expired:
+          type: integer
+        total:
+          type: integer
+        winRate:
+          type: number
+
+    AiDecisionStats:
+      type: object
+      required: [total, resolved, tp_hit, sl_hit, expired, winRate, avgRR, byRegime]
+      properties:
+        total:
+          type: integer
+          description: All ai_decisions rows matching the filter
+        resolved:
+          type: integer
+          description: Rows with a non-null outcome
+        tp_hit:
+          type: integer
+        sl_hit:
+          type: integer
+        expired:
+          type: integer
+        winRate:
+          type: number
+          description: tp_hit / (tp_hit + sl_hit), 0 when no closed decisions
+        avgRR:
+          type: number
+          description: Average R:R ratio of resolved decisions with an rrRatio set
+        byRegime:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AiDecisionRegimeStat"
 
     Bar:
       type: object

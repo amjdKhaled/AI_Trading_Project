@@ -6,6 +6,8 @@ import {
   ListSignalsResponse,
   GetSignalStatsQueryParams,
   GetSignalStatsResponse,
+  GetAiDecisionStatsQueryParams,
+  GetAiDecisionStatsResponse,
 } from "@workspace/api-zod";
 import { generateSignals } from "../lib/analyzer/signals";
 import { simulateLifecycle } from "../lib/analyzer/lifecycle";
@@ -534,6 +536,69 @@ router.get("/signals/ai-decisions-history", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err, symbol, timeframe }, "ai-decisions-history lookup failed");
     res.status(500).json({ error: "Failed to fetch AI decision history" });
+  }
+});
+
+// ── GET /signals/ai-decision-stats ───────────────────────────
+router.get("/signals/ai-decision-stats", async (req, res): Promise<void> => {
+  const query = GetAiDecisionStatsQueryParams.safeParse(req.query);
+  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+
+  const { symbol, timeframe } = query.data;
+
+  try {
+    const conditions: import("drizzle-orm").SQL[] = [];
+    if (symbol)    conditions.push(eq(aiDecisionsTable.symbol,    symbol));
+    if (timeframe) conditions.push(eq(aiDecisionsTable.timeframe, timeframe));
+
+    const base = db.select().from(aiDecisionsTable);
+    const rows = await (
+      conditions.length === 0 ? base :
+      conditions.length === 1 ? base.where(conditions[0]) :
+      base.where(and(...conditions))
+    );
+
+    const total    = rows.length;
+    const resolved = rows.filter(r => r.outcome != null);
+    const tp_hit   = resolved.filter(r => r.outcome === "tp_hit").length;
+    const sl_hit   = resolved.filter(r => r.outcome === "sl_hit").length;
+    const expired  = resolved.filter(r => r.outcome === "expired").length;
+    const closed   = tp_hit + sl_hit;
+    const winRate  = closed > 0 ? tp_hit / closed : 0;
+    const rrs      = resolved.filter(r => r.rrRatio != null).map(r => r.rrRatio!);
+    const avgRR    = rrs.length > 0 ? rrs.reduce((s, v) => s + v, 0) / rrs.length : 0;
+
+    // Breakdown by regime
+    type RegimeStat = { tp_hit: number; sl_hit: number; expired: number; total: number; winRate: number };
+    const byRegime: Record<string, RegimeStat> = {};
+    for (const r of resolved) {
+      const regime = r.regime ?? "unknown";
+      if (!byRegime[regime]) byRegime[regime] = { tp_hit: 0, sl_hit: 0, expired: 0, total: 0, winRate: 0 };
+      const s = byRegime[regime];
+      s.total++;
+      if (r.outcome === "tp_hit")  s.tp_hit++;
+      else if (r.outcome === "sl_hit")  s.sl_hit++;
+      else if (r.outcome === "expired") s.expired++;
+    }
+    for (const s of Object.values(byRegime)) {
+      const c = s.tp_hit + s.sl_hit;
+      s.winRate = c > 0 ? Math.round((s.tp_hit / c) * 100) / 100 : 0;
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json(GetAiDecisionStatsResponse.parse({
+      total,
+      resolved: resolved.length,
+      tp_hit,
+      sl_hit,
+      expired,
+      winRate:  Math.round(winRate * 100) / 100,
+      avgRR:    Math.round(avgRR * 100) / 100,
+      byRegime,
+    }));
+  } catch (err) {
+    req.log?.error({ err, symbol, timeframe }, "ai-decision-stats failed");
+    res.status(500).json({ error: "Failed to compute AI decision stats" });
   }
 });
 

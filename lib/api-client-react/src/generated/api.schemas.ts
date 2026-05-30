@@ -91,6 +91,31 @@ export interface SignalStats {
   avgRR: number;
 }
 
+export interface AiDecisionRegimeStat {
+  tp_hit: number;
+  sl_hit: number;
+  expired: number;
+  total: number;
+  winRate: number;
+}
+
+export type AiDecisionStatsByRegime = {[key: string]: AiDecisionRegimeStat};
+
+export interface AiDecisionStats {
+  /** All ai_decisions rows matching the filter */
+  total: number;
+  /** Rows with a non-null outcome */
+  resolved: number;
+  tp_hit: number;
+  sl_hit: number;
+  expired: number;
+  /** tp_hit / (tp_hit + sl_hit), 0 when no closed decisions */
+  winRate: number;
+  /** Average R:R ratio of resolved decisions with an rrRatio set */
+  avgRR: number;
+  byRegime: AiDecisionStatsByRegime;
+}
+
 export interface Bar {
   /** Unix timestamp in seconds */
   time: number;
@@ -447,6 +472,11 @@ limit?: number;
 
 export type GetSignalStatsParams = {
 symbol?: string;
+};
+
+export type GetAiDecisionStatsParams = {
+symbol?: string;
+timeframe?: string;
 };
 
 export type ListBarsParams = {

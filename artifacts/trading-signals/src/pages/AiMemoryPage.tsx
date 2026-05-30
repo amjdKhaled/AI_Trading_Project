@@ -756,6 +756,140 @@ function LoadingSkeleton() {
   );
 }
 
+// ── AI Decision Stats ─────────────────────────────────────────
+
+interface AiDecisionRegimeStat {
+  tp_hit:  number;
+  sl_hit:  number;
+  expired: number;
+  total:   number;
+  winRate: number;
+}
+
+interface AiDecisionStatsData {
+  total:    number;
+  resolved: number;
+  tp_hit:   number;
+  sl_hit:   number;
+  expired:  number;
+  winRate:  number;
+  avgRR:    number;
+  byRegime: Record<string, AiDecisionRegimeStat>;
+}
+
+function AiDecisionStatsCard({
+  stats,
+  loading,
+}: {
+  stats:   AiDecisionStatsData | null;
+  loading: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (loading) {
+    return <div className="h-24 bg-muted rounded animate-pulse" />;
+  }
+
+  if (!stats) return null;
+
+  const { total, resolved, tp_hit, sl_hit, expired, winRate, avgRR, byRegime } = stats;
+  const closed   = tp_hit + sl_hit;
+  const wrPct    = Math.round(winRate * 100);
+  const wrColor  = wrPct >= 55 ? "text-emerald-400" : wrPct >= 45 ? "text-amber-400" : "text-red-400";
+  const barColor = wrPct >= 55 ? "bg-emerald-500" : wrPct >= 45 ? "bg-amber-500" : "bg-red-500";
+
+  const regimeRows = Object.entries(byRegime)
+    .map(([regime, s]) => ({ regime, ...s }))
+    .sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="mt-3 bg-card border border-border rounded overflow-hidden">
+      {/* Header row */}
+      <button
+        onClick={() => setExpanded(o => !o)}
+        className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left"
+      >
+        <Zap size={11} className="text-primary flex-shrink-0" />
+        <span className="text-[11px] font-semibold text-foreground flex-1">AI Decision Engine Performance</span>
+        {resolved === 0 ? (
+          <span className="text-[10px] text-muted-foreground">No resolved decisions yet</span>
+        ) : (
+          <span className={`text-[11px] font-mono font-bold ${wrColor}`}>
+            {wrPct}% WR
+          </span>
+        )}
+        <span className="text-[9px] text-muted-foreground opacity-50 ml-1">{expanded ? "▲" : "▼"}</span>
+      </button>
+
+      {/* Always-visible mini summary */}
+      {resolved > 0 && (
+        <div className="px-3 pb-2.5 grid grid-cols-5 gap-1.5">
+          {[
+            { label: "Total",    value: total,    color: "text-foreground" },
+            { label: "Resolved", value: resolved, color: "text-muted-foreground" },
+            { label: "Wins",     value: tp_hit,   color: "text-emerald-400" },
+            { label: "Losses",   value: sl_hit,   color: "text-red-400" },
+            { label: "Avg R:R",  value: avgRR.toFixed(2), color: "text-blue-400" },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="bg-background border border-border rounded px-2 py-1.5 text-center">
+              <div className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5">{label}</div>
+              <div className={`text-xs font-mono font-semibold ${color}`}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Win rate bar */}
+      {resolved > 0 && (
+        <div className="px-3 pb-2.5">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${barColor}`} style={{ width: `${wrPct}%` }} />
+            </div>
+            <span className="text-[10px] font-mono text-muted-foreground w-24 text-right">
+              {tp_hit}W / {closed} closed ({wrPct}%)
+            </span>
+          </div>
+          {expired > 0 && (
+            <div className="text-[10px] text-muted-foreground mt-0.5">
+              {expired} expired (not counted in WR)
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Expanded: regime breakdown */}
+      {expanded && regimeRows.length > 0 && (
+        <div className="border-t border-border bg-background/60 px-3 py-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            By Regime
+          </div>
+          <div className="space-y-1.5">
+            {regimeRows.map(({ regime, tp_hit: tw, sl_hit: sl, expired: ex, total: tot, winRate: wr }) => {
+              const rPct   = Math.round(wr * 100);
+              const rColor = rPct >= 55 ? "bg-emerald-500" : rPct >= 45 ? "bg-amber-500" : "bg-red-500";
+              const label  = REGIME_LABELS[regime] ?? regime;
+              return (
+                <div key={regime}>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[10px] text-muted-foreground w-24 truncate flex-shrink-0">{label}</span>
+                    <div className="flex-1 h-0.5 bg-muted rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${rColor}`} style={{ width: `${rPct}%` }} />
+                    </div>
+                    <span className="text-[10px] font-mono text-muted-foreground w-20 text-right flex-shrink-0">
+                      {tw}W/{tw + sl}C {ex > 0 ? `+${ex}exp` : ""} ({rPct}%)
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Root data ─────────────────────────────────────────────────
 
 interface AiMemoryData {
@@ -813,6 +947,8 @@ export default function AiMemoryPage() {
   const [diagOpen, setDiagOpen]     = useState(false);
   const [learningAll, setLearningAll] = useState(false);
   const [learnResult, setLearnResult] = useState<{ processed: number; errors: number; total: number; symbols: string[] } | null>(null);
+  const [decisionStats, setDecisionStats] = useState<AiDecisionStatsData | null>(null);
+  const [decisionStatsLoading, setDecisionStatsLoading] = useState(false);
 
   // ── Tools tab state ─────────────────────────────────────────
   const [ollamaStatus,  setOllamaStatus]  = useState<OllamaStatus | null>(null);
@@ -832,6 +968,16 @@ export default function AiMemoryPage() {
       setError((e as Error).message);
     }
   }, []);
+
+  const fetchDecisionStats = useCallback(async () => {
+    setDecisionStatsLoading(true);
+    try {
+      const params = activeSymbol ? `?symbol=${encodeURIComponent(activeSymbol)}&timeframe=5m` : "";
+      const s = await apiFetch<AiDecisionStatsData>(`/api/signals/ai-decision-stats${params}`);
+      setDecisionStats(s);
+    } catch { /* non-critical */ }
+    finally { setDecisionStatsLoading(false); }
+  }, [activeSymbol]);
 
   const fetchDiag = useCallback(async () => {
     try {
@@ -863,9 +1009,9 @@ export default function AiMemoryPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
-    await Promise.all([fetchMemory(), fetchTabData("lessons"), fetchDiag()]);
+    await Promise.all([fetchMemory(), fetchTabData("lessons"), fetchDiag(), fetchDecisionStats()]);
     setLoading(false);
-  }, [fetchMemory, fetchTabData, fetchDiag]);
+  }, [fetchMemory, fetchTabData, fetchDiag, fetchDecisionStats]);
 
   const fetchOllama = useCallback(async () => {
     try {
@@ -937,6 +1083,7 @@ export default function AiMemoryPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { fetchOllama(); }, [fetchOllama]);
+  useEffect(() => { void fetchDecisionStats(); }, [fetchDecisionStats]);
 
   // Load closed signals for the active symbol (for Reflect dropdown)
   useEffect(() => {
@@ -1054,6 +1201,9 @@ export default function AiMemoryPage() {
             </div>
           ))}
         </div>
+
+        {/* AI Decision Engine stats */}
+        <AiDecisionStatsCard stats={decisionStats} loading={decisionStatsLoading} />
 
         {/* Diagnostics panel */}
         <div className="mt-2">
