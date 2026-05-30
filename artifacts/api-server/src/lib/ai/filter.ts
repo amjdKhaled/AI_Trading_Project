@@ -151,6 +151,51 @@ export async function filterSignalWithAi(ctx: SignalContext): Promise<AiSignalVe
   }
 }
 
+// ── Candle-close memory context builder ──────────────────────────────────────
+// Fetches relevant AI memory lessons BEFORE the Ollama call so past trade
+// wisdom is injected into the decision prompt.
+async function buildCandleMemoryContext(
+  ctx: MarketContext,
+): Promise<{ text: string; lessons: string[]; memoryUsed: boolean }> {
+  try {
+    const [longTrades, shortTrades, recentLessons] = await Promise.all([
+      getRelevantContextFromDb(ctx.symbol, ctx.regime, "candle_decision", "long",  4).catch(() => []),
+      getRelevantContextFromDb(ctx.symbol, ctx.regime, "candle_decision", "short", 4).catch(() => []),
+      getRecentLessonsFromDb(5).catch(() => []),
+    ]);
+
+    const allTrades = [...longTrades, ...shortTrades]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 6);
+
+    if (allTrades.length === 0 && recentLessons.length === 0) {
+      return { text: "No relevant memory lessons found for this symbol/regime.", lessons: [], memoryUsed: false };
+    }
+
+    const lines: string[] = [];
+    if (allTrades.length > 0) {
+      lines.push("Similar past setups (same symbol + regime):");
+      for (const t of allTrades) {
+        const wr = t.outcome === "tp_hit" ? "WIN" : "LOSS";
+        lines.push(`  [${wr}] ${t.side.toUpperCase()} ${t.regime}/${t.session} RR:${t.rrRatio.toFixed(2)} conf:${t.confidence} — ${t.lesson ?? "no lesson"}`);
+      }
+    }
+    if (recentLessons.length > 0) {
+      lines.push("Recent AI learning (all symbols, newest first):");
+      for (const l of recentLessons) lines.push(`  • ${l}`);
+    }
+
+    const lessonTexts = [
+      ...allTrades.filter(t => t.lesson).map(t => t.lesson!),
+      ...recentLessons,
+    ].filter((l, i, a) => a.indexOf(l) === i).slice(0, 8);
+
+    return { text: lines.join("\n"), lessons: lessonTexts, memoryUsed: true };
+  } catch {
+    return { text: "Memory unavailable.", lessons: [], memoryUsed: false };
+  }
+}
+
 // ── Candle-close Trade Intelligence Engine ────────────────────────────────────
 // The Market Analysis Engine (buildMarketContext) computes all indicators.
 // Ollama reads the full market context and generates LONG / SHORT / WAIT.
@@ -159,10 +204,13 @@ export async function filterSignalWithAi(ctx: SignalContext): Promise<AiSignalVe
 //   - R:R < 2.0                      → WAIT
 //   - LONG within 0.5% of resistance → WAIT
 //   - SHORT within 0.5% of support   → WAIT
-//   - confidence ≥ 80                → APPROVE
-//   - confidence 65–79               → WAIT
+//   - confidence ≥ 85                → APPROVE  (raised from 80)
+//   - confidence 65–84               → WAIT
 //   - confidence < 65                → REJECT
 //   - Ollama offline                 → WAIT
+//   - setupGrade C or D              → WAIT
+// Pre-Ollama hard gates (skip the AI call entirely):
+//   - volume < 0.7× avg             → WAIT
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CANDLE_SYSTEM = `You are an institutional Trade Intelligence Engine with 20 years of market experience. A deterministic Market Analysis Engine has computed complete context for you. Your sole job: read ALL the data and generate a precise LONG, SHORT, or WAIT decision. Respond ONLY with valid JSON. No preamble, no markdown, no text outside the JSON object.`;

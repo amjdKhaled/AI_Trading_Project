@@ -42,6 +42,9 @@ interface AiMarkerPos {
   slPrice: number;
   tpPrice: number;
   isActive: boolean;
+  setupGrade?: string;
+  memoryUsed?: boolean;
+  memoryLessonsUsed?: string[];
 }
 
 export interface CryptoLiveBar {

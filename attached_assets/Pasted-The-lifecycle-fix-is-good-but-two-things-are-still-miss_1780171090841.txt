@@ -1,0 +1,86 @@
+The lifecycle fix is good, but two things are still missing.
+
+1. Active AI trade visual is still not like the old AI Decide style
+
+Do not change backend logic.
+
+Only restore the old active trade visual style exactly:
+
+* AI LONG / AI SHORT floating label
+* Confidence %
+* Entry horizontal line
+* Stop Loss horizontal line
+* Take Profit horizontal line
+* Shaded RR box
+* Price labels on the right
+* Same old AI Decide shape and spacing
+
+Historical trades can stay as simple BUY / SELL / TP / SL markers.
+
+But the newest active AI trade must look exactly like the old AI Decide overlay.
+
+2. Prove and improve AI Memory usage
+
+I do not feel the system is actually using AI Memory in live decisions.
+
+Please verify and improve this:
+
+* Before every Ollama decision, fetch the most relevant AI Memory lessons.
+* Use symbol, timeframe, side, regime, pattern, setup type, RSI zone, volume condition, support/resistance proximity.
+* Send only the top 5-10 most relevant lessons to Ollama inside the decision prompt.
+* Show in the AI decision popup which memory lessons were used.
+* Add a debug field called `memoryUsed: true/false`.
+* Add `memoryLessonIds` or `memoryLessonsUsed` to each AI decision record.
+* If no relevant memory is found, show `memoryUsed: false`.
+
+3. Improve win rate with stricter professional filters
+
+Do not increase number of trades. I want fewer but higher quality trades.
+
+Add hard filters before APPROVE:
+
+* Do not approve if Risk/Reward < 2.0.
+* Do not approve LONG directly under resistance.
+* Do not approve SHORT directly above support.
+* Do not approve if volume is weak.
+* Do not approve if market is choppy/ranging unless it is a clear range edge setup.
+* Do not approve if higher timeframe trend strongly disagrees.
+* Do not approve after an overextended move without pullback.
+* Do not approve if spread/slippage risk is high.
+* Do not approve if confidence < 85.
+* If AI is unsure, return WAIT.
+
+4. Add professional setup grading
+
+Every AI decision should include:
+
+* setupGrade: A+ | A | B | C | D
+* tradeQualityScore: 0-100
+* reasonToAvoid
+* nearestResistanceDistance
+* nearestSupportDistance
+* liquiditySweepDetected
+* orderBlockConfluence
+* fvgConfluence
+* htfAlignment
+* memorySimilarityScore
+
+Only show APPROVED trades on chart if:
+
+* confidence >= 80
+* setupGrade is A or A+
+* riskReward >= 2.0
+
+5. Keep architecture unchanged
+
+Do not restore Generate button.
+Do not restore AI Decide button.
+Do not restore Mock.
+Do not change candle-close AI architecture.
+
+Only:
+
+* Fix active trade UI style.
+* Make AI Memory actually used in live decisions.
+* Add stricter professional filters to improve win rate.
+* Show evidence in the UI that memory was used.
