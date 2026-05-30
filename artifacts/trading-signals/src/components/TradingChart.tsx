@@ -79,6 +79,8 @@ interface Props {
   onCandleClose?: (barTime: number) => void;
   /** Show "AI analyzing…" spinner in the chart header */
   aiAnalyzing?: boolean;
+  /** Newest APPROVED AI candle-close decision from DB — shown with full R/R box + entry/SL/TP lines */
+  activeApprovedDecision?: AiCandleDecision | null;
 }
 
 const PRICE_SCALE_W = 68;
@@ -104,7 +106,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -149,10 +151,12 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   barsRef.current        = bars;
 
   // Stable refs for candle-close AI decision pipeline
-  const onCandleCloseRef  = useRef(onCandleClose);
-  const aiDecisionsRef    = useRef<AiCandleDecision[]>([]);
-  onCandleCloseRef.current = onCandleClose;
-  aiDecisionsRef.current   = aiDecisions;
+  const onCandleCloseRef      = useRef(onCandleClose);
+  const aiDecisionsRef        = useRef<AiCandleDecision[]>([]);
+  const activeApprovedRef     = useRef<AiCandleDecision | null>(null);
+  onCandleCloseRef.current     = onCandleClose;
+  aiDecisionsRef.current       = aiDecisions;
+  activeApprovedRef.current    = activeApprovedDecision;
 
   const [barCount, setBarCount]   = useState(0);
   const [dateRange, setDateRange] = useState("");
@@ -365,6 +369,50 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
         isActive:   !!activeTradeRef.current && sig.signalId === activeTradeRef.current.signalId,
       });
     }
+    // Also render the latest APPROVED candle-close decision fetched from DB
+    const approved = activeApprovedRef.current;
+    if (approved && approved.verdict === "APPROVE" &&
+        approved.entryPrice != null && approved.slPrice != null && approved.tpPrice != null) {
+      const b = nearestBar(approved.candleTime);
+      if (b) {
+        const x = chart.timeScale().timeToCoordinate(b.time as Time);
+        if (x !== null && x >= 0 && x <= maxX) {
+          const entryY = series.priceToCoordinate(approved.entryPrice);
+          const slY    = series.priceToCoordinate(approved.slPrice);
+          const tpY    = series.priceToCoordinate(approved.tpPrice);
+          if (entryY !== null && slY !== null && tpY !== null) {
+            const isLong = approved.candidateSide === "long";
+            const barPriceY = isLong
+              ? series.priceToCoordinate(b.low)
+              : series.priceToCoordinate(b.high);
+            const labelY = barPriceY === null
+              ? (isLong ? entryY + 30 : entryY - 30)
+              : (isLong ? barPriceY + 16 : barPriceY - 16);
+            const key = `approved-${approved.candleTime}`;
+            if (!positions.find(p => p.key === key)) {
+              positions.push({
+                key,
+                x,
+                y:          clampY(labelY),
+                entryY:     clampY(entryY),
+                slY:        clampY(slY),
+                tpY:        clampY(tpY),
+                rightX:     maxX,
+                isLong,
+                confidence: approved.confidence,
+                reasoning:  approved.aiReasoning,
+                marketBias: typeof approved.marketBias === "string" ? approved.marketBias : undefined,
+                entryPrice: approved.entryPrice,
+                slPrice:    approved.slPrice,
+                tpPrice:    approved.tpPrice,
+                isActive:   false,
+              });
+            }
+          }
+        }
+      }
+    }
+
     setAiMarkers(positions);
   }, []);
 
@@ -638,7 +686,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
 
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
-  useEffect(() => { setTimeout(computeAiMarkers, 30); }, [aiSignals, computeAiMarkers]);
+  useEffect(() => { setTimeout(computeAiMarkers, 30); }, [aiSignals, activeApprovedDecision, computeAiMarkers]);
   useEffect(() => { setTimeout(computeDecisionMarkers, 30); }, [aiDecisions, computeDecisionMarkers]);
 
   // ── Live tick ingestion ────────────────────────────────────────────────────
@@ -1354,8 +1402,8 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
             fontSize:   9,
             lineHeight: 1.8,
           }}>
-            <div style={{ color:"#60a5fa" }}>⚡ Generate Engine</div>
-            <div style={{ color:"#a78bfa" }}>🧠 AI Decision Engine</div>
+            <div style={{ color:"#60a5fa" }}>▲ Signal History</div>
+            <div style={{ color:"#a78bfa" }}>🧠 AI Decisions</div>
           </div>
         </div>
       </div>

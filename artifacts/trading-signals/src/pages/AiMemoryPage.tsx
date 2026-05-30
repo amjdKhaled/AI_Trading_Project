@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Database, BookOpen, BarChart2, Activity, RefreshCw,
   TrendingUp, TrendingDown, Minus, AlertTriangle, Clock, Filter,
-  GraduationCap, Zap,
+  GraduationCap, Zap, Brain, CheckCircle, XCircle,
 } from "lucide-react";
+import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -551,6 +552,198 @@ function SetupsTab({ memory, loading }: { memory: AiMemoryData | null; loading: 
   );
 }
 
+// ── Tools tab types ───────────────────────────────────────────
+
+interface OllamaStatus {
+  available: boolean;
+  model:     string;
+  endpoint:  string;
+  message:   string;
+}
+
+interface ClosedSignal {
+  signalId:   string;
+  side:       string;
+  pattern:    string | null;
+  state:      string;
+  barTime:    string;
+  confidence: number;
+}
+
+interface ReflectResult {
+  ok:          boolean;
+  signalId:    string;
+  aiUsed:      boolean;
+  reflection?: {
+    lesson:                  string;
+    weaknesses:              string[];
+    trapType:                string | null;
+    continuationProbability: number;
+    reasoning:               string;
+  };
+  warning?: string;
+  error?:   string;
+}
+
+// ── Tab: Tools (Ollama + Reflect + Import) ─────────────────────
+
+interface ToolsTabProps {
+  ollamaStatus:   OllamaStatus | null;
+  activeSymbol:   string | null;
+  closedSignals:  ClosedSignal[];
+  reflectId:      string;
+  setReflectId:   (id: string) => void;
+  reflecting:     boolean;
+  reflectResult:  ReflectResult | null;
+  onReflect:      () => void;
+  batchSymbol:    string;
+  setBatchSymbol: (s: string) => void;
+  batching:       boolean;
+  batchResult:    string | null;
+  onBatchImport:  () => void;
+}
+
+function ToolsTab({
+  ollamaStatus, activeSymbol, closedSignals,
+  reflectId, setReflectId, reflecting, reflectResult, onReflect,
+  batchSymbol, setBatchSymbol, batching, batchResult, onBatchImport,
+}: ToolsTabProps) {
+  return (
+    <div className="max-w-lg space-y-4">
+      {/* Ollama status */}
+      <div className="bg-card border border-border rounded p-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5 flex items-center gap-1.5">
+          <Brain size={11} /> AI Engine Status
+        </div>
+        {ollamaStatus ? (
+          <div className="space-y-2">
+            <div className={`flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded border ${
+              ollamaStatus.available
+                ? "border-emerald-500/30 bg-emerald-500/8 text-emerald-400"
+                : "border-red-500/30 bg-red-500/8 text-red-400"
+            }`}>
+              {ollamaStatus.available ? <CheckCircle size={12} /> : <XCircle size={12} />}
+              <span className="font-mono font-medium">
+                {ollamaStatus.available ? "Ollama online" : "Ollama offline"}
+              </span>
+            </div>
+            {ollamaStatus.available && (
+              <div className="text-[10px] text-muted-foreground font-mono">
+                model: {ollamaStatus.model} · {ollamaStatus.endpoint}
+              </div>
+            )}
+            {!ollamaStatus.available && (
+              <div className="text-[11px] text-amber-400/90 flex items-start gap-1.5">
+                <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+                <span>{ollamaStatus.message}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-[11px] text-muted-foreground">Checking…</div>
+        )}
+      </div>
+
+      {/* Bootstrap Memory */}
+      <div className="bg-card border border-border rounded p-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+          <BookOpen size={11} /> Bootstrap Memory
+        </div>
+        <p className="text-[11px] text-muted-foreground mb-2.5">
+          Store all closed trades for a symbol into memory (fast, no AI required).
+        </p>
+        <input
+          value={batchSymbol}
+          onChange={e => setBatchSymbol(e.target.value.toUpperCase())}
+          placeholder="TSLA"
+          className="w-full h-7 text-xs bg-background border border-border rounded px-2 mb-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+        <button
+          onClick={onBatchImport}
+          disabled={batching || !batchSymbol.trim()}
+          className="w-full h-7 text-xs rounded bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
+        >
+          {batching
+            ? <><RefreshCw size={11} className="animate-spin" /> Importing…</>
+            : "Import Trades"}
+        </button>
+        {batchResult && (
+          <p className="mt-2 text-[11px] text-muted-foreground">{batchResult}</p>
+        )}
+      </div>
+
+      {/* Reflect on Trade */}
+      <div className="bg-card border border-border rounded p-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+          <Brain size={11} /> Reflect on Trade
+        </div>
+        <p className="text-[11px] text-muted-foreground mb-2.5">
+          {ollamaStatus?.available
+            ? "Pick a closed trade for Ollama to analyze and extract a lesson."
+            : "Ollama offline — reflection stores trade data without AI lesson."}
+        </p>
+        {closedSignals.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground italic mb-2">
+            No closed signals for {activeSymbol ?? "this symbol"} yet.
+          </p>
+        ) : (
+          <select
+            value={reflectId}
+            onChange={e => setReflectId(e.target.value)}
+            className="w-full h-7 text-[11px] bg-background border border-border rounded px-1.5 mb-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {closedSignals.map(s => {
+              const date = new Date(s.barTime).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              return (
+                <option key={s.signalId} value={s.signalId}>
+                  {s.side.toUpperCase()} · {s.pattern ?? "signal"} · {date} · {s.state.replace("_", " ")}
+                </option>
+              );
+            })}
+          </select>
+        )}
+        <button
+          onClick={onReflect}
+          disabled={reflecting || !reflectId.trim() || closedSignals.length === 0}
+          className="w-full h-7 text-xs rounded bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
+        >
+          {reflecting
+            ? <><RefreshCw size={11} className="animate-spin" /> Reflecting…</>
+            : <><Zap size={11} /> Run Reflection</>}
+        </button>
+        {reflectResult && (
+          <div className="mt-3 space-y-2">
+            <div className={`flex items-center gap-1.5 text-[11px] font-medium ${reflectResult.ok ? "text-emerald-400" : "text-red-400"}`}>
+              {reflectResult.ok ? <CheckCircle size={11} /> : <XCircle size={11} />}
+              {reflectResult.ok
+                ? (reflectResult.aiUsed ? "AI reflection complete" : "Stored (no AI)")
+                : "Failed"}
+            </div>
+            {reflectResult.reflection && (
+              <div className="text-[11px] text-foreground bg-background rounded p-2 border border-border">
+                <div className="text-[10px] text-muted-foreground mb-1">Lesson</div>
+                {reflectResult.reflection.lesson}
+              </div>
+            )}
+            {reflectResult.reflection?.reasoning && (
+              <div className="text-[11px] text-muted-foreground bg-background rounded p-2 border border-border">
+                <div className="text-[10px] text-muted-foreground mb-1">Reasoning</div>
+                {reflectResult.reflection.reasoning}
+              </div>
+            )}
+            {reflectResult.warning && (
+              <div className="text-[11px] text-amber-400">{reflectResult.warning}</div>
+            )}
+            {reflectResult.error && (
+              <div className="text-[11px] text-red-400">{reflectResult.error}</div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Skeleton loader ───────────────────────────────────────────
 
 function LoadingSkeleton() {
@@ -596,16 +789,18 @@ interface DiagData {
 
 // ── Main page ─────────────────────────────────────────────────
 
-type TabId = "lessons" | "patterns" | "regimes" | "setups";
+type TabId = "lessons" | "patterns" | "regimes" | "setups" | "tools";
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "lessons",  label: "Lessons",  icon: <BookOpen size={11} /> },
   { id: "patterns", label: "Patterns", icon: <Activity size={11} /> },
   { id: "regimes",  label: "Regimes",  icon: <BarChart2 size={11} /> },
   { id: "setups",   label: "Setups",   icon: <TrendingUp size={11} /> },
+  { id: "tools",    label: "Tools",    icon: <Brain size={11} /> },
 ];
 
 export default function AiMemoryPage() {
+  const { activeSymbol } = useActiveSymbol();
   const [activeTab, setActiveTab] = useState<TabId>("lessons");
   const [memory, setMemory]       = useState<AiMemoryData | null>(null);
   const [lessons, setLessons]     = useState<AiLesson[]>([]);
@@ -618,6 +813,16 @@ export default function AiMemoryPage() {
   const [diagOpen, setDiagOpen]     = useState(false);
   const [learningAll, setLearningAll] = useState(false);
   const [learnResult, setLearnResult] = useState<{ processed: number; errors: number; total: number; symbols: string[] } | null>(null);
+
+  // ── Tools tab state ─────────────────────────────────────────
+  const [ollamaStatus,  setOllamaStatus]  = useState<OllamaStatus | null>(null);
+  const [reflectId,     setReflectId]     = useState("");
+  const [reflecting,    setReflecting]    = useState(false);
+  const [reflectResult, setReflectResult] = useState<ReflectResult | null>(null);
+  const [closedSignals, setClosedSignals] = useState<ClosedSignal[]>([]);
+  const [batchSymbol,   setBatchSymbol]   = useState("");
+  const [batching,      setBatching]      = useState(false);
+  const [batchResult,   setBatchResult]   = useState<string | null>(null);
 
   const fetchMemory = useCallback(async () => {
     try {
@@ -662,6 +867,53 @@ export default function AiMemoryPage() {
     setLoading(false);
   }, [fetchMemory, fetchTabData, fetchDiag]);
 
+  const fetchOllama = useCallback(async () => {
+    try {
+      const s = await apiFetch<OllamaStatus>(`/api/ai/status`);
+      setOllamaStatus(s);
+    } catch { /* non-critical */ }
+  }, []);
+
+  const handleReflect = useCallback(async () => {
+    if (!reflectId.trim()) return;
+    setReflecting(true);
+    setReflectResult(null);
+    try {
+      const r = await fetch(`${BASE}/api/ai/reflect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signalId: reflectId.trim(), useAi: ollamaStatus?.available }),
+      });
+      const d = await r.json() as ReflectResult;
+      setReflectResult(d);
+      if (d.ok) void fetchMemory();
+    } catch (e) {
+      setReflectResult({ ok: false, signalId: reflectId, aiUsed: false, error: String(e) });
+    } finally {
+      setReflecting(false);
+    }
+  }, [reflectId, ollamaStatus, fetchMemory]);
+
+  const handleBatchImport = useCallback(async () => {
+    if (!batchSymbol.trim()) return;
+    setBatching(true);
+    setBatchResult(null);
+    try {
+      const r = await fetch(`${BASE}/api/ai/reflect/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: batchSymbol.toUpperCase(), useAi: false, limit: 200 }),
+      });
+      const d = await r.json() as { processed: number; errors: number; total: number };
+      setBatchResult(`Stored ${d.processed}/${d.total} trades. Errors: ${d.errors}`);
+      void fetchAll();
+    } catch (e) {
+      setBatchResult(`Error: ${String(e)}`);
+    } finally {
+      setBatching(false);
+    }
+  }, [batchSymbol, fetchAll]);
+
   const handleLearnAll = useCallback(async () => {
     setLearningAll(true);
     setLearnResult(null);
@@ -684,10 +936,31 @@ export default function AiMemoryPage() {
   }, [fetchAll]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => { fetchOllama(); }, [fetchOllama]);
+
+  // Load closed signals for the active symbol (for Reflect dropdown)
+  useEffect(() => {
+    if (!activeSymbol) return;
+    fetch(`${BASE}/api/signals?symbol=${encodeURIComponent(activeSymbol)}&timeframe=5m&limit=200`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: ClosedSignal[]) => {
+        const closed = Array.isArray(rows) ? rows.filter(r => r.state !== "active") : [];
+        setClosedSignals(closed);
+        if (closed.length > 0 && !reflectId) setReflectId(closed[0].signalId);
+      })
+      .catch(() => setClosedSignals([]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSymbol]);
+
+  // Default batch symbol to active symbol
+  useEffect(() => {
+    if (activeSymbol && !batchSymbol) setBatchSymbol(activeSymbol);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSymbol]);
 
   const handleTabChange = (tab: TabId) => {
     setActiveTab(tab);
-    if (tab !== "setups") fetchTabData(tab);
+    if (tab !== "setups" && tab !== "tools") fetchTabData(tab);
   };
 
   if (loading) {
@@ -879,6 +1152,21 @@ export default function AiMemoryPage() {
         {activeTab === "patterns" && <PatternsTab patterns={patterns} loading={tabLoading} />}
         {activeTab === "regimes"  && <RegimesTab  regimes={regimes}   loading={tabLoading} />}
         {activeTab === "setups"   && <SetupsTab   memory={memory}     loading={false} />}
+        {activeTab === "tools"    && <ToolsTab
+          ollamaStatus={ollamaStatus}
+          activeSymbol={activeSymbol}
+          closedSignals={closedSignals}
+          reflectId={reflectId}
+          setReflectId={setReflectId}
+          reflecting={reflecting}
+          reflectResult={reflectResult}
+          onReflect={handleReflect}
+          batchSymbol={batchSymbol}
+          setBatchSymbol={setBatchSymbol}
+          batching={batching}
+          batchResult={batchResult}
+          onBatchImport={handleBatchImport}
+        />}
       </div>
     </div>
   );

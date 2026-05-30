@@ -1,13 +1,11 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { X, Brain, TrendingUp, TrendingDown } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { WatchlistPanel } from "@/components/WatchlistPanel";
 import { TradingChart } from "@/components/TradingChart";
 import { SignalPanel } from "@/components/SignalPanel";
 import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 import { useBinanceSocket } from "@/hooks/useBinanceSocket";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
-import { getListSignalsQueryKey, getGetSignalStatsQueryKey } from "@workspace/api-client-react";
 
 // ── Timeframe constants ───────────────────────────────────────────────────────
 
@@ -92,42 +90,6 @@ export interface AiCandleDecision {
   technicalContext:  Record<string, unknown>;
 }
 
-// ── DEV mock signals ──────────────────────────────────────────────────────────
-
-function makeMockSignals(bars: OhlcvBar[], symbol: string): SignalNew[] {
-  if (bars.length < 30) return [];
-  const signals: SignalNew[] = [];
-  let i = 30;
-  while (i < bars.length) {
-    const bar  = bars[i];
-    const prev = bars.slice(Math.max(0, i - 14), i);
-    const atr  = prev.reduce((s, b) => s + (b.high - b.low), 0) / (prev.length || 1);
-    if (atr > 0) {
-      const isLong = bar.close > bars[Math.max(0, i - 5)].close;
-      signals.push({
-        type:        "signal.new" as const,
-        signalId:    `dev-${symbol}-${i}`,
-        symbol,
-        side:        isLong ? "long" : "short",
-        entryPrice:  bar.close,
-        slPrice:     isLong ? bar.close - atr * 1.5 : bar.close + atr * 1.5,
-        tpPrice:     isLong ? bar.close + atr * 3.0 : bar.close - atr * 3.0,
-        confidence:  65 + (i % 25),
-        riskTag:     "Medium",
-        barTime:     new Date(bar.time * 1000).toISOString(),
-        grade:       (i % 3 === 0 ? "A" : "B") as "A" | "B",
-        patterns:    undefined,
-        state:       "active",
-        exitPrice:   null,
-        exitBarTime: null,
-        exitReason:  null,
-      });
-    }
-    i += 30 + (i % 20);
-  }
-  return signals;
-}
-
 // ── History hook ─────────────────────────────────────────────────────────────
 
 function useHistoryBars(
@@ -180,21 +142,6 @@ function useHistoryBars(
     loading: loading || stale,
     error:   stale ? null : error,
   };
-}
-
-// ── AI Decide result ─────────────────────────────────────────────────────────
-
-interface AiDecideResult {
-  decision:   "BUY" | "SELL" | "NO_TRADE";
-  confidence: number;
-  entry:      number;
-  stopLoss:   number;
-  takeProfit: number;
-  riskReward: number;
-  reasoning:  string;
-  marketBias: string;
-  signalId:   string | null;
-  error?:     string;
 }
 
 // ── Crypto symbol panel ───────────────────────────────────────────────────────
@@ -295,7 +242,6 @@ function CryptoLivePanel({
 
 export default function ChartPage() {
   const { activeSymbol, setActiveSymbol } = useActiveSymbol();
-  const queryClient = useQueryClient();
 
   // ── Market type state (persisted) ──────────────────────────────────────────
   const [marketType, setMarketTypeRaw] = useState<MarketType>(() => {
@@ -321,20 +267,13 @@ export default function ChartPage() {
   const [cryptoTf, setCryptoTf] = useState<CryptoTf>("5m");
 
   // ── Stock-specific state ──────────────────────────────────────────────────
-  const [restSignals,  setRestSignals]  = useState<SignalNew[]>([]);
-  const [activeTrade,  setActiveTrade]  = useState<ActiveTrade | null>(null);
-  const [tradeResult,  setTradeResult]  = useState<TradeResult | null>(null);
-  const [refetchKey,   setRefetchKey]   = useState(0);
-  const [generating,   setGenerating]   = useState(false);
+  const [restSignals,    setRestSignals]    = useState<SignalNew[]>([]);
+  const [activeTrade,    setActiveTrade]    = useState<ActiveTrade | null>(null);
+  const [tradeResult,    setTradeResult]    = useState<TradeResult | null>(null);
   const signalFetchAbort = useRef<AbortController | null>(null);
-  const [genMsg,       setGenMsg]       = useState<string | null>(null);
-  const [devMock,      setDevMock]      = useState(false);
-  const [deciding,     setDeciding]     = useState(false);
-  const [aiResult,     setAiResult]     = useState<AiDecideResult | null>(null);
-  const [showRuleSignals, setShowRuleSignals] = useState(true);
-  const [showAiSignals,   setShowAiSignals]   = useState(true);
-  const [aiDecisions,  setAiDecisions]  = useState<AiCandleDecision[]>([]);
-  const [aiAnalyzing,  setAiAnalyzing]  = useState(false);
+  const [aiDecisions,    setAiDecisions]    = useState<AiCandleDecision[]>([]);
+  const [aiAnalyzing,    setAiAnalyzing]    = useState(false);
+  const [latestApproved, setLatestApproved] = useState<AiCandleDecision | null>(null);
 
   const isStocks = marketType === "stocks";
   const isCrypto = marketType === "crypto";
@@ -420,7 +359,7 @@ export default function ChartPage() {
         setRestSignals(mapped);
       })
       .catch((e) => { if ((e as Error).name !== "AbortError") setRestSignals([]); });
-  }, [activeSymbol, stockTf, refetchKey, isStocks]);
+  }, [activeSymbol, stockTf, isStocks]);
 
   // ── Clear active trade + AI decisions on symbol/timeframe switch ─────────────────────────
   useEffect(() => {
@@ -428,7 +367,20 @@ export default function ChartPage() {
     setTradeResult(null);
     setAiDecisions([]);
     setAiAnalyzing(false);
+    setLatestApproved(null);
   }, [activeSymbol, stockTf]);
+
+  // ── Load latest APPROVED AI decision from DB ─────────────────────────────
+  useEffect(() => {
+    if (!isStocks || !activeSymbol) { setLatestApproved(null); return; }
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    fetch(`${base}/api/signals/ai-active?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(stockTf)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { ok: boolean; decision: AiCandleDecision | null } | null) => {
+        setLatestApproved(data?.decision ?? null);
+      })
+      .catch(() => {});
+  }, [activeSymbol, stockTf, isStocks]);
 
   // ── Candle-close AI pipeline ───────────────────────────────────────────────
   const handleCandleClose = useCallback(async (barTime: number) => {
@@ -499,67 +451,6 @@ export default function ChartPage() {
     }).catch(() => {});
   }, [activeTrade]);
 
-  // ── Stock-only: Generate signals ─────────────────────────────────────────
-  const handleGenerate = useCallback(async () => {
-    if (!activeSymbol || generating) return;
-    setGenerating(true);
-    setGenMsg(null);
-    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    try {
-      const r = await fetch(
-        `${base}/api/signals/regenerate?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(stockTf)}`,
-        { method: "POST" },
-      );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json() as { ok: boolean; inserted?: number; backtest?: { winRate?: number | null }; error?: string };
-      if (data.ok) {
-        const wr = data.backtest?.winRate != null ? ` · ${data.backtest.winRate}% WR` : "";
-        setGenMsg(`✓ ${data.inserted ?? 0} signals${wr}`);
-        setRefetchKey((k) => k + 1);
-      } else {
-        setGenMsg(`✗ ${data.error ?? "failed"}`);
-      }
-    } catch (e) {
-      setGenMsg(`✗ ${String(e)} — Polygon 429? Wait ~60s then retry`);
-    } finally {
-      setGenerating(false);
-    }
-  }, [activeSymbol, stockTf, generating]);
-
-  // ── Stock-only: AI Decide ─────────────────────────────────────────────────
-  const handleAiDecide = useCallback(async () => {
-    if (!activeSymbol || deciding) return;
-    setDeciding(true);
-    setAiResult(null);
-    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    try {
-      const r = await fetch(`${base}/api/ai/decide`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: activeSymbol, timeframe: stockTf }),
-      });
-      const ct = r.headers.get("content-type") ?? "";
-      if (!ct.includes("application/json")) {
-        throw new Error(`Server returned ${ct || "non-JSON"} — is the API server running?`);
-      }
-      const data = await r.json() as AiDecideResult & { ok?: boolean; error?: string; hint?: string };
-      if (!r.ok) {
-        setAiResult({ decision: "NO_TRADE", confidence: 0, entry: 0, stopLoss: 0, takeProfit: 0, riskReward: 0, reasoning: "", marketBias: "NEUTRAL", signalId: null, error: data.error ?? data.hint ?? `HTTP ${r.status}` });
-        return;
-      }
-      setAiResult(data);
-      if (data.signalId) {
-        setRefetchKey((k) => k + 1);
-        queryClient.invalidateQueries({ queryKey: getListSignalsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetSignalStatsQueryKey() });
-      }
-    } catch (e) {
-      setAiResult({ decision: "NO_TRADE", confidence: 0, entry: 0, stopLoss: 0, takeProfit: 0, riskReward: 0, reasoning: "", marketBias: "NEUTRAL", signalId: null, error: String(e) });
-    } finally {
-      setDeciding(false);
-    }
-  }, [activeSymbol, stockTf, deciding, queryClient]);
-
   // ── DEV logging ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -568,25 +459,16 @@ export default function ChartPage() {
       "color:#22d3ee;font-weight:bold",
     );
     console.log("WS connected:", connected, "| isMarketOpen:", isMarketOpen, "| realtimeAvailable:", realtimeAvailable);
-    if (isStocks && restSignals.length === 0 && bars.length > 0) {
-      console.warn("⚠ No signals in DB — click ⚡ Generate to seed them");
-    }
     console.groupEnd();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bars.length, restSignals.length, wsSignals.length, connected]);
 
-  // ── Stock-only: mock signals (DEV) ────────────────────────────────────────
-  const mockSignals = useMemo(
-    () => (import.meta.env.DEV && devMock && isStocks && activeSymbol ? makeMockSignals(bars, activeSymbol) : []),
-    [devMock, bars, activeSymbol, isStocks],
-  );
-
-  const allSignalsDeduped = [...wsSignals, ...restSignals, ...mockSignals]
+  const allSignals = [...wsSignals, ...restSignals]
     .filter((sig) => !activeSymbol || sig.symbol === activeSymbol)
     .filter((sig, idx, arr) => arr.findIndex((s) => s.signalId === sig.signalId) === idx);
 
-  const ruleSignals = showRuleSignals ? allSignalsDeduped.filter((s) => !s.isAiSignal) : [];
-  const aiSignals   = showAiSignals   ? allSignalsDeduped.filter((s) =>  s.isAiSignal) : [];
+  const ruleSignals = allSignals.filter((s) => !s.isAiSignal);
+  const aiSignals   = allSignals.filter((s) =>  s.isAiSignal);
 
   const livePrice = lastPrice?.price ?? null;
 
@@ -661,63 +543,6 @@ export default function ChartPage() {
               ))
           }
 
-          {/* Stock-only controls */}
-          {isStocks && (
-            <div className="flex items-center gap-1.5 ml-2">
-              <button
-                onClick={handleGenerate}
-                disabled={generating || !activeSymbol}
-                className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors disabled:opacity-40"
-                title="Run the signal engine against Polygon history for this symbol+timeframe"
-              >
-                {generating
-                  ? <><span className="inline-block w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" />  Gen…</>
-                  : "⚡ Generate"}
-              </button>
-
-              <button
-                onClick={handleAiDecide}
-                disabled={deciding || !activeSymbol}
-                className="flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border border-primary/40 text-primary hover:border-primary/70 hover:bg-primary/10 transition-colors disabled:opacity-40"
-                title="Ask Ollama to analyze current market conditions and decide BUY / SELL / NO_TRADE"
-              >
-                {deciding
-                  ? <><span className="inline-block w-2.5 h-2.5 border border-current border-t-transparent rounded-full animate-spin" /> Analyzing…</>
-                  : <><Brain size={11} /> AI Decide</>}
-              </button>
-
-              {genMsg && (
-                <span className={`text-[10px] font-mono ${genMsg.startsWith("✓") ? "text-emerald-400" : "text-amber-400"}`}>
-                  {genMsg}
-                </span>
-              )}
-
-              {import.meta.env.DEV && (
-                <button
-                  onClick={() => setDevMock((v) => !v)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-colors ${devMock ? "border-amber-500/50 text-amber-400 bg-amber-500/10" : "border-white/10 text-muted-foreground hover:text-foreground"}`}
-                  title="Toggle synthetic mock signals (DEV only)"
-                >
-                  MOCK
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Stock-only: signal filters */}
-          {isStocks && (
-            <div className="ml-auto flex items-center gap-3 pl-3 border-l border-white/5">
-              <label className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors">
-                <input type="checkbox" checked={showRuleSignals} onChange={(e) => setShowRuleSignals(e.target.checked)} className="accent-sky-500 w-3 h-3 cursor-pointer" />
-                <span>⚡ Generate</span>
-              </label>
-              <label className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors">
-                <input type="checkbox" checked={showAiSignals} onChange={(e) => setShowAiSignals(e.target.checked)} className="accent-violet-500 w-3 h-3 cursor-pointer" />
-                <span>🧠 AI</span>
-              </label>
-            </div>
-          )}
-
           {/* Crypto: live badge */}
           {isCrypto && (
             <div className="ml-auto flex items-center gap-1.5 text-[10px] font-mono">
@@ -748,60 +573,6 @@ export default function ChartPage() {
             </div>
           )}
         </div>
-
-        {/* ── Stock-only: AI Decision Result Card ── */}
-        {isStocks && aiResult && (
-          <div className={`flex-shrink-0 px-3 py-2 border-b border-white/5 flex items-start gap-2.5 text-[11px] ${
-            aiResult.error ? "bg-red-500/5" :
-            aiResult.decision === "BUY"  ? "bg-emerald-500/5" :
-            aiResult.decision === "SELL" ? "bg-red-500/5" :
-            "bg-amber-500/5"
-          }`}>
-            <span className={`flex-shrink-0 font-mono font-bold text-[11px] px-1.5 py-0.5 rounded leading-none mt-0.5 ${
-              aiResult.error           ? "bg-red-500/20 text-red-400" :
-              aiResult.decision === "BUY"  ? "bg-emerald-500/20 text-emerald-400" :
-              aiResult.decision === "SELL" ? "bg-red-500/20 text-red-400" :
-              "bg-amber-500/20 text-amber-400"
-            }`}>
-              {aiResult.error ? "ERR" : aiResult.decision}
-            </span>
-
-            {aiResult.error && (
-              <span className="text-red-400 flex-1 text-[10px] font-mono leading-snug">
-                {aiResult.error.slice(0, 200)}
-              </span>
-            )}
-
-            {!aiResult.error && aiResult.decision !== "NO_TRADE" && (
-              <div className="flex-shrink-0 flex gap-2.5 font-mono text-[10px] items-baseline">
-                <span className="text-muted-foreground">Entry <span className="text-foreground font-semibold">{aiResult.entry.toFixed(2)}</span></span>
-                <span className="text-muted-foreground">SL <span className="text-red-400 font-semibold">{aiResult.stopLoss.toFixed(2)}</span></span>
-                <span className="text-muted-foreground">TP <span className="text-emerald-400 font-semibold">{aiResult.takeProfit.toFixed(2)}</span></span>
-                <span className="text-muted-foreground">RR <span className="text-foreground">{aiResult.riskReward.toFixed(2)}×</span></span>
-                <span className={`font-semibold ${aiResult.confidence >= 80 ? "text-emerald-400" : aiResult.confidence >= 70 ? "text-amber-400" : "text-red-400"}`}>
-                  {aiResult.confidence}%
-                </span>
-                <span className="text-muted-foreground/70 text-[9px]">{aiResult.marketBias}</span>
-              </div>
-            )}
-
-            {!aiResult.error && (
-              <span className="flex-1 text-muted-foreground leading-snug text-[10px] min-w-0">
-                {aiResult.decision === "NO_TRADE"
-                  ? <><span className="text-amber-400 font-medium">No trade: </span>{aiResult.reasoning}</>
-                  : aiResult.reasoning}
-              </span>
-            )}
-
-            {!aiResult.error && aiResult.signalId && (
-              <span className="flex-shrink-0 text-[9px] text-muted-foreground/60 italic leading-snug mt-0.5">→ Signal Panel</span>
-            )}
-
-            <button onClick={() => setAiResult(null)} className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors mt-0.5">
-              <X size={11} />
-            </button>
-          </div>
-        )}
 
         {/* ── Chart ── */}
         {loading ? (
@@ -834,6 +605,7 @@ export default function ChartPage() {
             aiDecisions={isStocks ? aiDecisions : []}
             onCandleClose={isStocks ? handleCandleClose : undefined}
             aiAnalyzing={isStocks ? aiAnalyzing : false}
+            activeApprovedDecision={isStocks ? latestApproved : null}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -853,8 +625,6 @@ export default function ChartPage() {
               activeTrade={activeTrade}
               onActivateTrade={handleActivateTrade}
               onCloseTrade={handleCloseTrade}
-              onGenerate={handleGenerate}
-              generating={generating}
             />
           : <CryptoLivePanel
               symbol={cryptoSymbol}

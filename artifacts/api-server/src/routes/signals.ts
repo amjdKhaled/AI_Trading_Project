@@ -397,6 +397,66 @@ router.post("/signals/candle-decision", async (req, res): Promise<void> => {
   }
 });
 
+// ── GET /signals/ai-active ────────────────────────────────────
+// Returns the newest APPROVED AI candle-close decision for a symbol+timeframe.
+router.get("/signals/ai-active", async (req, res): Promise<void> => {
+  const symbol    = typeof req.query.symbol    === "string" ? req.query.symbol    : null;
+  const timeframe = typeof req.query.timeframe === "string" ? req.query.timeframe : "5m";
+  if (!symbol) { res.status(400).json({ error: "symbol query param required" }); return; }
+
+  try {
+    const rows = await db
+      .select()
+      .from(aiDecisionsTable)
+      .where(and(
+        eq(aiDecisionsTable.symbol,    symbol.toUpperCase().trim()),
+        eq(aiDecisionsTable.timeframe, timeframe),
+        eq(aiDecisionsTable.verdict,   "APPROVE"),
+      ))
+      .orderBy(desc(aiDecisionsTable.createdAt))
+      .limit(1);
+
+    if (rows.length === 0) {
+      res.json({ ok: true, decision: null });
+      return;
+    }
+
+    const row = rows[0];
+    const tc = (row.technicalContext ?? {}) as Record<string, unknown>;
+    res.json({
+      ok: true,
+      decision: {
+        symbol:            row.symbol,
+        timeframe:         row.timeframe,
+        candleTime:        Math.floor(new Date(row.candleTime).getTime() / 1000),
+        candidateSide:     row.candidateSide ?? "no_trade",
+        verdict:           row.verdict,
+        confidence:        row.confidence,
+        entryPrice:        row.entryPrice,
+        slPrice:           row.slPrice,
+        tpPrice:           row.tpPrice,
+        invalidationLevel: row.invalidationLevel,
+        rrRatio:           row.rrRatio,
+        aiReasoning:       row.aiReasoning ?? "",
+        rejectionReason:   row.rejectionReason ?? null,
+        newsSentiment:     (row.newsSentiment ?? "neutral") as "bullish" | "bearish" | "neutral",
+        newsSummary:       row.newsSummary ?? "",
+        regime:            row.regime ?? "",
+        htfBias:           row.htfBias ?? "",
+        session:           row.session ?? "",
+        patterns:          row.patterns,
+        strengths:         Array.isArray(tc.strengths)  ? (tc.strengths  as string[]) : [],
+        weaknesses:        Array.isArray(tc.weaknesses) ? (tc.weaknesses as string[]) : [],
+        marketBias:        (typeof tc.marketBias === "string" ? tc.marketBias : "neutral") as "bullish" | "bearish" | "neutral",
+        technicalContext:  tc,
+      },
+    });
+  } catch (err) {
+    req.log?.error({ err, symbol, timeframe }, "ai-active lookup failed");
+    res.status(500).json({ error: "Failed to fetch active AI decision" });
+  }
+});
+
 // ── GET /signals/stats ────────────────────────────────────────
 router.get("/signals/stats", async (req, res): Promise<void> => {
   const query = GetSignalStatsQueryParams.safeParse(req.query);
