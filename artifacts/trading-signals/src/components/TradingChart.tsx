@@ -1016,45 +1016,75 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
               );
             }
 
-            // ── Historical signal: compact outcome-colored triangle ────────
-            const outcomeCol =
-              m.outcome === "tp_hit"                    ? "#22c55e" :
-              m.outcome === "sl_hit" || m.outcome === "expired" ? "#ef5350" :
-              "#6b7280"; // pending / unknown
-            const mW = 5;
-            const mH = 8;
+            // ── Historical signal: labeled arrow marker ───────────────────
+            // Color by direction so BUY=green / SELL=red is immediately clear.
+            // Outcome badge (TP✓ / SL✗ / EXP) shown below the label.
+            const col = m.isLong ? "#22c55e" : "#ef5350";
+            const flt = m.isLong ? "url(#gGreen)" : "url(#gRed)";
+            const mW = 11;
+            const mH = 17;
             const pts = m.isLong
               ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
               : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
+            const labelY   = m.isLong ? m.y + mH + 12 : m.y - mH - 4;
+            const outcomeY = m.isLong ? m.y + mH + 22 : m.y - mH - 14;
+            const outcomeStr =
+              m.outcome === "tp_hit"  ? "TP✓" :
+              m.outcome === "sl_hit"  ? "SL✗" :
+              m.outcome === "expired" ? "EXP" : "";
+            const outcomeColor = m.outcome === "tp_hit" ? "#22c55e" : "#ef5350";
             return (
               <g key={m.key}>
-                <polygon points={pts} fill={outcomeCol} opacity={0.75}
-                  stroke={outcomeCol} strokeWidth={0.5} />
+                <polygon points={pts} fill={col} opacity={0.85}
+                  stroke={col} strokeWidth={0.8} filter={flt} />
+                <text x={m.x} y={labelY} textAnchor="middle" fill={col}
+                  fontSize={10} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="800" opacity={0.92}>
+                  {m.isLong ? "BUY" : "SELL"}
+                </text>
+                {outcomeStr && (
+                  <text x={m.x} y={outcomeY} textAnchor="middle" fill={outcomeColor}
+                    fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.8}>
+                    {outcomeStr}
+                  </text>
+                )}
               </g>
             );
           })}
 
           {/* ── Resolved AI decision outcome markers ──────────────────────
-               Compact triangles at each resolved APPROVED AI decision bar.
+               Diamond markers at each resolved APPROVED AI decision bar.
                Green = tp_hit, Red = sl_hit, Gray = expired.
-               Uses the same compact style as historical signal markers but
-               with a small "●" dot inside to distinguish them from signals. */}
+               Distinct from regular signal markers via diamond shape + "AI" badge. */}
           {resolvedDecisionMarkers.map((m) => {
             const col =
               m.outcome === "tp_hit"  ? "#22c55e" :
               m.outcome === "sl_hit"  ? "#ef5350" :
               "#6b7280";
-            const mW = 5;
-            const mH = 8;
-            const pts = m.isLong
-              ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
-              : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
+            const dHW = 7; const dHH = 10;
+            const diamondPts = [
+              `${m.x},${m.y - dHH}`,
+              `${m.x + dHW},${m.y}`,
+              `${m.x},${m.y + dHH}`,
+              `${m.x - dHW},${m.y}`,
+            ].join(" ");
+            const labelY = m.isLong ? m.y + dHH + 10 : m.y - dHH - 3;
+            const outcomeStr =
+              m.outcome === "tp_hit"  ? "TP✓" :
+              m.outcome === "sl_hit"  ? "SL✗" : "EXP";
             return (
               <g key={m.key}>
-                <polygon points={pts} fill={col} opacity={0.85}
-                  stroke={col} strokeWidth={0.8} />
-                <circle cx={m.x} cy={m.isLong ? m.y - 3 : m.y + 3}
-                  r={1.5} fill="#000" opacity={0.6} />
+                <polygon points={diamondPts} fill={col} opacity={0.82}
+                  stroke={col} strokeWidth={0.8}
+                  filter={m.outcome === "tp_hit" ? "url(#gGreen)" : m.outcome === "sl_hit" ? "url(#gRed)" : undefined} />
+                <text x={m.x} y={m.y + 1} textAnchor="middle" dominantBaseline="middle"
+                  fill="#000" fontSize={5.5} fontWeight="900"
+                  fontFamily="'JetBrains Mono',Menlo,monospace">
+                  AI
+                </text>
+                <text x={m.x} y={labelY} textAnchor="middle" fill={col}
+                  fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.85}>
+                  {outcomeStr}
+                </text>
               </g>
             );
           })}
@@ -1447,8 +1477,8 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
             fontSize:   9,
             lineHeight: 1.8,
           }}>
-            <div style={{ color:"#60a5fa" }}>▲ Signal History</div>
-            <div style={{ color:"#a78bfa" }}>🧠 AI Decisions</div>
+            <div style={{ color:"#22c55e" }}>▲ BUY &nbsp;<span style={{ color:"#ef5350" }}>▼ SELL</span></div>
+            <div style={{ color:"#a78bfa" }}>◆ AI Decisions</div>
           </div>
         </div>
       </div>
