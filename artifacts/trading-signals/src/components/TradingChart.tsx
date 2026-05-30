@@ -60,11 +60,13 @@ interface DecisionMarkerPos {
 }
 
 interface ResolvedDecisionPos {
-  key:      string;
-  x:        number;
-  y:        number;
-  isLong:   boolean;
-  outcome:  "tp_hit" | "sl_hit" | "expired";
+  key:        string;
+  x:          number;
+  y:          number;
+  isLong:     boolean;
+  outcome:    "tp_hit" | "sl_hit" | "expired";
+  confidence: number;
+  candleTime: number;
 }
 
 interface Props {
@@ -182,6 +184,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const [decisionMarkers, setDecisionMarkers] = useState<DecisionMarkerPos[]>([]);
   const [selectedDecision, setSelectedDecision] = useState<AiCandleDecision | null>(null);
   const [resolvedDecisionMarkers, setResolvedDecisionMarkers] = useState<ResolvedDecisionPos[]>([]);
+  const [hoveredResolvedKey, setHoveredResolvedKey] = useState<string | null>(null);
 
   const removeSLTP = useCallback(() => {
     const cs = candleRef.current;
@@ -527,11 +530,13 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       if (y === null || y < 0 || y > maxY) continue;
 
       positions.push({
-        key:     `rdec-${dec.candleTime}`,
+        key:        `rdec-${dec.candleTime}`,
         x,
-        y:       isLong ? y + 5 : y - 5,
+        y:          isLong ? y + 5 : y - 5,
         isLong,
-        outcome: dec.outcome,
+        outcome:    dec.outcome,
+        confidence: dec.confidence,
+        candleTime: dec.candleTime,
       });
     }
     setResolvedDecisionMarkers(positions);
@@ -1106,6 +1111,86 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
             </g>
           )}
         </svg>
+
+        {/* ── Resolved AI decision hover hit areas ──────────────────────────
+             Transparent divs outside the SVG so HTML pointer events work.
+             Positioned over each diamond marker; tooltip appears on hover. */}
+        {resolvedDecisionMarkers.map((m) => {
+          const col =
+            m.outcome === "tp_hit"  ? "#22c55e" :
+            m.outcome === "sl_hit"  ? "#ef5350" :
+            "#6b7280";
+          const isHov = hoveredResolvedKey === m.key;
+          const dHH = 10;
+          const hitLeft   = m.x - 14;
+          const hitTop    = m.y - dHH - 2;
+          const rightSide = m.x > 500;
+          const outcomeLabel =
+            m.outcome === "tp_hit"  ? "TP Hit" :
+            m.outcome === "sl_hit"  ? "SL Hit" : "Expired";
+          const dateStr = new Date(m.candleTime * 1000).toLocaleString(undefined, {
+            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+          });
+          const tipAbove = !m.isLong;
+          return (
+            <div
+              key={`rdec-hit-${m.key}`}
+              onMouseEnter={() => setHoveredResolvedKey(m.key)}
+              onMouseLeave={() => setHoveredResolvedKey(null)}
+              style={{
+                position:      "absolute",
+                left:          hitLeft,
+                top:           hitTop,
+                width:         28,
+                height:        24,
+                zIndex:        23,
+                pointerEvents: "auto",
+                cursor:        "default",
+              }}
+            >
+              {isHov && (
+                <div style={{
+                  position:      "absolute",
+                  [rightSide ? "right" : "left"]: 0,
+                  [tipAbove   ? "bottom" : "top"]: "100%",
+                  marginTop:     tipAbove ? 0 : 6,
+                  marginBottom:  tipAbove ? 6 : 0,
+                  zIndex:        35,
+                  background:    "#0c0f16f5",
+                  border:        `1px solid ${col}45`,
+                  borderRadius:  6,
+                  padding:       "7px 10px",
+                  minWidth:      148,
+                  boxShadow:     `0 6px 24px #00000090, 0 0 14px ${col}18`,
+                  backdropFilter:"blur(10px)",
+                  fontFamily:    "'JetBrains Mono', Menlo, monospace",
+                  pointerEvents: "none",
+                  whiteSpace:    "nowrap",
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                    <span style={{
+                      fontSize:9, fontWeight:900, color:col,
+                      background:`${col}20`, border:`1px solid ${col}50`,
+                      borderRadius:3, padding:"1px 6px",
+                    }}>
+                      {m.outcome === "tp_hit" ? "✓" : m.outcome === "sl_hit" ? "✗" : "–"} {outcomeLabel}
+                    </span>
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                    <span style={{ fontSize:8, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em" }}>Confidence</span>
+                    <span style={{
+                      fontSize:9, fontWeight:700,
+                      color: m.confidence >= 80 ? "#00ff88" : m.confidence >= 65 ? "#f59e0b" : "#6b7280",
+                    }}>{m.confidence}%</span>
+                  </div>
+                  <div style={{ fontSize:8, color:"#4b5563", borderTop:"1px solid #ffffff0d", paddingTop:4, marginTop:2 }}>
+                    {dateStr}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {/* ── AI signal interactive labels ──────────────────────────────────
              Separate div layer (pointer-events-auto) on top of SVG so hover
