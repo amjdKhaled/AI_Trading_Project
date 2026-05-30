@@ -912,104 +912,54 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
               strokeWidth={1} strokeDasharray="6 3" rx={3}
             />
           )}
-          {/* Signal entry markers — clean institutional style.
-               Historical: entry arrow + exit dot. Active: glowing arrow + pulsing rings. */}
+          {/* Signal entry markers.
+               Active trade: glowing ring + large arrow + side label.
+               Historical: small outcome-colored triangle (TP=green, SL/Expired=red). */}
           {markers.map((m) => {
-            const col      = m.isLong ? "#22d3ee" : "#ef5350";
-            const flt      = m.isActive ? (m.isLong ? "url(#gGreen)" : "url(#gRed)") : undefined;
-            const mW       = m.isActive ? 16 : 8;
-            const mH       = m.isActive ? 26 : 12;
-            const pts      = m.isLong
-              ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
-              : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
-
-            const labelGap = m.isLong ? 11 : -5;
-            const lineH    = 10;
-            const sideText = m.isLong ? "BUY" : "SELL";
-            // Only show grade badge for A / A+ — skip on plain B signals to reduce noise.
-            const grade    = m.grade === "A+" || m.grade === "A" ? m.grade : "";
-
-            const y0 = m.isLong ? m.y + mH + labelGap         : m.y - mH + labelGap;
-            const y1 = m.isLong ? m.y + mH + labelGap + lineH : m.y - mH + labelGap - lineH;
-
-            // Exit outcome dot — TP = neon green, SL = bright red, larger and obvious.
-            const showExit = (m.outcome === "tp_hit" || m.outcome === "sl_hit")
-              && m.exitX !== undefined && m.exitY !== undefined;
-            const isTP     = m.outcome === "tp_hit";
-            const exitCol  = isTP ? "#00ff88" : "#ff3333";
-            const exitGlyph = isTP ? "✓" : "✗";
-
-            return (
-              <g key={m.key}>
-                {/* Pulsing lifecycle rings — active trade only */}
-                {m.isActive && (
-                  <>
-                    <circle cx={m.x} cy={m.y} r={22} fill="none"
-                      stroke={col} strokeWidth={1.5}
-                      style={{ animation: "tradeRingPulse 2s ease-in-out infinite" }} />
-                    <circle cx={m.x} cy={m.y} r={30} fill="none"
-                      stroke={col} strokeWidth={0.8}
-                      style={{ animation: "tradeRingPulse 2s ease-in-out infinite 0.7s" }} />
-                  </>
-                )}
-                {/* Entry arrow */}
-                <polygon
-                  points={pts}
-                  fill={col}
-                  opacity={m.isActive ? 1 : 0.82}
-                  stroke={col}
-                  strokeWidth={m.isActive ? 1.2 : 0.5}
-                  filter={flt}
-                />
-                {/* BUY / SELL + grade */}
-                <text x={m.x} y={y0} textAnchor="middle" fill={col}
-                  fontSize={m.isActive ? 10 : 8.5}
-                  fontFamily="'JetBrains Mono',Menlo,monospace"
-                  fontWeight="800" opacity={0.95}>
-                  {sideText}{grade ? ` ${grade}` : ""}
-                </text>
-                {/* Confidence % — only show for active trade */}
-                {m.isActive && (
+            if (m.isActive) {
+              // ── Active trade: full glowing style ─────────────────────────
+              const col  = m.isLong ? "#22d3ee" : "#ef5350";
+              const flt  = m.isLong ? "url(#gGreen)" : "url(#gRed)";
+              const mW   = 16;
+              const mH   = 26;
+              const pts  = m.isLong
+                ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
+                : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
+              const y0   = m.isLong ? m.y + mH + 11        : m.y - mH - 5;
+              const y1   = m.isLong ? m.y + mH + 11 + 10   : m.y - mH - 5 - 10;
+              return (
+                <g key={m.key}>
+                  <circle cx={m.x} cy={m.y} r={22} fill="none" stroke={col} strokeWidth={1.5}
+                    style={{ animation: "tradeRingPulse 2s ease-in-out infinite" }} />
+                  <circle cx={m.x} cy={m.y} r={30} fill="none" stroke={col} strokeWidth={0.8}
+                    style={{ animation: "tradeRingPulse 2s ease-in-out infinite 0.7s" }} />
+                  <polygon points={pts} fill={col} opacity={1} stroke={col} strokeWidth={1.2} filter={flt} />
+                  <text x={m.x} y={y0} textAnchor="middle" fill={col}
+                    fontSize={10} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="800" opacity={0.95}>
+                    {m.isLong ? "BUY" : "SELL"}
+                  </text>
                   <text x={m.x} y={y1} textAnchor="middle" fill={col}
-                    fontSize={9}
-                    fontFamily="'JetBrains Mono',Menlo,monospace"
-                    fontWeight="600" opacity={0.85}>
+                    fontSize={9} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="600" opacity={0.85}>
                     {m.confidence}%
                   </text>
-                )}
-                {/* TP / SL exit marker — large, glowing, unmissable */}
-                {showExit && (
-                  <g>
-                    {/* outer glow ring */}
-                    <circle
-                      cx={m.exitX!} cy={m.exitY!} r={11}
-                      fill="none"
-                      stroke={exitCol}
-                      strokeWidth={1}
-                      opacity={0.25}
-                    />
-                    {/* filled circle */}
-                    <circle
-                      cx={m.exitX!} cy={m.exitY!} r={8}
-                      fill={`${exitCol}28`}
-                      stroke={exitCol}
-                      strokeWidth={1.8}
-                      filter={isTP ? "url(#gGreen)" : "url(#gRed)"}
-                      opacity={0.95}
-                    />
-                    {/* glyph */}
-                    <text
-                      x={m.exitX!} y={m.exitY! + 4.5}
-                      textAnchor="middle"
-                      fill={exitCol}
-                      fontSize={9}
-                      fontFamily="'JetBrains Mono',Menlo,monospace"
-                      fontWeight="900"
-                      opacity={1}>
-                      {exitGlyph}
-                    </text>
-                  </g>
-                )}
+                </g>
+              );
+            }
+
+            // ── Historical signal: compact outcome-colored triangle ────────
+            const outcomeCol =
+              m.outcome === "tp_hit"                    ? "#22c55e" :
+              m.outcome === "sl_hit" || m.outcome === "expired" ? "#ef5350" :
+              "#6b7280"; // pending / unknown
+            const mW = 5;
+            const mH = 8;
+            const pts = m.isLong
+              ? `${m.x},${m.y - mH} ${m.x - mW},${m.y + 2} ${m.x + mW},${m.y + 2}`
+              : `${m.x},${m.y + mH} ${m.x - mW},${m.y - 2} ${m.x + mW},${m.y - 2}`;
+            return (
+              <g key={m.key}>
+                <polygon points={pts} fill={outcomeCol} opacity={0.75}
+                  stroke={outcomeCol} strokeWidth={0.5} />
               </g>
             );
           })}
