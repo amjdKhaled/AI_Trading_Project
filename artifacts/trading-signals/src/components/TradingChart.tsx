@@ -44,6 +44,10 @@ interface AiMarkerPos {
   isActive: boolean;
 }
 
+export interface CryptoLiveBar {
+  time: number; open: number; high: number; low: number; close: number;
+}
+
 interface Props {
   bars: Bar[];
   signals: SignalNew[];
@@ -56,6 +60,8 @@ interface Props {
   intervalSec: number;
   isMarketOpen: boolean;
   realtimeAvailable: boolean;
+  /** When set, directly updates the chart with full OHLCV — used for Binance crypto live klines */
+  cryptoLiveBar?: CryptoLiveBar | null;
 }
 
 const PRICE_SCALE_W = 68;
@@ -81,7 +87,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -575,6 +581,26 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       setTelemetry(t);
     }
   }, [lastPrice, bars.length]);
+
+  // ── Crypto live kline (direct candleSeries.update — bypasses CandleStateManager) ──
+  //
+  // Binance streams full OHLCV klines rather than raw ticks, so we bypass the
+  // CandleStateManager (which requires raw price ticks and filters by market hours).
+  // This effect is the ONLY caller of candleSeries.update() for crypto mode.
+  // It fires on every kline message (every 1-2 seconds during active trading).
+  useEffect(() => {
+    const cs = candleRef.current;
+    if (!cs || !cryptoLiveBar || !bars.length) return;
+    try {
+      cs.update({
+        time:  cryptoLiveBar.time as import("lightweight-charts").Time,
+        open:  cryptoLiveBar.open,
+        high:  cryptoLiveBar.high,
+        low:   cryptoLiveBar.low,
+        close: cryptoLiveBar.close,
+      });
+    } catch { /* chart series may be disposing */ }
+  }, [cryptoLiveBar, bars.length]);
 
   return (
     <div className="flex flex-col h-full">

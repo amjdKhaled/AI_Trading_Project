@@ -6,6 +6,7 @@ import barsRouter from "./bars";
 import historyRouter from "./history";
 import udfRouter from "./udf";
 import aiRouter from "./ai";
+import cryptoRouter from "./crypto";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(barsRouter);
 router.use(historyRouter);
 router.use(udfRouter);
 router.use(aiRouter);
+router.use(cryptoRouter);
 
 export default router;
