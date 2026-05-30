@@ -1,0 +1,182 @@
+I want to simplify the project architecture and remove the old duplicated decision systems.
+
+Goal:
+The project should depend only on the new automatic candle-close AI decision system.
+
+========================================
+
+1. Remove manual Generate / AI Decide / Mock workflow
+   ========================================
+
+Remove or hide these buttons from the chart page:
+
+* Generate
+* AI Decide
+* Mock
+
+Reason:
+I do not want manual decision buttons anymore.
+The system should decide automatically after every candle close using the new AI candle-close system.
+
+The chart should work like this:
+
+Live candle closes
+→ buildMarketContext()
+→ findSimilarHistoricalSetups()
+→ filterCandleWithAi()
+→ Ollama decision
+→ save to database
+→ show decision on chart
+
+No manual Generate.
+No manual AI Decide.
+No Mock mode.
+
+========================================
+2. Use only the new AI candle-close decision system
+===================================================
+
+The main decision engine should be:
+
+* buildMarketContext()
+* filterCandleWithAi()
+* ai_decisions table
+* chart markers from approved/rejected AI decisions
+
+The old aiDecide() manual flow should not be used for live trading anymore.
+
+If any useful logic from aiDecide() exists, move it into filterCandleWithAi() or buildMarketContext().
+
+There should be one AI decision path only.
+
+========================================
+3. Historical trades display
+============================
+
+I still want old / completed trades to appear on the chart like the old Generate markers.
+
+For historical completed trades:
+
+* Show old signals as small clean markers.
+* Show where the trade started.
+* Show whether it hit TP or SL.
+* Keep the same simple historical marker style from the old Generate system.
+
+Purpose:
+I want to visually review historical trades on the chart.
+
+========================================
+4. Current live AI trade display
+================================
+
+For the newest active AI decision / active trade:
+
+Display it like the current AI Decide style:
+
+* AI SHORT / AI LONG label
+* Confidence %
+* Entry line
+* Stop Loss line
+* Take Profit line
+* Risk/Reward box
+
+For active trade display:
+
+LONG:
+
+* Take Profit must be above entry.
+* Stop Loss must be below entry.
+
+SHORT:
+
+* Stop Loss must be above entry.
+* Take Profit must be below entry.
+
+Very important:
+For SHORT trades, the green profit zone must be below the entry.
+The red risk zone must be above the entry.
+
+========================================
+5. WAIT decisions
+=================
+
+Do not show WAIT on the chart.
+
+Only show:
+
+* APPROVED LONG
+* APPROVED SHORT
+* REJECTED SETUP if useful
+
+But WAIT should stay saved in the database for analysis.
+
+========================================
+6. Remove AI Engine page
+========================
+
+Remove the AI Engine page from the navigation.
+
+Reason:
+It is mostly a dashboard and duplicate workflow.
+
+If any useful functionality exists in AI Engine, especially:
+
+* Reflect workflow
+* Import closed trades
+* Lessons generation
+* Ollama status
+* Memory statistics
+
+Move that useful functionality into the AI Memory page.
+
+Do not delete useful backend functions.
+Only remove the unnecessary page and merge useful tools into AI Memory.
+
+========================================
+7. AI Memory page becomes the only AI management page
+=====================================================
+
+AI Memory should contain:
+
+* Ollama status
+* AI lessons
+* Historical trade memory
+* Reflect closed trades
+* Import trades to memory
+* Pattern library
+* Strategy performance
+* Symbol performance
+
+AI Memory should be the only page for managing AI learning/memory.
+
+========================================
+8. Final target architecture
+============================
+
+Final architecture should be:
+
+Market Data
+→ Candle Close
+→ Market Context Builder
+→ Historical Similarity
+→ Ollama Trade Intelligence
+→ APPROVE / REJECT / WAIT
+→ Save to DB
+→ Show only approved/rejected decisions on chart
+
+The user should not need to click Generate or AI Decide.
+
+The system should analyze automatically and show decisions on the chart by itself.
+
+========================================
+9. Keep UI clean
+================
+
+Do not redesign the entire UI.
+
+Only:
+
+* Remove unnecessary buttons/pages.
+* Keep historical markers clean.
+* Keep active AI trade display professional.
+* Keep chart readable.

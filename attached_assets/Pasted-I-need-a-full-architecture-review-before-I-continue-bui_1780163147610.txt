@@ -1,0 +1,75 @@
+I need a full architecture review before I continue building.
+
+Please explain in detail:
+
+1. What is the exact purpose of the **Generate** button?
+
+   * What logic runs when I click Generate?
+   * Does it use technical indicators only?
+   * Does it use AI/Ollama?
+   * Does it create signals or only scan the chart?
+
+2. What is the exact purpose of the **AI Decide** button?
+
+   * What data is sent to Ollama?
+   * How is the final decision made?
+   * Is AI Decide currently responsible for APPROVE / REJECT / WAIT?
+
+3. Explain the complete signal pipeline step-by-step:
+
+   * Market data source
+   * Indicator calculations
+   * Pattern detection
+   * Support/Resistance
+   * Order Blocks
+   * FVG
+   * AI analysis
+   * Signal generation
+   * Signal approval
+   * Chart marker rendering
+
+4. Explain the purpose of the **AI Engine** page:
+
+   * What practical benefit does it currently provide?
+   * Is it actually influencing live trades?
+   * Or is it only displaying statistics and reflections?
+   * Which parts of that page are actively used by the trading engine?
+
+5. Explain the purpose of the **AI Memory** page:
+
+   * Is the trading system currently learning from past trades?
+   * Does Ollama actually use this memory when making decisions?
+   * Or is it only storing trade history?
+   * Which memory components are currently affecting live signals?
+
+6. Based on the current architecture:
+
+   * Which features are essential?
+   * Which features are nice-to-have?
+   * Which features are currently not improving signal quality and could be removed?
+
+7. If the goal is maximizing trading performance and signal quality:
+
+   * Should I keep Generate + AI Decide + AI Engine + AI Memory?
+   * Or should the architecture be simplified?
+   * Give your recommendation as a senior quantitative trading system architect.
+
+8. Draw the exact current architecture flow in a diagram like:
+
+Market Data
+↓
+Indicators
+↓
+Patterns
+↓
+Generate Engine
+↓
+AI Decide
+↓
+Signal
+↓
+Chart
+
+and show where AI Engine and AI Memory fit into the process.
+
+Be brutally honest. I want to know which components are actually helping trading decisions and which components are mostly UI or analytics.
