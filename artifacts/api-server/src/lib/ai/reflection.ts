@@ -1,4 +1,4 @@
-import { ollamaGenerate, parseJsonFromResponse } from "./ollama.js";
+import { ollamaGenerateWithFallback, parseJsonFromResponse } from "./ollama.js";
 import { appendTradeToDb, getRelevantContextFromDb } from "./shared-memory.js";
 import { appendTrade, getRelevantContext } from "./memory.js";
 import { logger } from "../logger.js";
@@ -66,7 +66,7 @@ export async function reflectOnTrade(trade: TradeMemoryEntry): Promise<AiReflect
   }
 
   const prompt  = buildReflectionPrompt(trade, similar);
-  const raw     = await ollamaGenerate(prompt, SYSTEM);
+  const raw     = await ollamaGenerateWithFallback(prompt, SYSTEM);
 
   let reflection: AiReflection;
   let failureCategory: FailureCategory = "unknown";

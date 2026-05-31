@@ -7,7 +7,7 @@
 // market structure — no hardcoded levels.
 // ============================================================
 
-import { ollamaGenerate, parseJsonFromResponse } from "./ollama.js";
+import { ollamaGenerateWithFallback, parseJsonFromResponse } from "./ollama.js";
 import { getRecentLessonsFromDb, getSymbolStatsFromDb } from "./shared-memory.js";
 import { snapshotRegime } from "./regime-tracker.js";
 import { loadMemory } from "./memory.js";
@@ -282,7 +282,7 @@ export async function aiDecide(params: {
   );
 
   // 800 tokens gives the model room to reason + produce valid JSON
-  const raw = await ollamaGenerate(prompt, SYSTEM, 800);
+  const raw = await ollamaGenerateWithFallback(prompt, SYSTEM, 800);
 
   // ── Parse and validate the AI response ───────────────────────
   try {

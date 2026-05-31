@@ -1,4 +1,4 @@
-import { ollamaGenerate, isOllamaAvailable, parseJsonFromResponse } from "./ollama.js";
+import { ollamaGenerateWithFallback, isOllamaAvailable, parseJsonFromResponse } from "./ollama.js";
 import { getRelevantContextFromDb, getStrategyWinRateFromDb, getRegimeWinRateFromDb, getRecentLessonsFromDb } from "./shared-memory.js";
 import { getRelevantContext, getStrategyWinRate, getRegimeWinRate, loadMemory } from "./memory.js";
 import { logger } from "../logger.js";
@@ -116,7 +116,7 @@ async function buildMemoryContext(ctx: SignalContext): Promise<string> {
 export async function filterSignalWithAi(ctx: SignalContext): Promise<AiSignalVerdict> {
   const memCtx = await buildMemoryContext(ctx);
   const prompt  = buildFilterPrompt(ctx, memCtx);
-  const raw     = await ollamaGenerate(prompt, SYSTEM);
+  const raw     = await ollamaGenerateWithFallback(prompt, SYSTEM);
 
   try {
     const parsed = parseJsonFromResponse(raw) as Partial<AiSignalVerdict>;
@@ -374,7 +374,7 @@ export async function filterCandleWithAi(
 
   let raw = "";
   try {
-    raw = await ollamaGenerate(buildMarketContextPrompt(ctx, stats), CANDLE_SYSTEM);
+    raw = await ollamaGenerateWithFallback(buildMarketContextPrompt(ctx, stats), CANDLE_SYSTEM);
   } catch (err) {
     logger.warn({ symbol: ctx.symbol, timeframe: ctx.timeframe, err }, "Ollama candle decision timed out");
     return noTrade(ctx, "Ollama request timed out — defaulting to WAIT.");

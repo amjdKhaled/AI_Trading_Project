@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, signalsTable, aiLessonsTable, aiPatternsTable, aiMarketRegimesTable, aiChartAnalysesTable } from "@workspace/db";
 import { eq, desc, and, count } from "drizzle-orm";
-import { isOllamaAvailable, MODEL, OLLAMA_BASE_URL } from "../lib/ai/ollama.js";
+import { isOllamaAvailable, getModelStatus, setActiveModel, setFallbackModel, getActiveModel, OLLAMA_BASE_URL } from "../lib/ai/ollama.js";
 import { isVisionAvailable, getVisionModel, VISION_MODEL_DEFAULT } from "../lib/ai/ollama-vision.js";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection.js";
 import { filterSignalWithAi } from "../lib/ai/filter.js";
@@ -17,25 +17,51 @@ import type { TradeMemoryEntry } from "../lib/ai/types.js";
 const router: IRouter = Router();
 
 // ── GET /ai/status ─────────────────────────────────────────────
-// Reports both decision model (qwen2.5:14b) and the auto-detected vision model.
-// Vision model detection is flexible: accepts qwen2.5-vl:7b, qwen2.5vl:7b, and variants.
-router.get("/ai/status", async (req, res): Promise<void> => {
-  const [available, visionAvailable, detectedVisionModel] = await Promise.all([
-    isOllamaAvailable(),
+// Reports decision model, fallback model, and vision model availability.
+router.get("/ai/status", async (_req, res): Promise<void> => {
+  const [modelStatus, visionAvailable, detectedVisionModel] = await Promise.all([
+    getModelStatus(),
     isVisionAvailable(),
     getVisionModel(),
   ]);
   const visionModel = visionAvailable ? detectedVisionModel : VISION_MODEL_DEFAULT;
+  const available   = modelStatus.primaryReady || modelStatus.fallbackReady;
+  const activeModel = modelStatus.primaryReady ? modelStatus.primaryModel : modelStatus.fallbackModel;
   res.json({
     available,
-    model:          MODEL,
+    model:          modelStatus.primaryModel,
+    fallbackModel:  modelStatus.fallbackModel,
+    primaryReady:   modelStatus.primaryReady,
+    fallbackReady:  modelStatus.fallbackReady,
+    activeModel,
     endpoint:       OLLAMA_BASE_URL,
     visionModel,
     visionAvailable,
     message: available
-      ? `Ollama reachable at ${OLLAMA_BASE_URL} — decision: ${MODEL}, vision: ${visionModel} (${visionAvailable ? "ready" : "not pulled"})`
-      : `Ollama NOT reachable at ${OLLAMA_BASE_URL}. Start Ollama locally: ollama serve`,
+      ? `Ollama ready — decision: ${activeModel}${!modelStatus.primaryReady ? " (fallback)" : ""}, vision: ${visionModel} (${visionAvailable ? "ready" : "not pulled"})`
+      : `Ollama NOT reachable at ${OLLAMA_BASE_URL}. Run: ollama serve && ollama pull ${modelStatus.primaryModel}`,
   });
+});
+
+// ── GET /ai/config ──────────────────────────────────────────────
+router.get("/ai/config", async (_req, res): Promise<void> => {
+  const status = await getModelStatus();
+  res.json({ ok: true, ...status });
+});
+
+// ── POST /ai/config ─────────────────────────────────────────────
+// Runtime model switch — changes persist until server restarts.
+// Body: { model?: string, fallbackModel?: string }
+router.post("/ai/config", async (req, res): Promise<void> => {
+  const { model, fallbackModel } = req.body as { model?: string; fallbackModel?: string };
+  if (!model && !fallbackModel) {
+    res.status(400).json({ ok: false, error: "Provide 'model' and/or 'fallbackModel'" });
+    return;
+  }
+  if (model)         setActiveModel(model);
+  if (fallbackModel) setFallbackModel(fallbackModel);
+  const status = await getModelStatus();
+  res.json({ ok: true, ...status, message: `Config updated — primary: ${status.primaryModel}, fallback: ${status.fallbackModel}` });
 });
 
 // ── GET /ai/memory ──────────────────────────────────────────────
@@ -185,7 +211,7 @@ router.post("/ai/decide", async (req, res): Promise<void> => {
     res.status(503).json({
       ok: false,
       error: "Ollama not available — start it locally first",
-      hint: `ollama serve && ollama pull ${MODEL}`,
+      hint: `ollama serve && ollama pull ${getActiveModel()}`,
     });
     return;
   }
@@ -268,7 +294,7 @@ router.post("/ai/filter", async (req, res): Promise<void> => {
   if (!available) {
     res.status(503).json({
       error: "Ollama not available",
-      hint:  `Start Ollama locally: ollama serve && ollama pull ${MODEL}`,
+      hint:  `Start Ollama locally: ollama serve && ollama pull ${getActiveModel()}`,
     });
     return;
   }
@@ -384,7 +410,7 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
     if (decisionOk) {
       const phase2Start = Date.now();
       req.log?.info(
-        { symbol, timeframe, model: MODEL, trend: visionAnalysis.trend, confidence: visionAnalysis.confidence },
+        { symbol, timeframe, model: getActiveModel(), trend: visionAnalysis.trend, confidence: visionAnalysis.confidence },
         "[Phase 2 START] Decision engine invoked — generating trade plan",
       );
       try {
@@ -393,7 +419,7 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
         const phase2Ms = Date.now() - phase2Start;
         req.log?.info(
           {
-            symbol, model: MODEL, elapsedMs: phase2Ms, elapsedSec: Math.round(phase2Ms / 100) / 10,
+            symbol, model: getActiveModel(), elapsedMs: phase2Ms, elapsedSec: Math.round(phase2Ms / 100) / 10,
             direction: decision.direction, confidence: decision.confidence,
             entry: decision.entry, sl: decision.stopLoss, tp: decision.takeProfit1, rr: decision.riskReward,
           },

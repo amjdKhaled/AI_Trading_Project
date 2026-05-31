@@ -5,7 +5,7 @@
 // Always returns LONG, SHORT, or NO_TRADE with full details.
 // ============================================================
 
-import { ollamaGenerate, parseJsonFromResponse } from "./ollama.js";
+import { ollamaGenerateWithFallback, parseJsonFromResponse } from "./ollama.js";
 import type { ChartAnalysis } from "./analyze-chart.js";
 import type { SimilarityMatch } from "./similarity.js";
 import { logger } from "../logger.js";
@@ -187,7 +187,7 @@ export async function makeChartDecision(
 
   logger.info({ symbol, timeframe, trend: analysis.trend, structure: analysis.marketStructure }, "Chart decision requested");
 
-  const raw = await ollamaGenerate(prompt, SYSTEM, 800);
+  const raw = await ollamaGenerateWithFallback(prompt, SYSTEM, 800);
 
   let decision: ChartDecision;
   try {
