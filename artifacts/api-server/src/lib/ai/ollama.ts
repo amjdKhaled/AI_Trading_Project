@@ -3,14 +3,14 @@ import { logger } from "../logger.js";
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 
 // ── Model configuration ───────────────────────────────────────────────────────
-// Primary model : OLLAMA_MODEL env var          → default qwen3:14b
-// Fallback model: OLLAMA_MODEL_FALLBACK env var → default qwen2.5:14b
+// Primary model : OLLAMA_MODEL env var          → default qwen3:8b
+// Fallback model: OLLAMA_MODEL_FALLBACK env var → default qwen2.5:7b
 //
 // Runtime override via POST /api/ai/config persists for the server lifetime
 // but resets on restart.  Env vars set the initial values.
 
-const ENV_PRIMARY  = process.env.OLLAMA_MODEL          ?? "qwen3:14b";
-const ENV_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK ?? "qwen2.5:14b";
+const ENV_PRIMARY  = process.env.OLLAMA_MODEL          ?? "qwen3:8b";
+const ENV_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK ?? "qwen2.5:7b";
 
 let _primary  = ENV_PRIMARY;
 let _fallback = ENV_FALLBACK;

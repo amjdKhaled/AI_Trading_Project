@@ -172,7 +172,30 @@ interface AiMarketRegime {
   snapshottedAt: string;
 }
 
-// ── Grouped pattern type ──────────────────────────────────────
+// ── Batch progress types ───────────────────────────────────────
+
+interface BatchProgress {
+  running:          boolean;
+  total:            number;
+  alreadyProcessed: number;
+  processed:        number;
+  failed:           number;
+  aiUsed:           boolean;
+  startedAt:        number;
+  completedAt?:     number;
+}
+
+interface LearnAllResult {
+  ok:               boolean;
+  total:            number;
+  alreadyProcessed: number;
+  processed:        number;
+  failed:           number;
+  symbols:          string[];
+  aiUsed:           boolean;
+}
+
+// ── Grouped pattern type ───────────────────────────────────────
 
 interface PatternGroup {
   key: string;
@@ -957,7 +980,8 @@ export default function AiMemoryPage() {
   const [diagOpen, setDiagOpen]     = useState(false);
   const [learningAll, setLearningAll] = useState(false);
   const [learnWithAi, setLearnWithAi] = useState(false);
-  const [learnResult, setLearnResult] = useState<{ processed: number; errors: number; total: number; symbols: string[] } | null>(null);
+  const [learnResult, setLearnResult] = useState<LearnAllResult | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [decisionStats, setDecisionStats] = useState<AiDecisionStatsData | null>(null);
   const [decisionStatsLoading, setDecisionStatsLoading] = useState(false);
 
@@ -1074,13 +1098,14 @@ export default function AiMemoryPage() {
   const handleLearnAll = useCallback(async () => {
     setLearningAll(true);
     setLearnResult(null);
+    setBatchProgress(null);
     try {
       const r = await fetch(`${BASE}/api/ai/learn-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ useAi: learnWithAi }),
       });
-      const d = await r.json() as { ok: boolean; processed: number; errors: number; total: number; symbols: string[] };
+      const d = await r.json() as LearnAllResult;
       if (d.ok) {
         setLearnResult(d);
         await fetchAll();
@@ -1095,6 +1120,20 @@ export default function AiMemoryPage() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { fetchOllama(); }, [fetchOllama]);
   useEffect(() => { void fetchDecisionStats(); }, [fetchDecisionStats]);
+
+  // Poll /api/ai/learn-progress every 2 s while a batch is running
+  useEffect(() => {
+    if (!learningAll) return;
+    const poll = async () => {
+      try {
+        const p = await apiFetch<{ ok: boolean; progress: BatchProgress | null }>(`/api/ai/learn-progress`);
+        if (p.progress) setBatchProgress(p.progress);
+      } catch { /* non-critical */ }
+    };
+    void poll();
+    const id = setInterval(() => { void poll(); }, 2000);
+    return () => clearInterval(id);
+  }, [learningAll]);
 
   // Load closed signals for the active symbol (for Reflect dropdown)
   useEffect(() => {
@@ -1197,19 +1236,102 @@ export default function AiMemoryPage() {
           </div>
         </div>
 
-        {/* Learn-all result banner */}
-        {learnResult && (
-          <div className="mt-2 flex items-center gap-2 text-[11px] bg-emerald-500/10 border border-emerald-500/20 rounded px-3 py-1.5 text-emerald-400">
-            <GraduationCap size={12} />
-            <span>
-              Learned from <strong>{learnResult.processed}</strong> trades
-              {learnResult.errors > 0 ? `, ${learnResult.errors} skipped` : ""}
-              {" "}across {learnResult.symbols.length} symbol{learnResult.symbols.length !== 1 ? "s" : ""}
-              {" "}({learnResult.symbols.join(", ")})
-            </span>
-            <button onClick={() => setLearnResult(null)} className="ml-auto text-emerald-400/60 hover:text-emerald-400">×</button>
-          </div>
-        )}
+        {/* Batch progress / result panel */}
+        {(learningAll || learnResult) && (() => {
+          const p = batchProgress;
+          const doneSoFar = p ? p.alreadyProcessed + p.processed + p.failed : 0;
+          const remaining = p ? Math.max(0, p.total - p.alreadyProcessed - p.processed - p.failed) : 0;
+          const pct       = p && p.total > 0 ? Math.round((doneSoFar / p.total) * 100) : 0;
+          const elapsedMin = p ? (Date.now() - p.startedAt) / 60000 : 0;
+          const rate      = p && elapsedMin > 0 ? p.processed / elapsedMin : 0;
+          const etaMin    = rate > 0 && remaining > 0 ? Math.ceil(remaining / rate) : null;
+
+          return (
+            <div className="mt-2 rounded border border-border bg-card overflow-hidden text-[11px]">
+              {/* Header */}
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/20">
+                {learningAll
+                  ? <RefreshCw size={11} className="animate-spin text-primary flex-shrink-0" />
+                  : <GraduationCap size={11} className="text-emerald-400 flex-shrink-0" />}
+                <span className="font-medium text-foreground">
+                  {learningAll ? "Learning in progress…" : "Batch complete"}
+                </span>
+                {!learningAll && learnResult && (
+                  <button onClick={() => setLearnResult(null)} className="ml-auto text-muted-foreground hover:text-foreground">×</button>
+                )}
+              </div>
+
+              {/* Live progress (while running) */}
+              {learningAll && p && (
+                <div className="px-3 py-2.5 space-y-2">
+                  {/* Progress bar */}
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+
+                  {/* Stats grid */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { label: "Processed",  value: `${p.processed}`,           color: "text-emerald-400" },
+                      { label: "Skipped",    value: `${p.alreadyProcessed}`,    color: "text-blue-400" },
+                      { label: "Remaining",  value: `${remaining}`,             color: "text-amber-400" },
+                      { label: "Failed",     value: `${p.failed}`,              color: p.failed > 0 ? "text-red-400" : "text-muted-foreground" },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="bg-background border border-border rounded px-2 py-1.5 text-center">
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5">{label}</div>
+                        <div className={`text-sm font-mono font-bold ${color}`}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Progress line */}
+                  <div className="flex items-center justify-between text-muted-foreground">
+                    <span>{doneSoFar} / {p.total} trades ({pct}%)</span>
+                    {etaMin !== null && (
+                      <span className="flex items-center gap-1">
+                        <Clock size={9} />
+                        ~{etaMin} min remaining
+                        {rate > 0 && <span className="text-[10px]">({rate.toFixed(1)}/min)</span>}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Model info */}
+                  <div className="text-muted-foreground">
+                    {p.aiUsed ? "🧠 Qwen3 AI reflection" : "⚡ Fast statistical rules"}
+                  </div>
+                </div>
+              )}
+
+              {/* Final result (after completion) */}
+              {!learningAll && learnResult && (
+                <div className="px-3 py-2.5 space-y-2">
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { label: "New Lessons",    value: learnResult.processed,        color: "text-emerald-400" },
+                      { label: "Already Had",    value: learnResult.alreadyProcessed, color: "text-blue-400" },
+                      { label: "Total Signals",  value: learnResult.total,            color: "text-foreground" },
+                      { label: "Failed",         value: learnResult.failed,           color: learnResult.failed > 0 ? "text-red-400" : "text-muted-foreground" },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="bg-background border border-border rounded px-2 py-1.5 text-center">
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5">{label}</div>
+                        <div className={`text-sm font-mono font-bold ${color}`}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-muted-foreground">
+                    {learnResult.symbols.length} symbol{learnResult.symbols.length !== 1 ? "s" : ""}
+                    {" "}({learnResult.symbols.join(", ")})
+                    {" "}· {learnResult.aiUsed ? "AI-reflected" : "fast rules"}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* KPIs */}
         <div className="grid grid-cols-4 gap-2 mt-3">

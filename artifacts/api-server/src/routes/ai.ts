@@ -714,29 +714,76 @@ router.post("/ai/decision-refresh", async (req, res): Promise<void> => {
   }
 });
 
+// ── Batch progress singleton ──────────────────────────────────────────────
+// Updated in-place by /ai/learn-all; read by /ai/learn-progress.
+
+interface BatchProgress {
+  running:          boolean;
+  total:            number;   // all closed signals in DB
+  alreadyProcessed: number;   // had lessons before this run — skipped
+  processed:        number;   // newly processed this run
+  failed:           number;   // errors this run
+  aiUsed:           boolean;
+  startedAt:        number;   // Date.now()
+  completedAt?:     number;
+}
+
+let _batchProgress: BatchProgress | null = null;
+
+// ── GET /ai/learn-progress ────────────────────────────────────────────────
+// Returns the current or most-recent batch job state.
+router.get("/ai/learn-progress", (_req, res): void => {
+  res.json({ ok: true, progress: _batchProgress });
+});
+
 // ── POST /ai/learn-all ───────────────────────────────────────────────────
 // Batch-reflect on ALL closed signals from ALL symbols.
-// Populates AI Memory with lessons from the full trade history.
-// Pass useAi:true to run Ollama-backed reflection (slower but richer lessons).
+// Skips signals that already have lessons (resume-safe, duplicate-safe).
+// No hard cap — processes the entire history.
 router.post("/ai/learn-all", async (req, res): Promise<void> => {
-  const { useAi = false, limit = 500 } = req.body as { useAi?: boolean; limit?: number };
+  if (_batchProgress?.running) {
+    res.json({ ok: false, error: "Batch already running", progress: _batchProgress });
+    return;
+  }
+
+  const { useAi = false } = req.body as { useAi?: boolean };
 
   try {
-    const rows = await db
-      .select()
-      .from(signalsTable)
-      .limit(Math.min(Number(limit), 2000));
-
-    const closed = rows.filter(r => r.state !== "active");
+    // 1. Load ALL closed signals — no limit cap
+    const allRows = await db.select().from(signalsTable);
+    const closed  = allRows.filter(r => r.state !== "active");
     const symbols = [...new Set(closed.map(r => r.symbol))];
 
-    req.log?.info({ total: closed.length, symbols: symbols.length, useAi }, "Learn-all started");
+    // 2. Build set of signal_ids that already have lessons (resume / dedup check)
+    const existingRows = await db
+      .select({ signalId: aiLessonsTable.signalId })
+      .from(aiLessonsTable);
+    const processedIds = new Set(existingRows.map(r => r.signalId));
+
+    const toProcess      = closed.filter(r => !processedIds.has(r.signalId));
+    const alreadyProcessed = closed.length - toProcess.length;
+
+    // 3. Initialise progress singleton
+    _batchProgress = {
+      running:          true,
+      total:            closed.length,
+      alreadyProcessed,
+      processed:        0,
+      failed:           0,
+      aiUsed:           false,
+      startedAt:        Date.now(),
+    };
+
+    req.log?.info(
+      { total: closed.length, toProcess: toProcess.length, alreadyProcessed, symbols: symbols.length, useAi },
+      "Learn-all started",
+    );
 
     const ollamaOk = useAi ? await isOllamaAvailable() : false;
-    let processed = 0;
-    let errors    = 0;
+    _batchProgress.aiUsed = ollamaOk;
 
-    for (const row of closed) {
+    // 4. Process each unprocessed signal sequentially
+    for (const row of toProcess) {
       const trade = rowToTradeEntry(row);
       try {
         if (ollamaOk) {
@@ -744,13 +791,33 @@ router.post("/ai/learn-all", async (req, res): Promise<void> => {
         } else {
           await reflectWithoutAi(trade);
         }
-        processed++;
-      } catch { errors++; }
+        _batchProgress.processed++;
+      } catch {
+        _batchProgress.failed++;
+      }
     }
 
-    req.log?.info({ processed, errors, total: closed.length, symbols }, "Learn-all complete");
-    res.json({ ok: true, processed, errors, total: closed.length, symbols, aiUsed: ollamaOk });
+    _batchProgress.running     = false;
+    _batchProgress.completedAt = Date.now();
+
+    req.log?.info(
+      { processed: _batchProgress.processed, failed: _batchProgress.failed, alreadyProcessed, total: closed.length, symbols },
+      "Learn-all complete",
+    );
+    res.json({
+      ok:               true,
+      total:            closed.length,
+      alreadyProcessed,
+      processed:        _batchProgress.processed,
+      failed:           _batchProgress.failed,
+      symbols,
+      aiUsed:           ollamaOk,
+    });
   } catch (err) {
+    if (_batchProgress) {
+      _batchProgress.running     = false;
+      _batchProgress.completedAt = Date.now();
+    }
     req.log?.warn({ err }, "Learn-all failed");
     res.status(500).json({ ok: false, error: (err as Error).message });
   }

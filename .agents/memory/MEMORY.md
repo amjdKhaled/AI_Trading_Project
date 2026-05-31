@@ -15,3 +15,4 @@
 - [Chart analysis pipeline](chart-analysis-pipeline.md) — vision (analyzeChart) and persist (persistChartAnalysis) are separate functions; route orchestrates vision → decision → single DB insert.
 - [ollamaGenerate arg order](ollama-generate-arg-order.md) — `ollamaGenerate(prompt, system?, numPredict?)` — prompt first, no per-call timeout object.
 - [Trade Intelligence Engine architecture](trade-intelligence-engine.md) — Market Analysis Engine (deterministic) + Ollama Trade Intelligence Engine (decision). detectAllPatterns(bars) takes 1 arg only; detectOrderBlocks/detectFVGs take (bars, i).
+- [Batch learn-all pipeline](batch-learn-all.md) — resume-safe: pre-fetches existing signal_ids into a Set; appendTradeToDb guards with existence check; BatchProgress singleton polled via GET /api/ai/learn-progress every 2 s.

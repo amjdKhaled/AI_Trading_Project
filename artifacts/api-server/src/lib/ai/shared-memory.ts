@@ -76,6 +76,17 @@ function inferFailureCategory(trade: TradeMemoryEntry): typeof import("@workspac
 
 export async function appendTradeToDb(entry: TradeMemoryEntry): Promise<void> {
   try {
+    // Guard: skip if a lesson for this signal already exists (prevents duplicates on re-run)
+    const existing = await db
+      .select({ id: aiLessonsTable.id })
+      .from(aiLessonsTable)
+      .where(eq(aiLessonsTable.signalId, entry.id))
+      .limit(1);
+    if (existing.length > 0) {
+      logger.info({ signalId: entry.id }, "Skipped duplicate — lesson already stored");
+      return;
+    }
+
     await db.insert(aiLessonsTable).values({
       signalId:                entry.id,
       symbol:                  entry.symbol,
