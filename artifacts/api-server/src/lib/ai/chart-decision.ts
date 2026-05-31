@@ -1,5 +1,5 @@
 // ============================================================
-// Chart Decision — qwen2.5:14b decision engine
+// Chart Decision — qwen3:8b decision engine (fallback: qwen2.5:7b)
 // Takes structured ChartAnalysis output from the vision model
 // and produces a concrete, hedge-fund-grade trade plan.
 // Always returns LONG, SHORT, or NO_TRADE with full details.

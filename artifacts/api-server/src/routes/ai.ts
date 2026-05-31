@@ -327,7 +327,7 @@ router.get("/ai/chart-analyses", async (req, res): Promise<void> => {
 
 // ── POST /ai/analyze-chart ──────────────────────────────────────
 // Phase 1: Vision model (auto-detected: qwen2.5-vl:7b or qwen2.5vl:7b) reads the chart.
-// Phase 2: Decision engine (qwen2.5:14b) produces a trade plan.
+// Phase 2: Decision engine (qwen3:8b / fallback qwen2.5:7b) produces a trade plan.
 // Returns ChartAnalysis + ChartDecision + historicalMatches.
 router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
   const { imageBase64, symbol, timeframe, signalId, thumbnailBase64 } = req.body as {
@@ -403,7 +403,7 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
       "[Phase 1 COMPLETE] Vision analysis + historical lookup done",
     );
 
-    // Phase 2: Decision engine (qwen2.5:14b) produces a trade plan
+    // Phase 2: Decision engine (qwen3:8b / fallback qwen2.5:7b) produces a trade plan
     let decision = null;
     let decisionAvailable = false;
     const decisionOk = await isOllamaAvailable();
@@ -429,7 +429,7 @@ router.post("/ai/analyze-chart", async (req, res): Promise<void> => {
         req.log?.warn({ decErr }, "Phase 2 failed — decision engine error, returning vision-only result");
       }
     } else {
-      req.log?.info({ symbol }, "Phase 2 skipped — decision model (qwen2.5:14b) offline");
+      req.log?.info({ symbol }, "Phase 2 skipped — decision model (qwen3:8b) offline");
     }
 
     // Phase 3: Persist everything in a single DB insert

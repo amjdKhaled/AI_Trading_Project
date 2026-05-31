@@ -53,7 +53,7 @@ pnpm --filter @workspace/trading-signals run dev
 # Terminal 3 — AI (Ollama)
 ollama serve
 # Pull the model once:
-ollama pull qwen2.5:14b
+ollama pull qwen3:8b
 ```
 
 ### Open the app
@@ -77,7 +77,7 @@ ollama pull qwen2.5:14b
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - Frontend: React 19 + Vite 7 + Tailwind CSS 4 + Lightweight Charts
-- AI: Ollama (local) — model `qwen2.5:14b`, no cloud inference
+- AI: Ollama (local) — model `qwen3:8b` (fallback: `qwen2.5:7b`), no cloud inference
 - API codegen: Orval (from OpenAPI spec)
 
 ## Where things live
@@ -99,7 +99,7 @@ ollama pull qwen2.5:14b
 
 - **Contract-first API**: OpenAPI spec in `lib/api-spec` is the source of truth; Zod schemas and React Query hooks are generated from it via Orval.
 - **Pure server relay**: WebSocket server is a pure price relay — `CandleStateManager` on the client is the sole writer to `candleSeries.update()`.
-- **Local AI only**: All AI features use Ollama with `qwen2.5:14b`. No cloud inference, no OpenAI API keys.
+- **Local AI only**: All AI features use Ollama with `qwen3:8b` (fallback: `qwen2.5:7b`). No cloud inference, no OpenAI API keys.
 - **Platform-agnostic native deps**: `pnpm-workspace.yaml` overrides are limited to version pins only — platform binary selection (esbuild, rollup, lightningcss, @tailwindcss/oxide) is handled by pnpm's native optional-dependency resolution, which installs only the binary for the current OS.
 - **`cross-env`** wraps the api-server `dev` script so `NODE_ENV=development` is set correctly on both Windows and Linux.
 
@@ -112,7 +112,7 @@ ollama pull qwen2.5:14b
 
 ## User preferences
 
-- Local AI only — Ollama + qwen2.5:14b, no cloud inference, no OpenAI
+- Local AI only — Ollama + qwen3:8b (fallback qwen2.5:7b), no cloud inference, no OpenAI
 - Windows 11 / Node 22 LTS / RTX 2070 8GB / 32GB RAM is the primary local dev environment
 - Do not rewrite the app — prefer minimal targeted fixes
 
