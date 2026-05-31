@@ -1,0 +1,78 @@
+I want a new AI Memory validation system.
+
+Add a button:
+
+🧠 Reanalyze Chart Using Current AI Memory
+
+When clicked:
+
+Load all historical candles for the current symbol.
+Load the current AI Memory database.
+Re-run the full AI Decision Engine on every candle using the latest memory.
+Generate a new set of BUY/SELL decisions.
+Draw the new entries/exits on the chart.
+Then display a comparison report:
+
+Original Results:
+
+Trades
+Win Rate
+Avg RR
+Profit Factor
+Memory Enhanced Results:
+
+Trades
+Win Rate
+Avg RR
+Profit Factor
+Show:
+
+Win Rate improvement
+Trades filtered out by memory
+New trades added by memory
+Top memory lessons that changed decisions
+Top failure categories avoided
+I want to verify that AI Memory is actually improving decision quality and not only storing lessons.
+
+The comparison must run on the exact same historical candles so the only variable is AI Memory.
+
+Before implementing chart replay or re-analysis, I want to fix the more important issue.
+
+You discovered that the live candle-close path (filterCandleWithAi) does not use AI Memory lessons and only receives aggregate historical statistics.
+
+I want the live chart AI to use the same memory context as aiDecide().
+
+Requirements:
+
+Inject into filterCandleWithAi():
+
+getRecentLessonsFromDb(symbol, regime, 6)
+getWinnerLoserSummary(symbol, regime)
+getFailureCategoryStats(symbol, regime)
+getMostRecentLossReasoning(symbol)
+Use buildCandleMemoryContext() in the live decision path.
+
+Add a diagnostics section to every AI decision showing:
+
+Lessons used
+Failure categories used
+Winner/loser summary used
+Most recent loss reasoning used
+Add a Memory Impact Score (0-100).
+
+Display:
+"Decision made without memory influence"
+when no lessons were injected.
+
+After memory is connected to the live chart path, add:
+
+🧠 Replay Chart Using Current Memory
+
+This should rerun historical chart decisions using the latest AI Memory and compare:
+
+Original win rate
+Memory-enhanced win rate
+Trades removed by memory
+Trades added by memory
+Confidence changes
+I want AI Memory to directly influence live chart decisions before implementing replay testing.
