@@ -28,6 +28,7 @@ export interface TradeMemoryEntry {
   trapType?: string | null;
   continuationProbability?: number;
   failureCategory?: FailureCategory;
+  reasoning?: string;
 }
 
 export interface AiSignalVerdict {
@@ -51,6 +52,11 @@ export type FailureCategory =
   | "trend_reversal"
   | "regime_mismatch"
   | "incorrect_confidence"
+  | "entry_timing"
+  | "stop_placement"
+  | "takeprofit_placement"
+  | "support_resistance_failure"
+  | "trend_structure_break"
   | "unknown";
 
 export interface AiReflection {

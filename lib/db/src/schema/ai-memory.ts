@@ -12,6 +12,11 @@ export const failureCategoryEnum = pgEnum("failure_category", [
   "trend_reversal",
   "regime_mismatch",
   "incorrect_confidence",
+  "entry_timing",
+  "stop_placement",
+  "takeprofit_placement",
+  "support_resistance_failure",
+  "trend_structure_break",
   "unknown",
 ]);
 

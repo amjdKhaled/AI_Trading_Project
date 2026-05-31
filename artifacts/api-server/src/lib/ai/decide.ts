@@ -8,7 +8,14 @@
 // ============================================================
 
 import { ollamaGenerateWithFallback, parseJsonFromResponse } from "./ollama.js";
-import { getRecentLessonsFromDb, getSymbolStatsFromDb } from "./shared-memory.js";
+import {
+  getRecentLessonsFromDb,
+  getSymbolStatsFromDb,
+  getWinnerLoserSummary,
+  getFailureCategoryStats,
+  getMostRecentLossReasoning,
+  type LessonWithContext,
+} from "./shared-memory.js";
 import { snapshotRegime } from "./regime-tracker.js";
 import { loadMemory } from "./memory.js";
 import { findSimilarPatterns, formatSimilarityContext } from "./similarity.js";
@@ -53,9 +60,12 @@ interface DecisionInput {
   swingHighs: number[];
   swingLows: number[];
   recentBars: Array<{ t: string; o: string; h: string; l: string; c: string; v: number }>;
-  recentLessons: string[];
+  recentLessons: LessonWithContext[];
   symbolStats: { wins: number; losses: number; total: number } | undefined;
   similarityContext: string;
+  winnerLoserSummary: string;
+  failureCategoryStats: string;
+  mostRecentLossReasoning: string;
 }
 
 function buildDecisionPrompt(d: DecisionInput): string {
@@ -87,8 +97,8 @@ function buildDecisionPrompt(d: DecisionInput): string {
     ? d.swingLows.map(p => p.toFixed(2)).join(", ")
     : "none detected";
 
-  const suggestedBuySL = (price - d.atr * 1.5).toFixed(2);
-  const suggestedBuyTP = (price + d.atr * 3.0).toFixed(2);
+  const suggestedBuySL  = (price - d.atr * 1.5).toFixed(2);
+  const suggestedBuyTP  = (price + d.atr * 3.0).toFixed(2);
   const suggestedSellSL = (price + d.atr * 1.5).toFixed(2);
   const suggestedSellTP = (price - d.atr * 3.0).toFixed(2);
 
@@ -96,13 +106,35 @@ function buildDecisionPrompt(d: DecisionInput): string {
     ? `${d.symbol}: ${d.symbolStats.wins}W/${d.symbolStats.losses}L of ${d.symbolStats.total} trades (${Math.round(d.symbolStats.wins / d.symbolStats.total * 100)}% WR)`
     : "No sufficient trade history for this symbol yet.";
 
+  // ── Structured lessons with reasoning (BUG-2 fixed: symbol+regime filtered) ──
   const lessonsText = d.recentLessons.length > 0
-    ? d.recentLessons.slice(0, 4).map(l => `  • ${l}`).join("\n")
+    ? d.recentLessons.slice(0, 6).map(l => {
+        const badge = l.outcome === "tp_hit" ? "[WIN]" : "[LOSS]";
+        const snip  = l.reasoning && l.reasoning.length > 0
+          ? ` — "${l.reasoning.slice(0, 90)}${l.reasoning.length > 90 ? "…" : ""}"`
+          : "";
+        return `  • ${badge} ${l.lesson}${snip}`;
+      }).join("\n")
     : "  No lessons stored yet.";
 
   const barsTable = d.recentBars
     .map(b => `  ${b.t}  O:${b.o}  H:${b.h}  L:${b.l}  C:${b.c}  Vol:${b.v}`)
     .join("\n");
+
+  // ── Pattern analysis block (F2) ────────────────────────────
+  const patternBlock = d.winnerLoserSummary
+    ? `\nPATTERN ANALYSIS (${d.symbol} · ${d.regime}):\n  ${d.winnerLoserSummary}`
+    : "";
+
+  // ── Failure category stats block (F3) ─────────────────────
+  const failureBlock = d.failureCategoryStats
+    ? `\nFAILURE CATEGORY BREAKDOWN (${d.regime} regime losses):\n  ${d.failureCategoryStats}`
+    : "";
+
+  // ── Most recent loss reasoning (F5) ───────────────────────
+  const lossReasoningBlock = d.mostRecentLossReasoning
+    ? `\nMOST RECENT LOSS ANALYSIS:\n  "${d.mostRecentLossReasoning.slice(0, 200)}${d.mostRecentLossReasoning.length > 200 ? "…" : ""}"`
+    : "";
 
   return `Analyze ${d.symbol} on ${d.timeframe} timeframe and make a precise trading decision.
 
@@ -135,9 +167,9 @@ SL/TP REFERENCE (place on structure, not blindly at these levels):
   If BUY:  suggested SL = ${suggestedBuySL} (1.5x ATR below), TP = ${suggestedBuyTP} (3x ATR above)
   If SELL: suggested SL = ${suggestedSellSL} (1.5x ATR above), TP = ${suggestedSellTP} (3x ATR below)
 
-MEMORY & LESSONS:
+MEMORY & LESSONS (${d.symbol} · ${d.regime} · most recent first):
   ${memCtx}
-${lessonsText}
+${lessonsText}${patternBlock}${failureBlock}${lossReasoningBlock}
 
 HISTORICAL PATTERN SIMILARITY:
 ${d.similarityContext}
@@ -227,20 +259,32 @@ export async function aiDecide(params: {
     else if (c < htfE20[li] && htfE20[li] < htfE50[li]) htfBias = "bear";
   }
 
+  // ── Derive candidate side from HTF bias (BUG-3 fix) ──────────
+  // Used for similarity lookup — was previously hardcoded to "long"
+  const candidateSide: "long" | "short" =
+    htfBias === "bear" ? "short" :
+    htfBias === "bull" ? "long" :
+    e20 < e50          ? "short" : "long";
+
   // ── Regime snapshot (fire-and-forget) ────────────────────────
-  // Builds up the historical regime time-series in ai_market_regimes.
-  // Called on every aiDecide so the library grows automatically.
   void snapshotRegime({
     symbol, timeframe, regime, htfBias,
     atr, rsi, macd,
     vwapDiff: (bar.close - vwapVal) / (vwapVal || 1) * 100,
   }).catch(() => { /* non-critical — never block the decision */ });
 
-  // ── Memory context (DB-first, JSON fallback) ──────────────────
-  const [recentLessons, symbolStats, similarMatches] = await Promise.all([
-    getRecentLessonsFromDb(5).catch(() => {
+  // ── Memory context — all fetches in parallel ──────────────────
+  const [
+    recentLessons,
+    symbolStats,
+    similarMatches,
+    winnerLoserSummary,
+    failureCategoryStats,
+    mostRecentLossReasoning,
+  ] = await Promise.all([
+    getRecentLessonsFromDb(symbol, regime, 6).catch(() => {
       const mem = loadMemory();
-      return mem.recentLessons.slice(0, 5);
+      return mem.recentLessons.slice(0, 6).map(lesson => ({ lesson, outcome: "unknown" as const }));
     }),
     getSymbolStatsFromDb(symbol).catch(() => {
       const mem = loadMemory();
@@ -249,11 +293,14 @@ export async function aiDecide(params: {
     findSimilarPatterns({
       symbol,
       regime,
-      side: "long",
+      side: candidateSide,
       strategy: "ai_decision",
       patternTags: recentPatterns,
       session,
     }).catch(() => []),
+    getWinnerLoserSummary(symbol, regime).catch(() => ""),
+    getFailureCategoryStats(symbol, regime).catch(() => ""),
+    getMostRecentLossReasoning(symbol).catch(() => ""),
   ]);
 
   const similarityContext = formatSimilarityContext(similarMatches);
@@ -274,10 +321,13 @@ export async function aiDecide(params: {
     recentPatterns, swingHighs, swingLows,
     recentBars, recentLessons, symbolStats,
     similarityContext,
+    winnerLoserSummary,
+    failureCategoryStats,
+    mostRecentLossReasoning,
   });
 
   logger.info(
-    { symbol, timeframe, session, regime, price: bar.close.toFixed(2), atr: atr.toFixed(2) },
+    { symbol, timeframe, session, regime, price: bar.close.toFixed(2), atr: atr.toFixed(2), candidateSide },
     "AI decision requested",
   );
 

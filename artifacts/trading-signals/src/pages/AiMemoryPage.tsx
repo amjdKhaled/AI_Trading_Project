@@ -59,29 +59,39 @@ function regimeBadge(regime: string, htfBias?: string) {
 // ── Failure category ──────────────────────────────────────────
 
 const FC_LABELS: Record<string, string> = {
-  news_issue:           "News Issue",
-  bad_entry:            "Bad Entry",
-  poor_risk:            "Poor Risk",
-  pattern_failure:      "Pattern Failure",
-  false_breakout:       "False Breakout",
-  weak_volume:          "Weak Volume",
-  trend_reversal:       "Trend Reversal",
-  regime_mismatch:      "Regime Mismatch",
-  incorrect_confidence: "Wrong Confidence",
-  unknown:              "Unknown",
+  news_issue:                "News Issue",
+  bad_entry:                 "Bad Entry",
+  poor_risk:                 "Poor Risk",
+  pattern_failure:           "Pattern Failure",
+  false_breakout:            "False Breakout",
+  weak_volume:               "Weak Volume",
+  trend_reversal:            "Trend Reversal",
+  regime_mismatch:           "Regime Mismatch",
+  incorrect_confidence:      "Wrong Confidence",
+  entry_timing:              "Entry Timing",
+  stop_placement:            "Stop Placement",
+  takeprofit_placement:      "TP Placement",
+  support_resistance_failure:"S/R Failure",
+  trend_structure_break:     "Structure Break",
+  unknown:                   "Unknown",
 };
 
 const FC_COLOR: Record<string, string> = {
-  news_issue:           "text-orange-400",
-  bad_entry:            "text-red-400",
-  poor_risk:            "text-rose-400",
-  pattern_failure:      "text-amber-400",
-  false_breakout:       "text-yellow-400",
-  weak_volume:          "text-slate-400",
-  trend_reversal:       "text-purple-400",
-  regime_mismatch:      "text-blue-400",
-  incorrect_confidence: "text-pink-400",
-  unknown:              "text-muted-foreground",
+  news_issue:                "text-orange-400",
+  bad_entry:                 "text-red-400",
+  poor_risk:                 "text-rose-400",
+  pattern_failure:           "text-amber-400",
+  false_breakout:            "text-yellow-400",
+  weak_volume:               "text-slate-400",
+  trend_reversal:            "text-purple-400",
+  regime_mismatch:           "text-blue-400",
+  incorrect_confidence:      "text-pink-400",
+  entry_timing:              "text-red-300",
+  stop_placement:            "text-rose-300",
+  takeprofit_placement:      "text-amber-300",
+  support_resistance_failure:"text-orange-300",
+  trend_structure_break:     "text-violet-400",
+  unknown:                   "text-muted-foreground",
 };
 
 // ── Shared components ─────────────────────────────────────────
@@ -946,6 +956,7 @@ export default function AiMemoryPage() {
   const [diag, setDiag]             = useState<DiagData | null>(null);
   const [diagOpen, setDiagOpen]     = useState(false);
   const [learningAll, setLearningAll] = useState(false);
+  const [learnWithAi, setLearnWithAi] = useState(false);
   const [learnResult, setLearnResult] = useState<{ processed: number; errors: number; total: number; symbols: string[] } | null>(null);
   const [decisionStats, setDecisionStats] = useState<AiDecisionStatsData | null>(null);
   const [decisionStatsLoading, setDecisionStatsLoading] = useState(false);
@@ -1067,7 +1078,7 @@ export default function AiMemoryPage() {
       const r = await fetch(`${BASE}/api/ai/learn-all`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ useAi: false }),
+        body: JSON.stringify({ useAi: learnWithAi }),
       });
       const d = await r.json() as { ok: boolean; processed: number; errors: number; total: number; symbols: string[] };
       if (d.ok) {
@@ -1079,7 +1090,7 @@ export default function AiMemoryPage() {
     } finally {
       setLearningAll(false);
     }
-  }, [fetchAll]);
+  }, [fetchAll, learnWithAi]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { fetchOllama(); }, [fetchOllama]);
@@ -1154,10 +1165,23 @@ export default function AiMemoryPage() {
             </span>
 
             {/* Learn Everything — batch-reflect all closed trades */}
+            <label
+              className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer select-none"
+              title="When checked, Qwen3 writes a full lesson for each trade (slower but richer)"
+            >
+              <input
+                type="checkbox"
+                checked={learnWithAi}
+                onChange={e => setLearnWithAi(e.target.checked)}
+                disabled={learningAll}
+                className="w-3 h-3 accent-primary"
+              />
+              Use AI
+            </label>
             <button
               onClick={handleLearnAll}
               disabled={learningAll}
-              title="Analyze all historical trades and populate AI Memory with lessons"
+              title={learnWithAi ? "Analyze all trades with Qwen3 (slower, richer lessons)" : "Analyze all trades with fast statistical rules"}
               className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors disabled:opacity-50 disabled:cursor-wait"
             >
               {learningAll

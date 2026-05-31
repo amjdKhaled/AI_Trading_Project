@@ -80,9 +80,9 @@ async function buildMemoryContext(ctx: SignalContext): Promise<string> {
       getRelevantContextFromDb(ctx.symbol, ctx.regime, ctx.strategy, ctx.side).catch(
         () => getRelevantContext(ctx.symbol, ctx.regime, ctx.strategy, ctx.side),
       ),
-      getRecentLessonsFromDb(3).catch(() => {
+      getRecentLessonsFromDb(undefined, undefined, 3).catch(() => {
         const mem = loadMemory();
-        return mem.recentLessons.slice(0, 3);
+        return mem.recentLessons.slice(0, 3).map(lesson => ({ lesson, outcome: "unknown" as const }));
       }),
     ]);
 
@@ -103,7 +103,7 @@ async function buildMemoryContext(ctx: SignalContext): Promise<string> {
 
     if (recentLessons.length > 0) {
       lines.push("  Recent lessons:");
-      recentLessons.forEach(l => lines.push(`    • ${l}`));
+      recentLessons.forEach(l => lines.push(`    • ${l.lesson}`));
     }
   } catch (err) {
     logger.warn({ err }, "Memory context build failed — using fallback");
@@ -161,7 +161,7 @@ async function buildCandleMemoryContext(
     const [longTrades, shortTrades, recentLessons] = await Promise.all([
       getRelevantContextFromDb(ctx.symbol, ctx.regime, "candle_decision", "long",  4).catch(() => []),
       getRelevantContextFromDb(ctx.symbol, ctx.regime, "candle_decision", "short", 4).catch(() => []),
-      getRecentLessonsFromDb(5).catch(() => []),
+      getRecentLessonsFromDb(undefined, undefined, 5).catch(() => []),
     ]);
 
     const allTrades = [...longTrades, ...shortTrades]
@@ -182,12 +182,12 @@ async function buildCandleMemoryContext(
     }
     if (recentLessons.length > 0) {
       lines.push("Recent AI learning (all symbols, newest first):");
-      for (const l of recentLessons) lines.push(`  • ${l}`);
+      for (const l of recentLessons) lines.push(`  • ${l.lesson}`);
     }
 
     const lessonTexts = [
       ...allTrades.filter(t => t.lesson).map(t => t.lesson!),
-      ...recentLessons,
+      ...recentLessons.map(l => l.lesson),
     ].filter((l, i, a) => a.indexOf(l) === i).slice(0, 8);
 
     return { text: lines.join("\n"), lessons: lessonTexts, memoryUsed: true };

@@ -2,25 +2,15 @@ import { ollamaGenerateWithFallback, parseJsonFromResponse } from "./ollama.js";
 import { appendTradeToDb, getRelevantContextFromDb } from "./shared-memory.js";
 import { appendTrade, getRelevantContext } from "./memory.js";
 import { logger } from "../logger.js";
-import type { TradeMemoryEntry, AiReflection } from "./types.js";
-
-export type FailureCategory =
-  | "news_issue"
-  | "bad_entry"
-  | "poor_risk"
-  | "pattern_failure"
-  | "false_breakout"
-  | "weak_volume"
-  | "trend_reversal"
-  | "regime_mismatch"
-  | "incorrect_confidence"
-  | "unknown";
+import type { TradeMemoryEntry, AiReflection, FailureCategory } from "./types.js";
 
 const SYSTEM = `You are a professional trading coach and market analyst. You analyze completed trades with precision and extract actionable lessons. You respond ONLY with valid JSON — no preamble, no markdown outside the JSON block. Be concise and data-driven.`;
 
 const FAILURE_CATEGORIES: FailureCategory[] = [
-  "news_issue","bad_entry","poor_risk","pattern_failure","false_breakout",
-  "weak_volume","trend_reversal","regime_mismatch","incorrect_confidence","unknown",
+  "news_issue", "bad_entry", "poor_risk", "pattern_failure", "false_breakout",
+  "weak_volume", "trend_reversal", "regime_mismatch", "incorrect_confidence",
+  "entry_timing", "stop_placement", "takeprofit_placement",
+  "support_resistance_failure", "trend_structure_break", "unknown",
 ];
 
 function buildReflectionPrompt(trade: TradeMemoryEntry, similar: TradeMemoryEntry[]): string {
@@ -50,7 +40,7 @@ Respond with JSON only:
   "lesson": "One concrete, specific lesson from this trade outcome (max 120 chars)",
   "weaknesses": ["list of 1-3 specific setup weaknesses that contributed to outcome"],
   "trapType": "name of trap pattern if applicable (fake_breakout | liquidity_sweep | counter_trend | exhaustion | null)",
-  "failureCategory": "news_issue | bad_entry | poor_risk | pattern_failure | false_breakout | weak_volume | trend_reversal | regime_mismatch | incorrect_confidence | unknown",
+  "failureCategory": "news_issue | bad_entry | poor_risk | pattern_failure | false_breakout | weak_volume | trend_reversal | regime_mismatch | incorrect_confidence | entry_timing | stop_placement | takeprofit_placement | support_resistance_failure | trend_structure_break | unknown",
   "continuationProbability": 0.0,
   "reasoning": "2-3 sentence analysis of why this trade won or lost"
 }`;
@@ -108,6 +98,7 @@ export async function reflectOnTrade(trade: TradeMemoryEntry): Promise<AiReflect
     trapType:                reflection.trapType,
     continuationProbability: reflection.continuationProbability,
     failureCategory:         reflection.failureCategory,
+    reasoning:               reflection.reasoning,
   };
 
   // Write to both DB and JSON file for compatibility

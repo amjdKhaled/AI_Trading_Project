@@ -6,7 +6,7 @@
 // ============================================================
 
 import { db, aiLessonsTable, aiPatternsTable } from "@workspace/db";
-import { eq, desc, and, or } from "drizzle-orm";
+import { eq, ne, desc, and, or, count } from "drizzle-orm";
 import { logger } from "../logger.js";
 import type { TradeMemoryEntry, MemoryStore } from "./types.js";
 
@@ -35,6 +35,19 @@ function readJsonFallback(): MemoryStore {
   }
 }
 
+// ── Frequency counting helper ─────────────────────────────────
+
+function freqTop(arr: (string | null | undefined)[], topN = 2): Array<[string, number]> {
+  const map = new Map<string, number>();
+  for (const v of arr) {
+    const key = v ?? "unknown";
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN);
+}
+
 // ── DB helpers ────────────────────────────────────────────────
 
 function inferFailureCategory(trade: TradeMemoryEntry): typeof import("@workspace/db").aiLessonsTable.$inferInsert.failureCategory {
@@ -45,6 +58,11 @@ function inferFailureCategory(trade: TradeMemoryEntry): typeof import("@workspac
   if (trade.trapType === "counter_trend") return "trend_reversal";
   const lesson = (trade.lesson ?? "").toLowerCase();
   if (lesson.includes("news")) return "news_issue";
+  if (lesson.includes("structure")) return "trend_structure_break";
+  if (lesson.includes("support") || lesson.includes("resistance")) return "support_resistance_failure";
+  if (lesson.includes("stop")) return "stop_placement";
+  if (lesson.includes("tp") || lesson.includes("take profit")) return "takeprofit_placement";
+  if (lesson.includes("timing") || lesson.includes("entry tim")) return "entry_timing";
   if (lesson.includes("entry")) return "bad_entry";
   if (lesson.includes("risk")) return "poor_risk";
   if (lesson.includes("volume")) return "weak_volume";
@@ -72,7 +90,7 @@ export async function appendTradeToDb(entry: TradeMemoryEntry): Promise<void> {
       failureCategory:         entry.failureCategory ?? inferFailureCategory(entry),
       trapType:                entry.trapType ?? null,
       continuationProbability: entry.continuationProbability ?? 0.5,
-      reasoning:               "",
+      reasoning:               entry.reasoning ?? "",
       confidence:              entry.confidence,
       grade:                   entry.grade,
       rrRatio:                 entry.rrRatio,
@@ -188,7 +206,10 @@ export async function getMemorySummaryFromDb(): Promise<{
   updatedAt: string;
 }> {
   try {
-    const [lessons, patterns] = await Promise.all([
+    // ── Accurate total counts via COUNT(*) ────────────────────────
+    const [[{ totalLessons }], [{ totalPatterns }], lessons, patterns] = await Promise.all([
+      db.select({ totalLessons: count() }).from(aiLessonsTable),
+      db.select({ totalPatterns: count() }).from(aiPatternsTable),
       db.select().from(aiLessonsTable).orderBy(desc(aiLessonsTable.createdAt)).limit(2000),
       db.select().from(aiPatternsTable).limit(2000),
     ]);
@@ -211,8 +232,6 @@ export async function getMemorySummaryFromDb(): Promise<{
     }
 
     // ── Similarity match stats ─────────────────────────────────
-    // Group patterns by symbol|regime|side|strategy and compute
-    // win rate, avgRR per group — surfaces the top setups by win rate.
     const groupMap = new Map<string, { wins: number; total: number; rrs: number[]; rep: typeof patterns[0] }>();
     for (const p of patterns) {
       const key = `${p.symbol}|${p.regime}|${p.side}|${p.strategy}`;
@@ -243,9 +262,9 @@ export async function getMemorySummaryFromDb(): Promise<{
     const updatedAt = lessons[0]?.createdAt?.toISOString() ?? "";
 
     return {
-      totalTrades: lessons.length,
-      lessonsCount: lessons.length,
-      patternsCount: patterns.length,
+      totalTrades:            totalLessons,
+      lessonsCount:           totalLessons,
+      patternsCount:          totalPatterns,
       similarityMatchesCount: groupMap.size,
       topSimilarityMatches,
       regimeStats,
@@ -291,18 +310,156 @@ export async function getSymbolStatsFromDb(
   }
 }
 
-// ── Recent lessons strings (for decide.ts prompt) ─────────────
+// ── Lesson context (for decide.ts prompt injection) ───────────
 
-export async function getRecentLessonsFromDb(limit = 5): Promise<string[]> {
+export interface LessonWithContext {
+  lesson: string;
+  outcome: string;
+  reasoning?: string;
+}
+
+/**
+ * Fetch recent lessons, optionally filtered by symbol and/or regime.
+ * Returns structured objects so decide.ts can include Qwen3's reasoning
+ * alongside the lesson text in the decision prompt.
+ */
+export async function getRecentLessonsFromDb(
+  symbol?: string,
+  regime?: string,
+  limit = 6,
+): Promise<LessonWithContext[]> {
   try {
-    const rows = await db
-      .select({ lesson: aiLessonsTable.lesson })
+    const conditions = [];
+    if (symbol) conditions.push(eq(aiLessonsTable.symbol, symbol));
+    if (regime) conditions.push(eq(aiLessonsTable.regime, regime));
+
+    const baseQuery = db
+      .select({ lesson: aiLessonsTable.lesson, outcome: aiLessonsTable.outcome, reasoning: aiLessonsTable.reasoning })
       .from(aiLessonsTable)
       .orderBy(desc(aiLessonsTable.createdAt))
       .limit(limit);
-    return rows.map(r => r.lesson);
+
+    const rows = conditions.length > 0
+      ? await db
+          .select({ lesson: aiLessonsTable.lesson, outcome: aiLessonsTable.outcome, reasoning: aiLessonsTable.reasoning })
+          .from(aiLessonsTable)
+          .where(or(...conditions))
+          .orderBy(desc(aiLessonsTable.createdAt))
+          .limit(limit)
+      : await baseQuery;
+
+    return rows.map(r => ({
+      lesson:    r.lesson,
+      outcome:   r.outcome,
+      reasoning: r.reasoning || undefined,
+    }));
   } catch {
-    return readJsonFallback().recentLessons.slice(0, limit);
+    return readJsonFallback().recentLessons.slice(0, limit).map(lesson => ({ lesson, outcome: "unknown" }));
+  }
+}
+
+// ── Winner / loser pattern analysis (F2) ─────────────────────
+
+/**
+ * Returns a short narrative comparing winner traits vs top loss reasons
+ * for a given symbol+regime combination.
+ */
+export async function getWinnerLoserSummary(symbol: string, regime: string): Promise<string> {
+  try {
+    const rows = await db
+      .select({
+        outcome:         aiLessonsTable.outcome,
+        failureCategory: aiLessonsTable.failureCategory,
+        session:         aiLessonsTable.session,
+        htfBias:         aiLessonsTable.htfBias,
+      })
+      .from(aiLessonsTable)
+      .where(and(eq(aiLessonsTable.symbol, symbol), eq(aiLessonsTable.regime, regime)));
+
+    if (rows.length < 5) return "";
+
+    const winners = rows.filter(r => r.outcome === "tp_hit");
+    const losers  = rows.filter(r => r.outcome !== "tp_hit");
+
+    const lines: string[] = [];
+
+    if (winners.length > 0) {
+      const topSession = freqTop(winners.map(r => r.session), 1)[0];
+      const topBias    = freqTop(winners.map(r => r.htfBias), 1)[0];
+      const parts: string[] = [];
+      if (topSession) parts.push(`${topSession[0]} session`);
+      if (topBias)    parts.push(`htfBias=${topBias[0]}`);
+      if (parts.length > 0) {
+        lines.push(`Winners (${winners.length}/${rows.length}): strongest in ${parts.join(", ")}`);
+      }
+    }
+
+    if (losers.length >= 3) {
+      const top2 = freqTop(losers.map(r => r.failureCategory), 2);
+      const parts = top2.map(([cat, cnt]) =>
+        `${cat} (${Math.round(cnt / losers.length * 100)}%)`
+      );
+      if (parts.length > 0) {
+        lines.push(`Top loss reasons: ${parts.join(", ")}`);
+      }
+    }
+
+    return lines.join("\n  ");
+  } catch {
+    return "";
+  }
+}
+
+// ── Regime-specific failure stats (F3) ────────────────────────
+
+/**
+ * Returns a summary of top failure categories for losses in a given
+ * symbol+regime, formatted as a single string for prompt injection.
+ */
+export async function getFailureCategoryStats(symbol: string, regime: string): Promise<string> {
+  try {
+    const rows = await db
+      .select({ failureCategory: aiLessonsTable.failureCategory })
+      .from(aiLessonsTable)
+      .where(and(
+        eq(aiLessonsTable.symbol, symbol),
+        eq(aiLessonsTable.regime, regime),
+        ne(aiLessonsTable.outcome, "tp_hit"),
+      ));
+
+    if (rows.length < 3) return "";
+
+    const top2 = freqTop(rows.map(r => r.failureCategory), 2);
+    return top2.map(([cat, cnt]) =>
+      `${cat} (${Math.round(cnt / rows.length * 100)}%)`
+    ).join(", ");
+  } catch {
+    return "";
+  }
+}
+
+// ── Most recent loss reasoning (F5) ───────────────────────────
+
+/**
+ * Returns Qwen3's reasoning text from the most recent SL-hit lesson
+ * for this symbol — injected into the next decision prompt as a
+ * cautionary reference.
+ */
+export async function getMostRecentLossReasoning(symbol: string): Promise<string> {
+  try {
+    const rows = await db
+      .select({ reasoning: aiLessonsTable.reasoning })
+      .from(aiLessonsTable)
+      .where(and(
+        eq(aiLessonsTable.symbol, symbol),
+        eq(aiLessonsTable.outcome, "sl_hit"),
+      ))
+      .orderBy(desc(aiLessonsTable.createdAt))
+      .limit(1);
+
+    return rows[0]?.reasoning ?? "";
+  } catch {
+    return "";
   }
 }
 
@@ -336,5 +493,6 @@ function dbLessonToMemoryEntry(r: typeof aiLessonsTable.$inferSelect): TradeMemo
     weaknesses:              (r.weaknesses as string[]) ?? [],
     trapType:                r.trapType ?? null,
     continuationProbability: r.continuationProbability,
+    reasoning:               r.reasoning || undefined,
   };
 }
