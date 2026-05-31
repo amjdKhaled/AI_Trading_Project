@@ -129,6 +129,10 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const slRef        = useRef<IPriceLine | null>(null);
   const tpRef        = useRef<IPriceLine | null>(null);
   const entryLineRef = useRef<IPriceLine | null>(null);
+  const aiDecisionSlRef    = useRef<IPriceLine | null>(null);
+  const aiDecisionTpRef    = useRef<IPriceLine | null>(null);
+  const aiDecisionEntryRef = useRef<IPriceLine | null>(null);
+  const aiDecisionKeyRef   = useRef<string | null>(null);
   const tradeIdRef       = useRef<string | null>(null);
   const barsRef          = useRef<Bar[]>([]);
   // Timestamp of the last bar in the most-recently loaded historical dataset.
@@ -195,6 +199,15 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     if (slRef.current)        { try { cs.removePriceLine(slRef.current); }        catch {} slRef.current = null; }
     if (tpRef.current)        { try { cs.removePriceLine(tpRef.current); }        catch {} tpRef.current = null; }
     if (entryLineRef.current) { try { cs.removePriceLine(entryLineRef.current); } catch {} entryLineRef.current = null; }
+  }, []);
+
+  const removeAiDecisionLines = useCallback(() => {
+    const cs = candleRef.current;
+    if (!cs) return;
+    if (aiDecisionSlRef.current)    { try { cs.removePriceLine(aiDecisionSlRef.current); }    catch {} aiDecisionSlRef.current = null; }
+    if (aiDecisionTpRef.current)    { try { cs.removePriceLine(aiDecisionTpRef.current); }    catch {} aiDecisionTpRef.current = null; }
+    if (aiDecisionEntryRef.current) { try { cs.removePriceLine(aiDecisionEntryRef.current); } catch {} aiDecisionEntryRef.current = null; }
+    aiDecisionKeyRef.current = null;
   }, []);
 
   const computeMarkers = useCallback(() => {
@@ -715,12 +728,13 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     );
 
     removeSLTP();
+    removeAiDecisionLines();
     tradeIdRef.current = null;
     setTimeout(computeMarkers, 80);
     setTimeout(computeAiMarkers, 80);
     setTimeout(computeDecisionMarkers, 80);
     setTimeout(computeResolvedDecisionMarkers, 80);
-  }, [bars, computeMarkers, computeAiMarkers, computeDecisionMarkers, computeResolvedDecisionMarkers, removeSLTP]);
+  }, [bars, computeMarkers, computeAiMarkers, computeDecisionMarkers, computeResolvedDecisionMarkers, removeSLTP, removeAiDecisionLines]);
 
   // Active trade → SL/TP lines
   useEffect(() => {
@@ -760,6 +774,45 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     });
     setTimeout(computeMarkers, 50);
   }, [activeTrade, bars, intervalSec, computeMarkers, removeSLTP]);
+
+  // Active approved AI decision → price-axis lines (SL / TP / Entry)
+  useEffect(() => {
+    if (!bars.length) return;
+    const cs = candleRef.current;
+    if (!cs) return;
+
+    if (!activeApprovedDecision ||
+        activeApprovedDecision.entryPrice == null ||
+        activeApprovedDecision.slPrice == null ||
+        activeApprovedDecision.tpPrice == null) {
+      removeAiDecisionLines();
+      return;
+    }
+
+    const key = `${activeApprovedDecision.symbol}-${activeApprovedDecision.candleTime}`;
+    if (key === aiDecisionKeyRef.current) return;
+
+    removeAiDecisionLines();
+    aiDecisionKeyRef.current = key;
+
+    const isLong = activeApprovedDecision.candidateSide === "long";
+    aiDecisionSlRef.current = cs.createPriceLine({
+      price: activeApprovedDecision.slPrice,
+      color: "#ff334699",
+      lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "AI SL",
+    });
+    aiDecisionTpRef.current = cs.createPriceLine({
+      price: activeApprovedDecision.tpPrice,
+      color: "#00ff8899",
+      lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "AI TP",
+    });
+    aiDecisionEntryRef.current = cs.createPriceLine({
+      price: activeApprovedDecision.entryPrice,
+      color: isLong ? "#00ff8866" : "#ff334666",
+      lineWidth: 1, lineStyle: 0, axisLabelVisible: true,
+      title: isLong ? "AI▲" : "AI▼",
+    });
+  }, [activeApprovedDecision, bars, removeAiDecisionLines]);
 
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
