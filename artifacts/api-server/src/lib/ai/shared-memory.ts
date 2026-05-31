@@ -329,24 +329,20 @@ export async function getRecentLessonsFromDb(
   limit = 6,
 ): Promise<LessonWithContext[]> {
   try {
-    const conditions = [];
-    if (symbol) conditions.push(eq(aiLessonsTable.symbol, symbol));
-    if (regime) conditions.push(eq(aiLessonsTable.regime, regime));
+    // Build WHERE clause: AND when both provided, single condition otherwise
+    const whereClause =
+      symbol && regime ? and(eq(aiLessonsTable.symbol, symbol), eq(aiLessonsTable.regime, regime)) :
+      symbol           ? eq(aiLessonsTable.symbol, symbol) :
+      regime           ? eq(aiLessonsTable.regime, regime) :
+      undefined;
 
-    const baseQuery = db
+    const baseSelect = db
       .select({ lesson: aiLessonsTable.lesson, outcome: aiLessonsTable.outcome, reasoning: aiLessonsTable.reasoning })
-      .from(aiLessonsTable)
-      .orderBy(desc(aiLessonsTable.createdAt))
-      .limit(limit);
+      .from(aiLessonsTable);
 
-    const rows = conditions.length > 0
-      ? await db
-          .select({ lesson: aiLessonsTable.lesson, outcome: aiLessonsTable.outcome, reasoning: aiLessonsTable.reasoning })
-          .from(aiLessonsTable)
-          .where(or(...conditions))
-          .orderBy(desc(aiLessonsTable.createdAt))
-          .limit(limit)
-      : await baseQuery;
+    const rows = whereClause
+      ? await baseSelect.where(whereClause).orderBy(desc(aiLessonsTable.createdAt)).limit(limit)
+      : await baseSelect.orderBy(desc(aiLessonsTable.createdAt)).limit(limit);
 
     return rows.map(r => ({
       lesson:    r.lesson,
@@ -366,31 +362,35 @@ export async function getRecentLessonsFromDb(
  */
 export async function getWinnerLoserSummary(symbol: string, regime: string): Promise<string> {
   try {
-    const rows = await db
-      .select({
-        outcome:         aiLessonsTable.outcome,
-        failureCategory: aiLessonsTable.failureCategory,
-        session:         aiLessonsTable.session,
-        htfBias:         aiLessonsTable.htfBias,
-      })
-      .from(aiLessonsTable)
-      .where(and(eq(aiLessonsTable.symbol, symbol), eq(aiLessonsTable.regime, regime)));
+    // ai_lessons has failureCategory; ai_patterns has volumeState — fetch both in parallel
+    const [lessonRows, patternRows] = await Promise.all([
+      db
+        .select({ outcome: aiLessonsTable.outcome, failureCategory: aiLessonsTable.failureCategory })
+        .from(aiLessonsTable)
+        .where(and(eq(aiLessonsTable.symbol, symbol), eq(aiLessonsTable.regime, regime))),
+      db
+        .select({ outcome: aiPatternsTable.outcome, session: aiPatternsTable.session, htfBias: aiPatternsTable.htfBias, volumeState: aiPatternsTable.volumeState })
+        .from(aiPatternsTable)
+        .where(and(eq(aiPatternsTable.symbol, symbol), eq(aiPatternsTable.regime, regime))),
+    ]);
 
-    if (rows.length < 5) return "";
+    if (lessonRows.length < 5) return "";
 
-    const winners = rows.filter(r => r.outcome === "tp_hit");
-    const losers  = rows.filter(r => r.outcome !== "tp_hit");
+    const losers  = lessonRows.filter(r => r.outcome !== "tp_hit");
+    const winners = patternRows.filter(r => r.outcome === "tp_hit");
 
     const lines: string[] = [];
 
     if (winners.length > 0) {
-      const topSession = freqTop(winners.map(r => r.session), 1)[0];
-      const topBias    = freqTop(winners.map(r => r.htfBias), 1)[0];
+      const topSession     = freqTop(winners.map(r => r.session), 1)[0];
+      const topBias        = freqTop(winners.map(r => r.htfBias), 1)[0];
+      const topVolumeState = freqTop(winners.map(r => r.volumeState), 1)[0];
       const parts: string[] = [];
-      if (topSession) parts.push(`${topSession[0]} session`);
-      if (topBias)    parts.push(`htfBias=${topBias[0]}`);
+      if (topSession)     parts.push(`${topSession[0]} session`);
+      if (topBias)        parts.push(`htfBias=${topBias[0]}`);
+      if (topVolumeState) parts.push(`volume=${topVolumeState[0]}`);
       if (parts.length > 0) {
-        lines.push(`Winners (${winners.length}/${rows.length}): strongest in ${parts.join(", ")}`);
+        lines.push(`Winners (${winners.length}/${patternRows.length}): strongest in ${parts.join(", ")}`);
       }
     }
 
