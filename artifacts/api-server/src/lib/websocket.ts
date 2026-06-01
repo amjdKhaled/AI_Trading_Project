@@ -136,6 +136,19 @@ const firstTLoggedAt = new Map<string, number>();
 function polygonConnect() {
   if (wsPermanentlyDisabled) return;
 
+  // Guard: if POLYGON_API_KEY is absent, skip the WS entirely and log a clear
+  // message so local dev sees exactly why the chart shows HIST ONLY.
+  const key = (process.env.POLYGON_API_KEY ?? "").trim();
+  if (!key) {
+    logger.warn(
+      "POLYGON_API_KEY is not set — Polygon WebSocket disabled. " +
+      "Add POLYGON_API_KEY to your .env file and restart the server to enable live data.",
+    );
+    wsPermanentlyDisabled = true;
+    broadcastCapability();
+    return;
+  }
+
   if (
     polygonSocket &&
     (polygonSocket.readyState === WebSocket.OPEN ||

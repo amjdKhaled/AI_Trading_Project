@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import path from "path";
 import fs from "fs/promises";
-import { fetchPolygonBars } from "../lib/polygon";
+import { fetchPolygonBars, isNyseOpen } from "../lib/polygon";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -9,9 +9,10 @@ const router: IRouter = Router();
 // All intervals served by Polygon REST (SLP plan — no rate limit concerns)
 const SUPPORTED_INTERVALS = new Set(["5m", "15m", "1h", "1d", "1w", "1M"]);
 
-// Minute-based intervals keep a 24h TTL — historical bars are immutable.
-// Hour/daily+ refresh every hour so today's incomplete bar stays reasonably fresh.
-const INTERVAL_MEM_TTL: Record<string, number> = {
+// Base TTLs for each interval (used outside market hours).
+// During NYSE regular session, minute intervals use a shorter TTL so today's
+// newly-completed bars are picked up within one bar period.
+const INTERVAL_BASE_TTL: Record<string, number> = {
   "5m":  24 * 60 * 60 * 1_000,
   "15m": 24 * 60 * 60 * 1_000,
   "1h":  60 * 60 * 1_000,
@@ -19,6 +20,19 @@ const INTERVAL_MEM_TTL: Record<string, number> = {
   "1w":  60 * 60 * 1_000,
   "1M":  60 * 60 * 1_000,
 };
+
+// During Regular Trading Hours, shorten the TTL for intraday bars so the chart
+// picks up new bars within one bar-period instead of waiting up to 24 hours.
+// A cache written before/over the weekend would otherwise miss the entire next
+// trading day's bars until the 24h window expires.
+const RTH_TTL_MS = 5 * 60 * 1_000; // 5 minutes during live session
+
+function intervalTtlMs(interval: string): number {
+  if ((interval === "5m" || interval === "15m") && isNyseOpen()) {
+    return RTH_TTL_MS;
+  }
+  return INTERVAL_BASE_TTL[interval] ?? 3_600_000;
+}
 
 // Rolling lookback in calendar days for minute/hour intervals.
 // Daily+ use a fixed start date to return maximum Polygon history.
@@ -42,7 +56,9 @@ const inflight = new Map<string, Promise<unknown[]>>();
 // ── Disk cache ────────────────────────────────────────────────────────────────
 // JSON files in data/barcache/ survive server restarts.
 const DISK_DIR = path.join(process.cwd(), "data", "barcache");
-const DISK_TTL = 24 * 60 * 60 * 1_000;
+// Disk TTL matches the dynamic mem TTL — see intervalTtlMs().
+// Using a fixed constant here would re-introduce the stale-cache bug on restart.
+const DISK_TTL_DEFAULT = 24 * 60 * 60 * 1_000;
 
 function diskPath(key: string): string {
   const safe = key.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -68,6 +84,7 @@ async function fetchWithCache(
   key: string,
   memTtlMs: number,
   fetcher: () => Promise<unknown[]>,
+  diskTtlMs = DISK_TTL_DEFAULT,
 ): Promise<unknown[]> {
   const mem = memCache.get(key);
   if (mem && mem.expiresAt > Date.now()) return mem.data;
@@ -77,7 +94,7 @@ async function fetchWithCache(
 
   const promise: Promise<unknown[]> = (async () => {
     const disk = await readDisk(key);
-    if (disk && Date.now() - disk.fetchedAt < DISK_TTL) {
+    if (disk && Date.now() - disk.fetchedAt < diskTtlMs) {
       memCache.set(key, { data: disk.data, fetchedAt: disk.fetchedAt, expiresAt: Date.now() + memTtlMs });
       return disk.data;
     }
@@ -111,13 +128,14 @@ export async function fetchHistory(symbol: string, interval: string): Promise<un
   if (!SUPPORTED_INTERVALS.has(interval)) return [];
 
   const cacheKey  = `${sym}:${interval}:polygon`;
-  const memTtlMs  = INTERVAL_MEM_TTL[interval] ?? 3_600_000;
+  const ttlMs     = intervalTtlMs(interval);
   const isDaily   = DAILY_INTERVALS.has(interval);
   const days      = INTERVAL_DAYS[interval] ?? 180;
   const startDate = isDaily ? POLYGON_MAX_START : undefined;
 
-  return fetchWithCache(cacheKey, memTtlMs, () =>
+  return fetchWithCache(cacheKey, ttlMs, () =>
     fetchPolygonBars(sym, interval, days, startDate),
+    ttlMs,
   );
 }
 
