@@ -1,6 +1,7 @@
 import { buildMarketContext, findSimilarHistoricalSetups } from "./market-context.js";
 import { runCandlePassForReplay } from "./filter.js";
 import { getNewsSentiment } from "./news.js";
+import { simulateLifecycle } from "../analyzer/lifecycle.js";
 import { logger } from "../logger.js";
 import type { OhlcvBar } from "../analyzer/types.js";
 
@@ -23,33 +24,48 @@ export interface ReplayCandleResult {
   withMem: ReplayPassResult;
 }
 
+export interface ReplayDecisionDiff {
+  candleTime:     number;
+  direction:      "memory_added" | "memory_removed" | "conf_boost" | "conf_drop";
+  noMemVerdict:   string;
+  withMemVerdict: string;
+  noMemConf:      number;
+  withMemConf:    number;
+}
+
 export interface ReplayPassStats {
-  approve:         number;
-  wait:            number;
-  reject:          number;
-  total:           number;
-  approveRate:     number;   // 0–1, i.e. approve / total
-  avgConf:         number;
-  avgRR:           number;
-  topLessons:      string[];
-  topRejectLessons: string[]; // lessons most frequently cited when memory still said REJECT/WAIT
+  approve:          number;
+  wait:             number;
+  reject:           number;
+  total:            number;
+  approveRate:      number;
+  avgConf:          number;
+  avgRR:            number;
+  winRate:          number;
+  profitFactor:     number;
+  maxDrawdown:      number;
+  simulated:        number;
+  topLessons:       string[];
+  topRejectLessons: string[];
 }
 
 export interface ReplayDelta {
   removedByMemory:  number;
   addedByMemory:    number;
   avgConfChange:    number;
-  approveRateDelta: number; // withMem.approveRate − noMem.approveRate (positive = memory increased signal rate)
+  approveRateDelta: number;
 }
 
 export interface ReplayResult {
-  symbol:    string;
-  timeframe: string;
-  processed: number;
-  candles:   ReplayCandleResult[];
-  noMem:     ReplayPassStats;
-  withMem:   ReplayPassStats;
-  delta:     ReplayDelta;
+  symbol:        string;
+  timeframe:     string;
+  processed:     number;
+  candles:       ReplayCandleResult[];
+  noMem:         ReplayPassStats;
+  withMem:       ReplayPassStats;
+  delta:         ReplayDelta;
+  learningScore: number;
+  decisionDiffs: ReplayDecisionDiff[];
 }
 
 export type OnReplayProgress = (done: number, total: number) => void;
@@ -61,39 +77,115 @@ function classify(decision: CandleDecision, confidence: number): "approve" | "wa
   return "reject";
 }
 
+interface TradeAcc {
+  wins:     number;
+  losses:   number;
+  winRRs:   number;
+  lossUnits: number;
+  equity:   number[];
+  running:  number;
+}
+
+function newAcc(): TradeAcc {
+  return { wins: 0, losses: 0, winRRs: 0, lossUnits: 0, equity: [], running: 0 };
+}
+
+function recordOutcome(acc: TradeAcc, state: string, rr: number): void {
+  if (state === "tp_hit") {
+    acc.wins++;
+    acc.winRRs  += rr;
+    acc.running += rr;
+  } else if (state === "sl_hit") {
+    acc.losses++;
+    acc.lossUnits += 1;
+    acc.running   -= 1;
+  } else {
+    return; // expired / active — skip
+  }
+  acc.equity.push(acc.running);
+}
+
+function passStats(
+  acc: TradeAcc,
+): { winRate: number; profitFactor: number; maxDrawdown: number; simulated: number } {
+  const closed = acc.wins + acc.losses;
+  const winRate = closed > 0 ? Math.round((acc.wins / closed) * 1000) / 1000 : 0;
+  const profitFactor =
+    acc.lossUnits > 0
+      ? Math.min(Math.round((acc.winRRs / acc.lossUnits) * 100) / 100, 9.99)
+      : acc.winRRs > 0 ? 9.99 : 0;
+
+  let peak = 0;
+  let maxDrawdown = 0;
+  for (const eq of acc.equity) {
+    if (eq > peak) peak = eq;
+    const dd = peak - eq;
+    if (dd > maxDrawdown) maxDrawdown = dd;
+  }
+
+  return {
+    winRate,
+    profitFactor,
+    maxDrawdown: Math.round(maxDrawdown * 100) / 100,
+    simulated:   acc.wins + acc.losses,
+  };
+}
+
+function computeLearningScore(
+  noMem:   Pick<ReplayPassStats, "winRate" | "avgConf" | "profitFactor">,
+  withMem: Pick<ReplayPassStats, "winRate" | "avgConf" | "profitFactor">,
+): number {
+  // Factor 1: absolute win rate quality of withMem (0–40 pts; 60%WR = 40, 40%WR = 0)
+  const wrQuality = Math.max(0, Math.min(40, Math.round((withMem.winRate - 0.4) / 0.2 * 40)));
+
+  // Factor 2: win rate improvement vs noMem (−10..+20)
+  const wrDelta     = withMem.winRate - noMem.winRate;
+  const wrImprove   = Math.max(-10, Math.min(20, Math.round(wrDelta * 200)));
+
+  // Factor 3: confidence quality (0–20; conf≥80 = 20)
+  const confQuality = Math.max(0, Math.min(20, Math.round((withMem.avgConf - 60) / 20 * 20)));
+
+  // Factor 4: profit factor (0–20; PF≥2.0 = 20)
+  const pfQuality   = Math.max(0, Math.min(20, Math.round((withMem.profitFactor - 1) / 1 * 20)));
+
+  return Math.max(0, Math.min(100, wrQuality + wrImprove + confQuality + pfQuality));
+}
+
 export async function runReplay(
-  bars:        OhlcvBar[],
-  htfBars:     OhlcvBar[],
-  htfTf:       string,
-  symbol:      string,
-  timeframe:   string,
-  limit:       number,
-  onProgress:  OnReplayProgress,
+  bars:       OhlcvBar[],
+  htfBars:    OhlcvBar[],
+  htfTf:      string,
+  symbol:     string,
+  timeframe:  string,
+  limit:      number,
+  onProgress: OnReplayProgress,
 ): Promise<ReplayResult> {
-  // Replay the last `limit` *closed* candles with sufficient warmup context.
-  // bars[bars.length - 1] may be a live/partial candle — exclude it.
   const WARMUP   = 100;
-  const endIdx   = bars.length - 1;                       // last closed bar
-  const startIdx = Math.max(WARMUP, endIdx - limit);      // at least 100 bars of warmup
+  const endIdx   = bars.length - 1;
+  const startIdx = Math.max(WARMUP, endIdx - limit);
   const total    = endIdx - startIdx;
 
-  // Fetch news once and reuse — avoids per-candle API calls
   const news = await getNewsSentiment(symbol).catch(() => ({
     symbol, sentiment: "neutral" as const, score: 0,
     headlines: [] as string[], summary: "News unavailable",
     cachedAt: Date.now(), stale: true,
   }));
 
-  const candles:           ReplayCandleResult[] = [];
-  const noMemConfs:        number[]             = [];
-  const withMemConfs:      number[]             = [];
-  const noMemRRs:          number[]             = [];
-  const withMemRRs:        number[]             = [];
-  const noMemClass:        string[]             = [];
-  const withMemClass:      string[]             = [];
-  const lessonsBag:        string[]             = [];
-  const rejectLessonsBag:  string[]             = []; // lessons cited when memory still REJECT/WAIT
-  let   done = 0;
+  const candles:          ReplayCandleResult[] = [];
+  const noMemConfs:       number[]             = [];
+  const withMemConfs:     number[]             = [];
+  const noMemRRs:         number[]             = [];
+  const withMemRRs:       number[]             = [];
+  const noMemClass:       string[]             = [];
+  const withMemClass:     string[]             = [];
+  const lessonsBag:       string[]             = [];
+  const rejectLessonsBag: string[]             = [];
+  const decisionDiffs:    ReplayDecisionDiff[] = [];
+
+  const noMemAcc   = newAcc();
+  const withMemAcc = newAcc();
+
+  let done = 0;
 
   for (let i = startIdx; i < endIdx; i++) {
     const candleTime = bars[i].time;
@@ -109,7 +201,6 @@ export async function runReplay(
         regimeApproveRate: 0, summary: "No historical data.",
       }));
 
-      // Sequential to avoid GPU saturation
       const noMem   = await runCandlePassForReplay(ctx, stats, false);
       const withMem = await runCandlePassForReplay(ctx, stats, true);
 
@@ -127,15 +218,63 @@ export async function runReplay(
       withMemConfs.push(withMem.confidence);
       if (noMem.rr   !== null && noMem.rr   > 0) noMemRRs.push(noMem.rr);
       if (withMem.rr !== null && withMem.rr > 0) withMemRRs.push(withMem.rr);
-      const noMemCls  = classify(noMem.decision,   noMem.confidence);
-      const memCls    = classify(withMem.decision,  withMem.confidence);
+
+      const noMemCls = classify(noMem.decision,   noMem.confidence);
+      const memCls   = classify(withMem.decision, withMem.confidence);
       noMemClass.push(noMemCls);
       withMemClass.push(memCls);
       lessonsBag.push(...withMem.lessons);
-      // Track lessons cited when memory-enhanced decision was still REJECT or WAIT
       if (memCls !== "approve" && withMem.memoryUsed) {
         rejectLessonsBag.push(...withMem.lessons);
       }
+
+      // Collect decision diffs
+      if (noMemCls !== memCls) {
+        let direction: ReplayDecisionDiff["direction"];
+        if (noMemCls !== "approve" && memCls === "approve")      direction = "memory_added";
+        else if (noMemCls === "approve" && memCls !== "approve") direction = "memory_removed";
+        else direction = withMem.confidence > noMem.confidence ? "conf_boost" : "conf_drop";
+
+        decisionDiffs.push({
+          candleTime,
+          direction,
+          noMemVerdict:   noMemCls,
+          withMemVerdict: memCls,
+          noMemConf:      noMem.confidence,
+          withMemConf:    withMem.confidence,
+        });
+      }
+
+      // Lifecycle simulation — noMem approved signals
+      const noMemSide = noMem.decision === "LONG" ? "long" : noMem.decision === "SHORT" ? "short" : null;
+      if (
+        noMemCls === "approve" && noMemSide &&
+        noMem.entry != null && noMem.stopLoss != null && noMem.takeProfit != null
+      ) {
+        try {
+          const lc = simulateLifecycle(
+            bars, i, noMemSide as "long" | "short",
+            noMem.entry, noMem.stopLoss, noMem.takeProfit,
+          );
+          recordOutcome(noMemAcc, lc.state, noMem.rr ?? 1.5);
+        } catch { /* skip */ }
+      }
+
+      // Lifecycle simulation — withMem approved signals
+      const withSide = withMem.decision === "LONG" ? "long" : withMem.decision === "SHORT" ? "short" : null;
+      if (
+        memCls === "approve" && withSide &&
+        withMem.entry != null && withMem.stopLoss != null && withMem.takeProfit != null
+      ) {
+        try {
+          const lc = simulateLifecycle(
+            bars, i, withSide as "long" | "short",
+            withMem.entry, withMem.stopLoss, withMem.takeProfit,
+          );
+          recordOutcome(withMemAcc, lc.state, withMem.rr ?? 1.5);
+        } catch { /* skip */ }
+      }
+
     } catch (err) {
       logger.warn({ err, symbol, candleTime }, "replay candle failed — skipping");
     }
@@ -159,38 +298,54 @@ export async function runReplay(
 
   const noMemAvgConf   = avg(noMemConfs);
   const withMemAvgConf = avg(withMemConfs);
-
   const noMemApprove   = count(noMemClass,   "approve");
   const withMemApprove = count(withMemClass, "approve");
   const noMemTotal     = noMemClass.length;
   const withMemTotal   = withMemClass.length;
 
+  const noMemSim   = passStats(noMemAcc);
+  const withMemSim = passStats(withMemAcc);
+
+  const noMemStats: ReplayPassStats = {
+    approve:          noMemApprove,
+    wait:             count(noMemClass, "wait"),
+    reject:           count(noMemClass, "reject"),
+    total:            noMemTotal,
+    approveRate:      noMemTotal > 0 ? Math.round((noMemApprove / noMemTotal) * 1000) / 1000 : 0,
+    avgConf:          Math.round(noMemAvgConf * 10) / 10,
+    avgRR:            avg(noMemRRs),
+    winRate:          noMemSim.winRate,
+    profitFactor:     noMemSim.profitFactor,
+    maxDrawdown:      noMemSim.maxDrawdown,
+    simulated:        noMemSim.simulated,
+    topLessons:       [],
+    topRejectLessons: [],
+  };
+
+  const withMemStats: ReplayPassStats = {
+    approve:          withMemApprove,
+    wait:             count(withMemClass, "wait"),
+    reject:           count(withMemClass, "reject"),
+    total:            withMemTotal,
+    approveRate:      withMemTotal > 0 ? Math.round((withMemApprove / withMemTotal) * 1000) / 1000 : 0,
+    avgConf:          Math.round(withMemAvgConf * 10) / 10,
+    avgRR:            avg(withMemRRs),
+    winRate:          withMemSim.winRate,
+    profitFactor:     withMemSim.profitFactor,
+    maxDrawdown:      withMemSim.maxDrawdown,
+    simulated:        withMemSim.simulated,
+    topLessons:       topN(lessonsBag),
+    topRejectLessons: topN(rejectLessonsBag),
+  };
+
+  const learningScore = computeLearningScore(noMemStats, withMemStats);
+
   return {
     symbol, timeframe,
     processed: candles.length,
     candles,
-    noMem: {
-      approve:         noMemApprove,
-      wait:            count(noMemClass, "wait"),
-      reject:          count(noMemClass, "reject"),
-      total:           noMemTotal,
-      approveRate:     noMemTotal > 0 ? Math.round((noMemApprove / noMemTotal) * 1000) / 1000 : 0,
-      avgConf:         Math.round(noMemAvgConf * 10) / 10,
-      avgRR:           avg(noMemRRs),
-      topLessons:      [],
-      topRejectLessons: [],
-    },
-    withMem: {
-      approve:         withMemApprove,
-      wait:            count(withMemClass, "wait"),
-      reject:          count(withMemClass, "reject"),
-      total:           withMemTotal,
-      approveRate:     withMemTotal > 0 ? Math.round((withMemApprove / withMemTotal) * 1000) / 1000 : 0,
-      avgConf:         Math.round(withMemAvgConf * 10) / 10,
-      avgRR:           avg(withMemRRs),
-      topLessons:      topN(lessonsBag),
-      topRejectLessons: topN(rejectLessonsBag),
-    },
+    noMem:    noMemStats,
+    withMem:  withMemStats,
     delta: {
       removedByMemory: candles.filter(c =>
         classify(c.noMem.decision,   c.noMem.confidence)   === "approve" &&
@@ -206,5 +361,7 @@ export async function runReplay(
          (noMemTotal   > 0 ? noMemApprove   / noMemTotal   : 0)) * 1000,
       ) / 1000,
     },
+    learningScore,
+    decisionDiffs,
   };
 }

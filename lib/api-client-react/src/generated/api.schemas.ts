@@ -578,6 +578,14 @@ export interface ReplayPassStats {
   approveRate: number;
   avgConf: number;
   avgRR: number;
+  /** tp_hit / (tp_hit + sl_hit) from lifecycle simulation, 0 when no closed trades */
+  winRate: number;
+  /** sum(winning RR multiples) / count(losses), max 9.99 */
+  profitFactor: number;
+  /** Max peak-to-trough drawdown in R units from equity curve */
+  maxDrawdown: number;
+  /** Number of approved signals with lifecycle outcome simulated */
+  simulated: number;
   topLessons: string[];
   /** Lessons most frequently cited when memory still returned REJECT or WAIT */
   topRejectLessons: string[];
@@ -591,6 +599,25 @@ export interface ReplayDelta {
   approveRateDelta: number;
 }
 
+export type ReplayDecisionDiffDirection = typeof ReplayDecisionDiffDirection[keyof typeof ReplayDecisionDiffDirection];
+
+
+export const ReplayDecisionDiffDirection = {
+  memory_added: 'memory_added',
+  memory_removed: 'memory_removed',
+  conf_boost: 'conf_boost',
+  conf_drop: 'conf_drop',
+} as const;
+
+export interface ReplayDecisionDiff {
+  candleTime: number;
+  direction: ReplayDecisionDiffDirection;
+  noMemVerdict: string;
+  withMemVerdict: string;
+  noMemConf: number;
+  withMemConf: number;
+}
+
 export type ReplayResultCandlesItem = { [key: string]: unknown };
 
 export interface ReplayResult {
@@ -602,6 +629,45 @@ export interface ReplayResult {
   noMem: ReplayPassStats;
   withMem: ReplayPassStats;
   delta: ReplayDelta;
+  /**
+     * 0–100 composite learning effectiveness score
+     * @minimum 0
+     * @maximum 100
+     */
+  learningScore: number;
+  /** Candles where noMem and withMem verdicts diverged */
+  decisionDiffs: ReplayDecisionDiff[];
+}
+
+export interface PerformanceSlice {
+  total: number;
+  tp_hit: number;
+  sl_hit: number;
+  expired: number;
+  active: number;
+  closed: number;
+  winRate: number;
+  profitFactor: number;
+  avgRR: number;
+  avgConf: number;
+}
+
+export type PerformanceSummaryResponseBySide = {[key: string]: PerformanceSlice};
+
+export type PerformanceSummaryResponseBySymbol = {[key: string]: PerformanceSlice};
+
+export type PerformanceSummaryResponseByRegime = {[key: string]: PerformanceSlice};
+
+export type PerformanceSummaryResponseByPattern = {[key: string]: PerformanceSlice};
+
+export interface PerformanceSummaryResponse {
+  ok: boolean;
+  global: PerformanceSlice;
+  bySide: PerformanceSummaryResponseBySide;
+  bySymbol: PerformanceSummaryResponseBySymbol;
+  byRegime: PerformanceSummaryResponseByRegime;
+  byPattern: PerformanceSummaryResponseByPattern;
+  updatedAt: string;
 }
 
 export type ReplayJobStatusStatus = typeof ReplayJobStatusStatus[keyof typeof ReplayJobStatusStatus];

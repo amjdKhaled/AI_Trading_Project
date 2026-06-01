@@ -371,6 +371,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReplayStartResponse"
 
+  /signals/performance/summary:
+    get:
+      operationId: getPerformanceSummary
+      tags: [signals]
+      summary: Get aggregated signal performance summary (global, by side, by symbol, by regime, by pattern)
+      responses:
+        "200":
+          description: Performance summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PerformanceSummaryResponse"
+
   /signals/replay/{jobId}:
     get:
       operationId: getReplayStatus
@@ -1168,7 +1181,7 @@ components:
 
     ReplayPassStats:
       type: object
-      required: [approve, wait, reject, total, approveRate, avgConf, avgRR, topLessons, topRejectLessons]
+      required: [approve, wait, reject, total, approveRate, avgConf, avgRR, winRate, profitFactor, maxDrawdown, simulated, topLessons, topRejectLessons]
       properties:
         approve:
           type: integer
@@ -1185,6 +1198,18 @@ components:
           type: number
         avgRR:
           type: number
+        winRate:
+          type: number
+          description: tp_hit / (tp_hit + sl_hit) from lifecycle simulation, 0 when no closed trades
+        profitFactor:
+          type: number
+          description: sum(winning RR multiples) / count(losses), max 9.99
+        maxDrawdown:
+          type: number
+          description: Max peak-to-trough drawdown in R units from equity curve
+        simulated:
+          type: integer
+          description: Number of approved signals with lifecycle outcome simulated
         topLessons:
           type: array
           items:
@@ -1209,9 +1234,27 @@ components:
           type: number
           description: withMem.approveRate − noMem.approveRate; positive = memory increased signal rate
 
+    ReplayDecisionDiff:
+      type: object
+      required: [candleTime, direction, noMemVerdict, withMemVerdict, noMemConf, withMemConf]
+      properties:
+        candleTime:
+          type: number
+        direction:
+          type: string
+          enum: [memory_added, memory_removed, conf_boost, conf_drop]
+        noMemVerdict:
+          type: string
+        withMemVerdict:
+          type: string
+        noMemConf:
+          type: number
+        withMemConf:
+          type: number
+
     ReplayResult:
       type: object
-      required: [symbol, timeframe, processed, noMem, withMem, delta]
+      required: [symbol, timeframe, processed, noMem, withMem, delta, learningScore, decisionDiffs]
       properties:
         symbol:
           type: string
@@ -1231,6 +1274,68 @@ components:
           $ref: "#/components/schemas/ReplayPassStats"
         delta:
           $ref: "#/components/schemas/ReplayDelta"
+        learningScore:
+          type: integer
+          description: 0–100 composite learning effectiveness score
+          minimum: 0
+          maximum: 100
+        decisionDiffs:
+          type: array
+          description: Candles where noMem and withMem verdicts diverged
+          items:
+            $ref: "#/components/schemas/ReplayDecisionDiff"
+
+    PerformanceSlice:
+      type: object
+      required: [total, tp_hit, sl_hit, expired, active, closed, winRate, profitFactor, avgRR, avgConf]
+      properties:
+        total:
+          type: integer
+        tp_hit:
+          type: integer
+        sl_hit:
+          type: integer
+        expired:
+          type: integer
+        active:
+          type: integer
+        closed:
+          type: integer
+        winRate:
+          type: number
+        profitFactor:
+          type: number
+        avgRR:
+          type: number
+        avgConf:
+          type: number
+
+    PerformanceSummaryResponse:
+      type: object
+      required: [ok, global, bySide, bySymbol, byRegime, byPattern, updatedAt]
+      properties:
+        ok:
+          type: boolean
+        global:
+          $ref: "#/components/schemas/PerformanceSlice"
+        bySide:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PerformanceSlice"
+        bySymbol:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PerformanceSlice"
+        byRegime:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PerformanceSlice"
+        byPattern:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PerformanceSlice"
+        updatedAt:
+          type: string
 
     ReplayJobStatus:
       type: object

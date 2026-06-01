@@ -651,6 +651,7 @@ interface ReplayPassStats {
   approve: number; wait: number; reject: number;
   total: number; approveRate: number;
   avgConf: number; avgRR: number;
+  winRate: number; profitFactor: number; maxDrawdown: number; simulated: number;
   topLessons: string[]; topRejectLessons: string[];
 }
 interface ReplayCandleResult {
@@ -658,12 +659,20 @@ interface ReplayCandleResult {
   noMem:   { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null };
   withMem: { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null; lessons: string[]; memoryUsed: boolean };
 }
+interface ReplayDecisionDiff {
+  candleTime: number;
+  direction: "memory_added" | "memory_removed" | "conf_boost" | "conf_drop";
+  noMemVerdict: string; withMemVerdict: string;
+  noMemConf: number; withMemConf: number;
+}
 interface ReplayJobResult {
   symbol: string; timeframe: string; processed: number;
   candles?: ReplayCandleResult[];
   noMem:   ReplayPassStats;
   withMem: ReplayPassStats;
   delta:   { removedByMemory: number; addedByMemory: number; avgConfChange: number; approveRateDelta: number };
+  learningScore: number;
+  decisionDiffs: ReplayDecisionDiff[];
 }
 
 // ── Tab: Tools (Ollama + Reflect + Import) ─────────────────────
@@ -899,9 +908,24 @@ function ToolsTab({
         )}
         {replayResult && (
           <div className="mt-3 space-y-2">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              {replayResult.processed} candles · {replayResult.symbol} {replayResult.timeframe}
+            {/* Header: candle count + Learning Score badge */}
+            <div className="flex items-center gap-2">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+                {replayResult.processed} candles · {replayResult.symbol} {replayResult.timeframe}
+              </div>
+              {(() => {
+                const ls = replayResult.learningScore;
+                const col = ls >= 70 ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : ls >= 45 ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                          : "bg-red-500/15 text-red-400 border-red-500/30";
+                return (
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${col}`}>
+                    Learning Score {ls}/100
+                  </span>
+                );
+              })()}
             </div>
+
             {/* Comparison table — two passes side by side */}
             <div className="text-[10px] font-mono">
               <div className="grid grid-cols-3 gap-x-1 mb-0.5">
@@ -909,66 +933,95 @@ function ToolsTab({
                 <div className="text-center text-muted-foreground">No Memory</div>
                 <div className="text-center text-violet-400">With Memory</div>
               </div>
-              {[
+              {([
                 {
                   label: "Total decisions",
                   noVal: String(replayResult.noMem.total),
                   memVal: String(replayResult.withMem.total),
-                  colClass: () => "",
+                  noNum: undefined, memNum: undefined,
                 },
                 {
-                  label: "Signal rate (WR proxy)",
+                  label: "Approve rate",
                   noVal: `${Math.round(replayResult.noMem.approveRate * 100)}%`,
                   memVal: `${Math.round(replayResult.withMem.approveRate * 100)}%`,
-                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
-                  memNum: replayResult.withMem.approveRate,
                   noNum: replayResult.noMem.approveRate,
+                  memNum: replayResult.withMem.approveRate,
                 },
                 {
                   label: "Approve ✓",
                   noVal: String(replayResult.noMem.approve),
                   memVal: String(replayResult.withMem.approve),
-                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
-                  memNum: replayResult.withMem.approve,
                   noNum: replayResult.noMem.approve,
+                  memNum: replayResult.withMem.approve,
                 },
                 {
                   label: "Wait ~",
                   noVal: String(replayResult.noMem.wait),
                   memVal: String(replayResult.withMem.wait),
-                  colClass: () => "text-amber-400",
+                  noNum: undefined, memNum: undefined,
+                  fixedClass: "text-amber-400",
                 },
                 {
                   label: "Reject ✗",
                   noVal: String(replayResult.noMem.reject),
                   memVal: String(replayResult.withMem.reject),
-                  colClass: () => "text-red-400",
+                  noNum: undefined, memNum: undefined,
+                  fixedClass: "text-red-400",
                 },
                 {
                   label: "Avg conf",
                   noVal: String(replayResult.noMem.avgConf),
                   memVal: String(replayResult.withMem.avgConf),
-                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
-                  memNum: replayResult.withMem.avgConf,
                   noNum: replayResult.noMem.avgConf,
+                  memNum: replayResult.withMem.avgConf,
                 },
                 {
                   label: "Avg R:R",
                   noVal: replayResult.noMem.avgRR > 0 ? replayResult.noMem.avgRR.toFixed(2) : "—",
                   memVal: replayResult.withMem.avgRR > 0 ? replayResult.withMem.avgRR.toFixed(2) : "—",
-                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
-                  memNum: replayResult.withMem.avgRR,
                   noNum: replayResult.noMem.avgRR,
+                  memNum: replayResult.withMem.avgRR,
                 },
-              ].map((row, i) => (
-                <div key={i} className="grid grid-cols-3 gap-x-1 py-0.5 border-t border-border/40">
-                  <div className="text-muted-foreground truncate">{row.label}</div>
-                  <div className="text-center text-foreground">{row.noVal}</div>
-                  <div className={`text-center ${row.memNum !== undefined && row.noNum !== undefined ? row.colClass(row.memNum, row.noNum) : "text-foreground"}`}>
-                    {row.memVal}
+                {
+                  label: `Win Rate (${replayResult.withMem.simulated} sim)`,
+                  noVal: replayResult.noMem.simulated > 0 ? `${Math.round(replayResult.noMem.winRate * 100)}%` : "—",
+                  memVal: replayResult.withMem.simulated > 0 ? `${Math.round(replayResult.withMem.winRate * 100)}%` : "—",
+                  noNum: replayResult.noMem.winRate,
+                  memNum: replayResult.withMem.winRate,
+                },
+                {
+                  label: "Profit Factor",
+                  noVal: replayResult.noMem.simulated > 0 ? replayResult.noMem.profitFactor.toFixed(2) : "—",
+                  memVal: replayResult.withMem.simulated > 0 ? replayResult.withMem.profitFactor.toFixed(2) : "—",
+                  noNum: replayResult.noMem.profitFactor,
+                  memNum: replayResult.withMem.profitFactor,
+                },
+                {
+                  label: "Max Drawdown",
+                  noVal: replayResult.noMem.simulated > 0 ? `${replayResult.noMem.maxDrawdown.toFixed(1)}R` : "—",
+                  memVal: replayResult.withMem.simulated > 0 ? `${replayResult.withMem.maxDrawdown.toFixed(1)}R` : "—",
+                  noNum: replayResult.withMem.maxDrawdown,
+                  memNum: replayResult.noMem.maxDrawdown,
+                  lowerIsBetter: true,
+                },
+              ] as Array<{ label: string; noVal: string; memVal: string; noNum?: number; memNum?: number; fixedClass?: string; lowerIsBetter?: boolean }>).map((row, i) => {
+                let memClass = "text-foreground";
+                if (row.fixedClass) {
+                  memClass = row.fixedClass;
+                } else if (row.memNum !== undefined && row.noNum !== undefined) {
+                  const better = row.lowerIsBetter ? row.memNum < row.noNum : row.memNum > row.noNum;
+                  const worse  = row.lowerIsBetter ? row.memNum > row.noNum : row.memNum < row.noNum;
+                  if (better) memClass = "text-emerald-400";
+                  else if (worse) memClass = "text-amber-400";
+                }
+                return (
+                  <div key={i} className="grid grid-cols-3 gap-x-1 py-0.5 border-t border-border/40">
+                    <div className="text-muted-foreground truncate">{row.label}</div>
+                    <div className="text-center text-foreground">{row.noVal}</div>
+                    <div className={`text-center ${memClass}`}>{row.memVal}</div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Delta summary */}
@@ -982,13 +1035,46 @@ function ToolsTab({
               </span>
               <span className="text-muted-foreground">·</span>
               <span className={replayResult.delta.approveRateDelta >= 0 ? "text-emerald-400" : "text-red-400"}>
-                WR {replayResult.delta.approveRateDelta >= 0 ? "+" : ""}{Math.round(replayResult.delta.approveRateDelta * 100)}%
+                AR {replayResult.delta.approveRateDelta >= 0 ? "+" : ""}{Math.round(replayResult.delta.approveRateDelta * 100)}%
               </span>
               <span className="text-muted-foreground">·</span>
               <span className={replayResult.delta.avgConfChange >= 0 ? "text-emerald-400" : "text-red-400"}>
                 conf {replayResult.delta.avgConfChange >= 0 ? "+" : ""}{replayResult.delta.avgConfChange}
               </span>
             </div>
+
+            {/* Decision diffs */}
+            {replayResult.decisionDiffs.length > 0 && (
+              <div className="text-[10px]">
+                <div className="font-semibold text-muted-foreground mb-1">
+                  Decision divergences ({replayResult.decisionDiffs.length})
+                </div>
+                <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                  {replayResult.decisionDiffs.slice(0, 15).map((d, i) => {
+                    const ts = new Date(d.candleTime * 1000);
+                    const label = d.direction === "memory_added"   ? { text: "+MEM",   cls: "text-emerald-400" }
+                                : d.direction === "memory_removed" ? { text: "−MEM",   cls: "text-amber-400" }
+                                : d.direction === "conf_boost"     ? { text: "↑CONF",  cls: "text-blue-400" }
+                                :                                    { text: "↓CONF",  cls: "text-red-400" };
+                    return (
+                      <div key={i} className="flex items-center gap-2 font-mono text-muted-foreground border-l-2 border-border/40 pl-1.5">
+                        <span className="text-[9px] w-16 flex-shrink-0">
+                          {ts.toLocaleDateString([], { month: "short", day: "numeric" })} {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className={`font-bold flex-shrink-0 w-10 ${label.cls}`}>{label.text}</span>
+                        <span className="text-[9px]">{d.noMemVerdict}→{d.withMemVerdict}</span>
+                        <span className="text-[9px] ml-auto">{d.noMemConf}→{d.withMemConf}</span>
+                      </div>
+                    );
+                  })}
+                  {replayResult.decisionDiffs.length > 15 && (
+                    <div className="text-[9px] text-muted-foreground/60 pl-1.5">
+                      +{replayResult.decisionDiffs.length - 15} more divergences
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Top lessons memory applied */}
             {replayResult.withMem.topLessons.length > 0 && (
@@ -1002,7 +1088,7 @@ function ToolsTab({
               </div>
             )}
 
-            {/* Top failure categories — lessons memory cited but still rejected */}
+            {/* Top failure categories */}
             {replayResult.withMem.topRejectLessons.length > 0 && (
               <div className="text-[10px] text-muted-foreground">
                 <div className="font-semibold text-amber-400 mb-1">Top failure categories (memory still said no)</div>

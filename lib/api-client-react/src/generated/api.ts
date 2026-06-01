@@ -39,6 +39,7 @@ import type {
   ListBarsParams,
   ListChartAnalysesParams,
   ListSignalsParams,
+  PerformanceSummaryResponse,
   ReplayJobStatus,
   ReplayStartRequest,
   ReplayStartResponse,
@@ -1388,6 +1389,83 @@ export const useStartReplay = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getStartReplayMutationOptions(options));
     }
+
+export const getGetPerformanceSummaryUrl = () => {
+
+
+
+
+  return `/api/signals/performance/summary`
+}
+
+/**
+ * @summary Get aggregated signal performance summary (global, by side, by symbol, by regime, by pattern)
+ */
+export const getPerformanceSummary = async ( options?: RequestInit): Promise<PerformanceSummaryResponse> => {
+
+  return customFetch<PerformanceSummaryResponse>(getGetPerformanceSummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPerformanceSummaryQueryKey = () => {
+    return [
+    `/api/signals/performance/summary`
+    ] as const;
+    }
+
+
+export const getGetPerformanceSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getPerformanceSummary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPerformanceSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPerformanceSummaryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPerformanceSummary>>> = ({ signal }) => getPerformanceSummary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPerformanceSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPerformanceSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getPerformanceSummary>>>
+export type GetPerformanceSummaryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get aggregated signal performance summary (global, by side, by symbol, by regime, by pattern)
+ */
+
+export function useGetPerformanceSummary<TData = Awaited<ReturnType<typeof getPerformanceSummary>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPerformanceSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPerformanceSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getGetReplayStatusUrl = (jobId: string,) => {
 

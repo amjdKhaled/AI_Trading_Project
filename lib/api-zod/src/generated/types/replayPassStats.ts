@@ -15,6 +15,14 @@ export interface ReplayPassStats {
   approveRate: number;
   avgConf: number;
   avgRR: number;
+  /** tp_hit / (tp_hit + sl_hit) from lifecycle simulation, 0 when no closed trades */
+  winRate: number;
+  /** sum(winning RR multiples) / count(losses), max 9.99 */
+  profitFactor: number;
+  /** Max peak-to-trough drawdown in R units from equity curve */
+  maxDrawdown: number;
+  /** Number of approved signals with lifecycle outcome simulated */
+  simulated: number;
   topLessons: string[];
   /** Lessons most frequently cited when memory still returned REJECT or WAIT */
   topRejectLessons: string[];

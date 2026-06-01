@@ -868,6 +868,68 @@ router.get("/signals/alerts", async (req, res): Promise<void> => {
   })));
 });
 
+// ── GET /signals/performance/summary ─────────────────────────
+// Aggregates signals table into global + by-side + by-symbol + by-regime + by-pattern slices.
+router.get("/signals/performance/summary", async (req, res): Promise<void> => {
+  try {
+    const rows = await db.select().from(signalsTable);
+
+    type Slice = {
+      total: number; tp_hit: number; sl_hit: number; expired: number; active: number;
+      closed: number; winRate: number; profitFactor: number; avgRR: number; avgConf: number;
+    };
+
+    function computeSlice(items: typeof rows): Slice {
+      const total   = items.length;
+      const tp_hit  = items.filter(r => r.state === "tp_hit").length;
+      const sl_hit  = items.filter(r => r.state === "sl_hit").length;
+      const expired = items.filter(r => r.state === "expired").length;
+      const active  = items.filter(r => r.state === "active").length;
+      const closed  = tp_hit + sl_hit;
+      const winRate = closed > 0 ? Math.round((tp_hit / closed) * 1000) / 1000 : 0;
+      const rrs     = items.filter(r => r.rrRatio != null && r.rrRatio > 0).map(r => r.rrRatio!);
+      const avgRR   = rrs.length > 0 ? Math.round(rrs.reduce((s, v) => s + v, 0) / rrs.length * 100) / 100 : 0;
+      const confs   = items.map(r => r.confidence);
+      const avgConf = confs.length > 0 ? Math.round(confs.reduce((s, v) => s + v, 0) / confs.length * 10) / 10 : 0;
+      const winRRSum = items
+        .filter(r => r.state === "tp_hit" && r.rrRatio != null && r.rrRatio > 0)
+        .reduce((s, r) => s + r.rrRatio!, 0);
+      const profitFactor = sl_hit > 0
+        ? Math.min(Math.round(winRRSum / sl_hit * 100) / 100, 9.99)
+        : winRRSum > 0 ? 9.99 : 0;
+      return { total, tp_hit, sl_hit, expired, active, closed, winRate, profitFactor, avgRR, avgConf };
+    }
+
+    const global = computeSlice(rows);
+
+    const bySide: Record<string, Slice> = {};
+    for (const side of ["long", "short"]) {
+      bySide[side] = computeSlice(rows.filter(r => r.side === side));
+    }
+
+    const bySymbol: Record<string, Slice> = {};
+    for (const sym of [...new Set(rows.map(r => r.symbol))]) {
+      bySymbol[sym] = computeSlice(rows.filter(r => r.symbol === sym));
+    }
+
+    const byRegime: Record<string, Slice> = {};
+    for (const regime of [...new Set(rows.map(r => r.regime).filter(Boolean))]) {
+      byRegime[regime!] = computeSlice(rows.filter(r => r.regime === regime));
+    }
+
+    const byPattern: Record<string, Slice> = {};
+    for (const pat of [...new Set(rows.map(r => r.pattern).filter(Boolean))]) {
+      byPattern[pat!] = computeSlice(rows.filter(r => r.pattern === pat));
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ok: true, global, bySide, bySymbol, byRegime, byPattern, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    req.log?.error({ err }, "performance/summary failed");
+    res.status(500).json({ error: "Failed to compute performance summary" });
+  }
+});
+
 // ── POST /signals/replay ──────────────────────────────────────
 // Starts an async memory-vs-no-memory replay job for a symbol+timeframe.
 // Returns immediately with { jobId }. Poll GET /signals/replay/:jobId for status.

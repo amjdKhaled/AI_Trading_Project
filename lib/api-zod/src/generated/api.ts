@@ -469,11 +469,85 @@ export const StartReplayResponse = zod.object({
 
 
 /**
+ * @summary Get aggregated signal performance summary (global, by side, by symbol, by regime, by pattern)
+ */
+export const GetPerformanceSummaryResponse = zod.object({
+  "ok": zod.boolean(),
+  "global": zod.object({
+  "total": zod.number(),
+  "tp_hit": zod.number(),
+  "sl_hit": zod.number(),
+  "expired": zod.number(),
+  "active": zod.number(),
+  "closed": zod.number(),
+  "winRate": zod.number(),
+  "profitFactor": zod.number(),
+  "avgRR": zod.number(),
+  "avgConf": zod.number()
+}),
+  "bySide": zod.record(zod.string(), zod.object({
+  "total": zod.number(),
+  "tp_hit": zod.number(),
+  "sl_hit": zod.number(),
+  "expired": zod.number(),
+  "active": zod.number(),
+  "closed": zod.number(),
+  "winRate": zod.number(),
+  "profitFactor": zod.number(),
+  "avgRR": zod.number(),
+  "avgConf": zod.number()
+})),
+  "bySymbol": zod.record(zod.string(), zod.object({
+  "total": zod.number(),
+  "tp_hit": zod.number(),
+  "sl_hit": zod.number(),
+  "expired": zod.number(),
+  "active": zod.number(),
+  "closed": zod.number(),
+  "winRate": zod.number(),
+  "profitFactor": zod.number(),
+  "avgRR": zod.number(),
+  "avgConf": zod.number()
+})),
+  "byRegime": zod.record(zod.string(), zod.object({
+  "total": zod.number(),
+  "tp_hit": zod.number(),
+  "sl_hit": zod.number(),
+  "expired": zod.number(),
+  "active": zod.number(),
+  "closed": zod.number(),
+  "winRate": zod.number(),
+  "profitFactor": zod.number(),
+  "avgRR": zod.number(),
+  "avgConf": zod.number()
+})),
+  "byPattern": zod.record(zod.string(), zod.object({
+  "total": zod.number(),
+  "tp_hit": zod.number(),
+  "sl_hit": zod.number(),
+  "expired": zod.number(),
+  "active": zod.number(),
+  "closed": zod.number(),
+  "winRate": zod.number(),
+  "profitFactor": zod.number(),
+  "avgRR": zod.number(),
+  "avgConf": zod.number()
+})),
+  "updatedAt": zod.string()
+})
+
+
+/**
  * @summary Poll a replay job for status and result
  */
 export const GetReplayStatusParams = zod.object({
   "jobId": zod.coerce.string()
 })
+
+export const getReplayStatusResponseResultOneLearningScoreMin = 0;
+export const getReplayStatusResponseResultOneLearningScoreMax = 100;
+
+
 
 export const GetReplayStatusResponse = zod.object({
   "jobId": zod.string(),
@@ -493,6 +567,10 @@ export const GetReplayStatusResponse = zod.object({
   "approveRate": zod.number().describe('approve \/ total (0–1)'),
   "avgConf": zod.number(),
   "avgRR": zod.number(),
+  "winRate": zod.number().describe('tp_hit \/ (tp_hit + sl_hit) from lifecycle simulation, 0 when no closed trades'),
+  "profitFactor": zod.number().describe('sum(winning RR multiples) \/ count(losses), max 9.99'),
+  "maxDrawdown": zod.number().describe('Max peak-to-trough drawdown in R units from equity curve'),
+  "simulated": zod.number().describe('Number of approved signals with lifecycle outcome simulated'),
   "topLessons": zod.array(zod.string()),
   "topRejectLessons": zod.array(zod.string()).describe('Lessons most frequently cited when memory still returned REJECT or WAIT')
 }),
@@ -504,6 +582,10 @@ export const GetReplayStatusResponse = zod.object({
   "approveRate": zod.number().describe('approve \/ total (0–1)'),
   "avgConf": zod.number(),
   "avgRR": zod.number(),
+  "winRate": zod.number().describe('tp_hit \/ (tp_hit + sl_hit) from lifecycle simulation, 0 when no closed trades'),
+  "profitFactor": zod.number().describe('sum(winning RR multiples) \/ count(losses), max 9.99'),
+  "maxDrawdown": zod.number().describe('Max peak-to-trough drawdown in R units from equity curve'),
+  "simulated": zod.number().describe('Number of approved signals with lifecycle outcome simulated'),
   "topLessons": zod.array(zod.string()),
   "topRejectLessons": zod.array(zod.string()).describe('Lessons most frequently cited when memory still returned REJECT or WAIT')
 }),
@@ -512,7 +594,16 @@ export const GetReplayStatusResponse = zod.object({
   "addedByMemory": zod.number(),
   "avgConfChange": zod.number(),
   "approveRateDelta": zod.number().describe('withMem.approveRate − noMem.approveRate; positive = memory increased signal rate')
-})
+}),
+  "learningScore": zod.number().min(getReplayStatusResponseResultOneLearningScoreMin).max(getReplayStatusResponseResultOneLearningScoreMax).describe('0–100 composite learning effectiveness score'),
+  "decisionDiffs": zod.array(zod.object({
+  "candleTime": zod.number(),
+  "direction": zod.enum(['memory_added', 'memory_removed', 'conf_boost', 'conf_drop']),
+  "noMemVerdict": zod.string(),
+  "withMemVerdict": zod.string(),
+  "noMemConf": zod.number(),
+  "withMemConf": zod.number()
+})).describe('Candles where noMem and withMem verdicts diverged')
 }),zod.null()]).optional(),
   "error": zod.string().nullish()
 })

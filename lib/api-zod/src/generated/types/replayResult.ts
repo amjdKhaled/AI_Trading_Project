@@ -5,6 +5,7 @@
  * Trading Signal Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { ReplayDecisionDiff } from './replayDecisionDiff';
 import type { ReplayDelta } from './replayDelta';
 import type { ReplayPassStats } from './replayPassStats';
 import type { ReplayResultCandlesItem } from './replayResultCandlesItem';
@@ -18,4 +19,12 @@ export interface ReplayResult {
   noMem: ReplayPassStats;
   withMem: ReplayPassStats;
   delta: ReplayDelta;
+  /**
+     * 0–100 composite learning effectiveness score
+     * @minimum 0
+     * @maximum 100
+     */
+  learningScore: number;
+  /** Candles where noMem and withMem verdicts diverged */
+  decisionDiffs: ReplayDecisionDiff[];
 }
