@@ -1415,7 +1415,7 @@ export const getListSnapshotDecisionsUrl = (params: ListSnapshotDecisionsParams,
 }
 
 /**
- * @summary List recent snapshot decisions for a symbol and timeframe
+ * @summary List recent snapshot decisions for a symbol and timeframe (query-param form)
  */
 export const listSnapshotDecisions = async (params: ListSnapshotDecisionsParams, options?: RequestInit): Promise<SnapshotDecisionRow[]> => {
 
@@ -1462,7 +1462,7 @@ export type ListSnapshotDecisionsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List recent snapshot decisions for a symbol and timeframe
+ * @summary List recent snapshot decisions for a symbol and timeframe (query-param form)
  */
 
 export function useListSnapshotDecisions<TData = Awaited<ReturnType<typeof listSnapshotDecisions>>, TError = ErrorType<unknown>>(
@@ -1471,6 +1471,88 @@ export function useListSnapshotDecisions<TData = Awaited<ReturnType<typeof listS
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSnapshotDecisionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetSnapshotDecisionHistoryUrl = (symbol: string,
+    timeframe: string,) => {
+
+
+
+
+  return `/api/signals/snapshot-decision/${symbol}/${timeframe}`
+}
+
+/**
+ * @summary List recent snapshot decisions for a symbol and timeframe (path form, last 50)
+ */
+export const getSnapshotDecisionHistory = async (symbol: string,
+    timeframe: string, options?: RequestInit): Promise<SnapshotDecisionRow[]> => {
+
+  return customFetch<SnapshotDecisionRow[]>(getGetSnapshotDecisionHistoryUrl(symbol,timeframe),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSnapshotDecisionHistoryQueryKey = (symbol: string,
+    timeframe: string,) => {
+    return [
+    `/api/signals/snapshot-decision/${symbol}/${timeframe}`
+    ] as const;
+    }
+
+
+export const getGetSnapshotDecisionHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getSnapshotDecisionHistory>>, TError = ErrorType<unknown>>(symbol: string,
+    timeframe: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSnapshotDecisionHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSnapshotDecisionHistoryQueryKey(symbol,timeframe);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSnapshotDecisionHistory>>> = ({ signal }) => getSnapshotDecisionHistory(symbol,timeframe, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(symbol && timeframe), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSnapshotDecisionHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSnapshotDecisionHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getSnapshotDecisionHistory>>>
+export type GetSnapshotDecisionHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List recent snapshot decisions for a symbol and timeframe (path form, last 50)
+ */
+
+export function useGetSnapshotDecisionHistory<TData = Awaited<ReturnType<typeof getSnapshotDecisionHistory>>, TError = ErrorType<unknown>>(
+ symbol: string,
+    timeframe: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSnapshotDecisionHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSnapshotDecisionHistoryQueryOptions(symbol,timeframe,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

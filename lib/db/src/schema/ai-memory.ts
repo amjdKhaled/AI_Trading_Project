@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, real, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, real, jsonb, boolean, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -192,7 +192,9 @@ export const aiSnapshotDecisionsTable = pgTable("ai_snapshot_decisions", {
   weaknesses:   jsonb("weaknesses").$type<string[]>().notNull().default([]),
   snapshotJson: jsonb("snapshot_json").$type<Record<string, unknown>>(),
   createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("ai_snapshot_decisions_sym_tf_ct_uidx").on(t.symbol, t.timeframe, t.candleTime),
+]);
 
 export const insertAiSnapshotDecisionSchema = createInsertSchema(aiSnapshotDecisionsTable).omit({ id: true, createdAt: true });
 export type InsertAiSnapshotDecision = z.infer<typeof insertAiSnapshotDecisionSchema>;

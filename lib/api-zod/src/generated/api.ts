@@ -481,7 +481,7 @@ export const PostSnapshotDecisionResponse = zod.object({
 
 
 /**
- * @summary List recent snapshot decisions for a symbol and timeframe
+ * @summary List recent snapshot decisions for a symbol and timeframe (query-param form)
  */
 export const listSnapshotDecisionsQueryTimeframeDefault = `5m`;
 export const listSnapshotDecisionsQueryLimitDefault = 50;
@@ -513,6 +513,34 @@ export const ListSnapshotDecisionsResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const ListSnapshotDecisionsResponse = zod.array(ListSnapshotDecisionsResponseItem)
+
+
+/**
+ * @summary List recent snapshot decisions for a symbol and timeframe (path form, last 50)
+ */
+export const GetSnapshotDecisionHistoryParams = zod.object({
+  "symbol": zod.coerce.string(),
+  "timeframe": zod.coerce.string()
+})
+
+export const GetSnapshotDecisionHistoryResponseItem = zod.object({
+  "id": zod.number(),
+  "symbol": zod.string(),
+  "timeframe": zod.string(),
+  "candleTime": zod.coerce.date(),
+  "decision": zod.enum(['BUY', 'SELL', 'WAIT']),
+  "confidence": zod.number(),
+  "reason": zod.string(),
+  "entry": zod.number().nullish(),
+  "sl": zod.number().nullish(),
+  "tp": zod.number().nullish(),
+  "rr": zod.number().nullish(),
+  "grade": zod.enum(['A+', 'A', 'B', 'C', 'WAIT']),
+  "strengths": zod.array(zod.string()).optional(),
+  "weaknesses": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date()
+})
+export const GetSnapshotDecisionHistoryResponse = zod.array(GetSnapshotDecisionHistoryResponseItem)
 
 
 /**

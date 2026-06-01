@@ -1189,7 +1189,9 @@ router.post("/signals/ai-replay-historical", async (req, res): Promise<void> => 
 
 // ── POST /signals/snapshot-decision ──────────────────────────────────────────
 // Pure-technical snapshot: no AI memory loaded.
-// Fetches bars → buildMarketSnapshot → filterCandleWithSnapshot → persist → return.
+// Fetches bars, locates the specific closed candle at candleTime, builds
+// a snapshot from bars up to and including that candle, evaluates with Ollama,
+// persists to DB, and returns the SnapshotDecision.
 router.post("/signals/snapshot-decision", async (req, res): Promise<void> => {
   const { symbol, timeframe, candleTime } = req.body as {
     symbol?: unknown; timeframe?: unknown; candleTime?: unknown;
@@ -1224,13 +1226,25 @@ router.post("/signals/snapshot-decision", async (req, res): Promise<void> => {
       res.status(422).json({ error: "Insufficient bars for snapshot analysis" }); return;
     }
 
-    const bars    = barsRaw    as OhlcvBar[];
+    const allBars = barsRaw as OhlcvBar[];
     const htfBars = htfBarsRaw as OhlcvBar[];
+
+    // ── Locate the target candle in history ───────────────────────────────────
+    // Build the snapshot only from bars up to and including the requested candle
+    // so indicators/structure are computed at the exact moment of that close.
+    const targetIdx = allBars.reduce((best, b, i) =>
+      b.time <= candleTime ? i : best, -1);
+
+    if (targetIdx < 49) {
+      res.status(422).json({ error: "Insufficient bars before target candleTime" }); return;
+    }
+
+    const bars = allBars.slice(0, targetIdx + 1);
 
     const snapshot = buildMarketSnapshot(bars, htfBars, htfTf, sym, timeframe, candleTime);
     const decision = await filterCandleWithSnapshot(snapshot);
 
-    // Persist (skip on duplicate candleTime for same symbol+timeframe)
+    // ── Persist — only suppress real duplicate-key violations (PG 23505) ─────
     try {
       await db.insert(aiSnapshotDecisionsTable).values({
         symbol:       sym,
@@ -1249,7 +1263,14 @@ router.post("/signals/snapshot-decision", async (req, res): Promise<void> => {
         snapshotJson: snapshot as unknown as Record<string, unknown>,
       });
     } catch (dbErr) {
-      req.log?.warn({ sym, timeframe, candleTime, dbErr }, "snapshot-decision: duplicate — skipping insert");
+      const pgCode = (dbErr as { code?: string }).code;
+      if (pgCode === "23505") {
+        // Unique-key violation — this candle was already evaluated, return cached decision
+        req.log?.info({ sym, timeframe, candleTime }, "snapshot-decision: duplicate candle — returning existing decision");
+      } else {
+        req.log?.error({ err: dbErr, sym, timeframe, candleTime }, "snapshot-decision: DB insert failed");
+        throw dbErr;
+      }
     }
 
     res.json(decision);
@@ -1260,6 +1281,7 @@ router.post("/signals/snapshot-decision", async (req, res): Promise<void> => {
 });
 
 // ── GET /signals/snapshot-decisions ───────────────────────────────────────────
+// Query-param form: ?symbol=TSLA&timeframe=5m&limit=50
 router.get("/signals/snapshot-decisions", async (req, res): Promise<void> => {
   const sym = (String(req.query.symbol ?? "")).toUpperCase().trim();
   const tf  = String(req.query.timeframe ?? "5m");
@@ -1280,6 +1302,31 @@ router.get("/signals/snapshot-decisions", async (req, res): Promise<void> => {
     )
     .orderBy(desc(aiSnapshotDecisionsTable.createdAt))
     .limit(lim);
+
+  res.json(rows);
+});
+
+// ── GET /signals/snapshot-decision/:symbol/:timeframe ─────────────────────────
+// Path form (task contract): returns last 50 decisions for symbol+timeframe.
+router.get("/signals/snapshot-decision/:symbol/:timeframe", async (req, res): Promise<void> => {
+  const sym = (req.params.symbol ?? "").toUpperCase().trim();
+  const tf  = req.params.timeframe ?? "5m";
+
+  if (!sym) {
+    res.status(400).json({ error: "symbol is required" }); return;
+  }
+
+  const rows = await db
+    .select()
+    .from(aiSnapshotDecisionsTable)
+    .where(
+      and(
+        eq(aiSnapshotDecisionsTable.symbol, sym),
+        eq(aiSnapshotDecisionsTable.timeframe, tf),
+      ),
+    )
+    .orderBy(desc(aiSnapshotDecisionsTable.createdAt))
+    .limit(50);
 
   res.json(rows);
 });

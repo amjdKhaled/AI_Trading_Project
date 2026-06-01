@@ -381,7 +381,7 @@ paths:
     get:
       operationId: listSnapshotDecisions
       tags: [signals]
-      summary: List recent snapshot decisions for a symbol and timeframe
+      summary: List recent snapshot decisions for a symbol and timeframe (query-param form)
       parameters:
         - name: symbol
           in: query
@@ -404,6 +404,32 @@ paths:
       responses:
         "200":
           description: Array of snapshot decisions, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SnapshotDecisionRow"
+
+  /signals/snapshot-decision/{symbol}/{timeframe}:
+    get:
+      operationId: getSnapshotDecisionHistory
+      tags: [signals]
+      summary: List recent snapshot decisions for a symbol and timeframe (path form, last 50)
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: timeframe
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Array of snapshot decisions, newest first (last 50)
           content:
             application/json:
               schema:
