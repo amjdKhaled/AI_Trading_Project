@@ -1057,14 +1057,45 @@ interface AiDecisionStatsData {
   byRegime: Record<string, AiDecisionRegimeStat>;
 }
 
+interface RecentDecisionMemory {
+  candleTime:           number;
+  candidateSide:        string;
+  verdict:              string;
+  confidence:           number;
+  regime:               string;
+  memoryUsed?:          boolean;
+  lessonsLoaded?:       number;
+  winnerAnalysisLoaded?: boolean;
+  failureStatsLoaded?:   boolean;
+  recentLossLoaded?:     boolean;
+  memoryImpactScore?:   number;
+}
+
 function AiDecisionStatsCard({
   stats,
   loading,
+  activeSymbol,
 }: {
-  stats:   AiDecisionStatsData | null;
-  loading: boolean;
+  stats:         AiDecisionStatsData | null;
+  loading:       boolean;
+  activeSymbol?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [recentDecisions, setRecentDecisions] = useState<RecentDecisionMemory[]>([]);
+  const [recentDLoading, setRecentDLoading]   = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    setRecentDLoading(true);
+    const qs = activeSymbol ? `?symbol=${encodeURIComponent(activeSymbol)}&limit=10` : "?limit=10";
+    fetch(`${BASE}/api/signals/ai-recent-decisions${qs}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { ok: boolean; decisions: RecentDecisionMemory[] } | null) => {
+        setRecentDecisions(data?.decisions ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setRecentDLoading(false));
+  }, [expanded, activeSymbol]);
 
   if (loading) {
     return <div className="h-24 bg-muted rounded animate-pulse" />;
@@ -1168,19 +1199,70 @@ function AiDecisionStatsCard({
       )}
       {expanded && (
         <div className="border-t border-border bg-background/60 px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-            Active Memory Sources
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+            Recent Decision Memory Diagnostics
           </div>
-          <div className="flex flex-wrap gap-1 mb-1.5">
-            {["Trade History", "Winner/Loser Analysis", "Failure Categories", "Recent Loss"].map(src => (
-              <span key={src} className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
-                ● {src}
-              </span>
-            ))}
-          </div>
-          <p className="text-[9px] text-muted-foreground">
-            All 4 sources injected into every live candle decision prompt.
-          </p>
+          {recentDLoading ? (
+            <div className="h-8 bg-muted/40 rounded animate-pulse" />
+          ) : recentDecisions.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground">No decisions recorded yet.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {recentDecisions.map((d) => {
+                const ts   = new Date(d.candleTime * 1000);
+                const hhmm = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                const date = ts.toLocaleDateString([], { month: "short", day: "numeric" });
+                const vColor =
+                  d.verdict === "APPROVE" ? "text-emerald-400" :
+                  d.verdict === "REJECT"  ? "text-red-400"     : "text-amber-400";
+                const sColor =
+                  d.candidateSide === "long"  ? "text-emerald-400" :
+                  d.candidateSide === "short" ? "text-red-400"     : "text-muted-foreground";
+                const memOk   = d.memoryUsed === true;
+                const impScore = d.memoryImpactScore ?? 0;
+                const impColor = impScore >= 70 ? "text-violet-400" : impScore >= 40 ? "text-blue-400" : "text-muted-foreground";
+                return (
+                  <div key={d.candleTime} className="flex items-center gap-1.5 text-[10px] font-mono border border-border/40 rounded px-2 py-1 bg-background/40">
+                    <span className="text-muted-foreground w-16 flex-shrink-0">{date} {hhmm}</span>
+                    <span className={`w-10 font-semibold flex-shrink-0 ${vColor}`}>{d.verdict.slice(0, 3)}</span>
+                    <span className={`w-10 flex-shrink-0 ${sColor}`}>{d.candidateSide === "no_trade" ? "–" : d.candidateSide.toUpperCase()}</span>
+                    <span className="text-muted-foreground w-14 flex-shrink-0 truncate">{d.regime || "–"}</span>
+                    {/* Memory Used badge */}
+                    <span className={`px-1 py-0 rounded text-[9px] border flex-shrink-0 ${
+                      memOk
+                        ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
+                        : "bg-muted/30 text-muted-foreground border-border/40"
+                    }`}>
+                      {memOk ? "MEM ✓" : "MEM ✗"}
+                    </span>
+                    {/* Lessons count */}
+                    {memOk && (
+                      <span className="text-muted-foreground flex-shrink-0">
+                        {d.lessonsLoaded ?? 0}L
+                      </span>
+                    )}
+                    {/* Active source pills */}
+                    {memOk && (
+                      <div className="flex gap-0.5 flex-shrink-0">
+                        {d.winnerAnalysisLoaded && <span className="text-[8px] px-0.5 rounded bg-emerald-500/10 text-emerald-400">W</span>}
+                        {d.failureStatsLoaded   && <span className="text-[8px] px-0.5 rounded bg-red-500/10 text-red-400">F</span>}
+                        {d.recentLossLoaded     && <span className="text-[8px] px-0.5 rounded bg-amber-500/10 text-amber-400">L</span>}
+                      </div>
+                    )}
+                    {/* Impact score */}
+                    {memOk && (
+                      <span className={`ml-auto flex-shrink-0 font-bold ${impColor}`}>
+                        {impScore}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+              <p className="text-[9px] text-muted-foreground mt-1">
+                MEM=memory used · L=lessons · W=winner · F=failure · L=loss · score=impact (0-100)
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1702,7 +1784,7 @@ export default function AiMemoryPage() {
         </div>
 
         {/* AI Decision Engine stats */}
-        <AiDecisionStatsCard stats={decisionStats} loading={decisionStatsLoading} />
+        <AiDecisionStatsCard stats={decisionStats} loading={decisionStatsLoading} activeSymbol={activeSymbol} />
 
         {/* Diagnostics panel */}
         <div className="mt-2">

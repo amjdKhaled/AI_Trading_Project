@@ -620,6 +620,59 @@ router.get("/signals/ai-decisions-history", async (req, res): Promise<void> => {
   }
 });
 
+// ── GET /signals/ai-recent-decisions ─────────────────────────
+// Returns the last N decisions (all verdicts) with memory diagnostics extracted
+// from technicalContext. Used by the AI Engine per-decision diagnostics UI.
+router.get("/signals/ai-recent-decisions", async (req, res): Promise<void> => {
+  const symbol    = typeof req.query.symbol    === "string" ? req.query.symbol    : null;
+  const timeframe = typeof req.query.timeframe === "string" ? req.query.timeframe : null;
+  const limit     = Math.min(Number(req.query.limit) || 15, 50);
+
+  try {
+    const conditions: SQL[] = [];
+    if (symbol)    conditions.push(eq(aiDecisionsTable.symbol,    symbol.toUpperCase().trim()));
+    if (timeframe) conditions.push(eq(aiDecisionsTable.timeframe, timeframe));
+
+    const base = db.select({
+      candleTime:       aiDecisionsTable.candleTime,
+      candidateSide:    aiDecisionsTable.candidateSide,
+      verdict:          aiDecisionsTable.verdict,
+      confidence:       aiDecisionsTable.confidence,
+      regime:           aiDecisionsTable.regime,
+      technicalContext: aiDecisionsTable.technicalContext,
+    }).from(aiDecisionsTable);
+
+    const rows = await (
+      conditions.length === 0 ? base :
+      conditions.length === 1 ? base.where(conditions[0]!) :
+      base.where(and(...conditions))
+    ).orderBy(desc(aiDecisionsTable.candleTime)).limit(limit);
+
+    res.json({
+      ok: true,
+      decisions: rows.map(r => {
+        const tc = (r.technicalContext ?? {}) as Record<string, unknown>;
+        return {
+          candleTime:           Math.floor(new Date(r.candleTime).getTime() / 1000),
+          candidateSide:        r.candidateSide ?? "no_trade",
+          verdict:              r.verdict,
+          confidence:           r.confidence,
+          regime:               r.regime ?? "",
+          memoryUsed:           tc.memoryUsed           as boolean | undefined,
+          lessonsLoaded:        tc.lessonsLoaded         as number  | undefined,
+          winnerAnalysisLoaded: tc.winnerAnalysisLoaded  as boolean | undefined,
+          failureStatsLoaded:   tc.failureStatsLoaded    as boolean | undefined,
+          recentLossLoaded:     tc.recentLossLoaded      as boolean | undefined,
+          memoryImpactScore:    tc.memoryImpactScore     as number  | undefined,
+        };
+      }),
+    });
+  } catch (err) {
+    req.log?.error({ err }, "ai-recent-decisions lookup failed");
+    res.status(500).json({ error: "Failed to fetch recent AI decisions" });
+  }
+});
+
 // ── GET /signals/ai-decision-stats ───────────────────────────
 router.get("/signals/ai-decision-stats", async (req, res): Promise<void> => {
   const query = GetAiDecisionStatsQueryParams.safeParse(req.query);

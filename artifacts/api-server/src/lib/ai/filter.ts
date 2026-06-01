@@ -197,17 +197,21 @@ async function buildCandleMemoryContext(ctx: MarketContext): Promise<{
       }
     }
     if (recentLessons.length > 0) {
-      lines.push("RECENT AI LEARNING (all symbols, newest first):");
+      lines.push("MEMORY LESSONS (all symbols, newest first):");
       for (const l of recentLessons) lines.push(`  • ${l.lesson}`);
     }
     if (winnerAnalysisLoaded) {
-      lines.push(`WINNER/LOSER ANALYSIS:\n${winnerSummary}`);
+      const wLines = winnerSummary.split("\n  ");
+      const winnerLine = wLines.find(l => l.trim().startsWith("Winners"));
+      const loserLine  = wLines.find(l => l.trim().startsWith("Top loss"));
+      if (winnerLine) lines.push(`WINNER ANALYSIS:\n  ${winnerLine.trim()}`);
+      if (loserLine)  lines.push(`LOSER ANALYSIS:\n  ${loserLine.trim()}`);
     }
     if (failureStatsLoaded) {
-      lines.push(`FAILURE CATEGORY STATS:\n${failureStats}`);
+      lines.push(`FAILURE CATEGORIES:\n${failureStats}`);
     }
     if (recentLossLoaded) {
-      lines.push(`MOST RECENT LOSS REASONING:\n${recentLoss}`);
+      lines.push(`MOST RECENT LOSS:\n${recentLoss}`);
     }
 
     const lessonTexts = [
@@ -226,12 +230,24 @@ function computeMemoryImpactScore(mem: {
   winnerAnalysisLoaded: boolean;
   failureStatsLoaded:   boolean;
   recentLossLoaded:     boolean;
-}): number {
+}, diverged = false): number {
   const lessonScore  = Math.min(60, mem.lessons.length * 10);
   const winnerScore  = mem.winnerAnalysisLoaded ? 15 : 0;
   const failureScore = mem.failureStatsLoaded   ? 15 : 0;
   const lossScore    = mem.recentLossLoaded     ? 10 : 0;
-  return Math.min(100, lessonScore + winnerScore + failureScore + lossScore);
+  // Divergence bonus: AI decision differed from the deterministic technical baseline,
+  // suggesting memory context likely influenced the final decision.
+  const divScore     = diverged ? 10 : 0;
+  return Math.min(100, lessonScore + winnerScore + failureScore + lossScore + divScore);
+}
+
+/** Simple deterministic technical bias — used to detect memory-driven divergence. */
+function computeTechnicalBias(ctx: MarketContext): "bullish" | "bearish" | "neutral" {
+  const { ema200, macdHist, rsi14 } = ctx.indicators;
+  const price = ctx.currentBar.close;
+  if (price > ema200 && macdHist > 0 && rsi14 < 70) return "bullish";
+  if (price < ema200 && macdHist < 0 && rsi14 > 30) return "bearish";
+  return "neutral";
 }
 
 // ── Candle-close Trade Intelligence Engine ────────────────────────────────────
@@ -404,14 +420,22 @@ export async function filterCandleWithAi(
 
   // Fetch all memory sources in parallel BEFORE the Ollama call
   const mem = await buildCandleMemoryContext(ctx);
-  const memDiag = {
+  const memBase = {
     memoryUsed:           mem.memoryUsed,
     lessonsLoaded:        mem.lessons.length,
     winnerAnalysisLoaded: mem.winnerAnalysisLoaded,
     failureStatsLoaded:   mem.failureStatsLoaded,
     recentLossLoaded:     mem.recentLossLoaded,
-    memoryImpactScore:    computeMemoryImpactScore(mem),
   };
+  // Deterministic technical baseline — used to detect memory-driven direction divergence
+  const techBias = computeTechnicalBias(ctx);
+  const techDir: "long" | "short" | "no_trade" =
+    techBias === "bullish" ? "long" : techBias === "bearish" ? "short" : "no_trade";
+  // mkMemDiag: builds final diagnostics object; diverged=true adds +10 to impact score
+  const mkMemDiag = (diverged = false) => ({
+    ...memBase,
+    memoryImpactScore: computeMemoryImpactScore(mem, diverged),
+  });
 
   const techCtx: Record<string, unknown> = {
     rsi14:    ctx.indicators.rsi14,  ema20:    ctx.indicators.ema20,
@@ -433,7 +457,7 @@ export async function filterCandleWithAi(
     );
   } catch (err) {
     logger.warn({ symbol: ctx.symbol, timeframe: ctx.timeframe, err }, "Ollama candle decision timed out");
-    return { ...noTrade(ctx, "Ollama request timed out — defaulting to WAIT."), ...memDiag };
+    return { ...noTrade(ctx, "Ollama request timed out — defaulting to WAIT."), ...mkMemDiag() };
   }
 
   try {
@@ -442,6 +466,10 @@ export async function filterCandleWithAi(
     const rawDec    = typeof p.decision === "string" ? p.decision.toUpperCase() : "WAIT";
     const direction: "long" | "short" | "no_trade" =
       rawDec === "LONG" ? "long" : rawDec === "SHORT" ? "short" : "no_trade";
+
+    // Divergence: AI picked a direction but deterministic baseline said the opposite.
+    // This proxy indicates memory context likely influenced the final call.
+    const diverged = techDir !== "no_trade" && direction !== "no_trade" && direction !== techDir;
 
     const conf = typeof p.confidence === "number"
       ? Math.max(0, Math.min(100, Math.round(p.confidence))) : 0;
@@ -474,7 +502,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
-        ...memDiag,
+        ...mkMemDiag(diverged),
       };
     }
 
@@ -491,7 +519,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
-        ...memDiag,
+        ...mkMemDiag(diverged),
       };
     }
 
@@ -510,7 +538,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
-        ...memDiag,
+        ...mkMemDiag(diverged),
       };
     }
     if (direction === "short" && dS !== null && dS < 0.5) {
@@ -525,7 +553,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
-        ...memDiag,
+        ...mkMemDiag(diverged),
       };
     }
 
@@ -545,11 +573,11 @@ export async function filterCandleWithAi(
       regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
       patterns: ctx.candlestickPatterns,
       strengths, weaknesses, marketBias, technicalContext: techCtx,
-      ...memDiag,
+      ...mkMemDiag(diverged),
     };
   } catch (parseErr) {
     logger.warn({ parseErr, raw, symbol: ctx.symbol }, "Candle decision JSON parse failed — WAIT");
-    return { ...noTrade(ctx, "AI response could not be parsed — defaulting to WAIT."), ...memDiag };
+    return { ...noTrade(ctx, "AI response could not be parsed — defaulting to WAIT."), ...mkMemDiag() };
   }
 }
 
