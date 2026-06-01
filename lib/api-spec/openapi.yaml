@@ -1753,7 +1753,7 @@ components:
           type: integer
           default: 100
           minimum: 10
-          maximum: 200
+          maximum: 100
 
     PipelineComparisonReport:
       type: object

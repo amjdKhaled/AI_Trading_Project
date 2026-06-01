@@ -11,7 +11,7 @@ export interface PipelineComparisonRequest {
   timeframe?: string;
   /**
      * @minimum 10
-     * @maximum 200
+     * @maximum 100
      */
   barCount?: number;
 }

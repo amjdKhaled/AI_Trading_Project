@@ -556,7 +556,7 @@ No live Ollama calls — uses decisions already stored from live candle-close ev
 export const pipelineComparisonBodyTimeframeDefault = `5m`;
 export const pipelineComparisonBodyBarCountDefault = 100;
 export const pipelineComparisonBodyBarCountMin = 10;
-export const pipelineComparisonBodyBarCountMax = 200;
+export const pipelineComparisonBodyBarCountMax = 100;
 
 
 
