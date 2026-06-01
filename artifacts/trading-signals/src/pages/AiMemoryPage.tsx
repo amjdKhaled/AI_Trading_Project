@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Database, BookOpen, BarChart2, Activity, RefreshCw,
   TrendingUp, TrendingDown, Minus, AlertTriangle, Clock, Filter,
-  GraduationCap, Zap, Brain, CheckCircle, XCircle, Play,
+  GraduationCap, Zap, Brain, CheckCircle, XCircle, Play, FlaskConical,
 } from "lucide-react";
 import { setReplayMarkers, clearReplayMarkers } from "@/lib/replayStore";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
@@ -657,8 +657,8 @@ interface ReplayPassStats {
 }
 interface ReplayCandleResult {
   candleTime: number;
-  noMem:   { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null };
-  withMem: { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null; lessons: string[]; memoryUsed: boolean };
+  noMem:   { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null; outcome?: string };
+  withMem: { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null; lessons: string[]; memoryUsed: boolean; outcome?: string };
 }
 interface ReplayDecisionDiff {
   candleTime: number;
@@ -673,7 +673,10 @@ interface ReplayJobResult {
   noMem:   ReplayPassStats;
   withMem: ReplayPassStats;
   delta:   { removedByMemory: number; addedByMemory: number; changedByMemory: number; avgConfChange: number; approveRateDelta: number };
-  learningScore: number;
+  learningScore:           number;
+  memoryValueScore?:       number;
+  lossesAvoided?:          number;
+  decisionChangingLessons?: string[];
   decisionDiffs: ReplayDecisionDiff[];
 }
 
@@ -1134,6 +1137,424 @@ function ToolsTab({
   );
 }
 
+// ── Memory Validation Center ──────────────────────────────────
+
+function ScoreCircle({ score, label }: { score: number; label: string }) {
+  const isHigh = score >= 70;
+  const isMid  = score >= 45;
+  const ring   = isHigh ? "border-emerald-500 text-emerald-400" : isMid ? "border-amber-500 text-amber-400" : "border-red-500 text-red-400";
+  return (
+    <div className="flex flex-col items-center gap-2 flex-1">
+      <div className={`w-20 h-20 rounded-full border-4 flex flex-col items-center justify-center ${ring}`}>
+        <span className="text-2xl font-mono font-bold">{score}</span>
+        <span className="text-[9px] text-muted-foreground">/100</span>
+      </div>
+      <div className="text-[10px] font-medium text-center text-foreground leading-tight px-2">{label}</div>
+    </div>
+  );
+}
+
+type ValidationView = "compare" | "noMem" | "withMem";
+
+interface ValidationTabProps extends ToolsTabProps {}
+
+function ValidationTab({
+  replaySymbol, setReplaySymbol, replayTf, setReplayTf,
+  replayLimit, setReplayLimit, replayRunning, replayProgress,
+  replayTotal, replayResult, replayError, onStartReplay, activeSymbol,
+}: ValidationTabProps) {
+  const [view, setView] = useState<ValidationView>("compare");
+
+  const r = replayResult;
+
+  const wrDelta  = r ? r.withMem.winRate - r.noMem.winRate : 0;
+  const pfDelta  = r ? r.withMem.profitFactor - r.noMem.profitFactor : 0;
+  const rrDelta  = r ? r.withMem.avgRR - r.noMem.avgRR : 0;
+  const ddDelta  = r ? r.noMem.maxDrawdown - r.withMem.maxDrawdown : 0;
+
+  const pctStr   = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n * 100)}pp`;
+  const fmtWR    = (n: number) => `${Math.round(n * 100)}%`;
+  const fmtRR    = (n: number) => n > 0 ? n.toFixed(2) : "—";
+  const fmtPF    = (n: number, sim: number) => sim > 0 ? n.toFixed(2) : "—";
+  const fmtDD    = (n: number, sim: number) => sim > 0 ? `${n.toFixed(1)}R` : "—";
+
+  const questions = r ? [
+    {
+      q: "Is AI Memory improving performance?",
+      v: (wrDelta > 0.05 && pfDelta > 0.2) ? "YES" : (wrDelta > 0 || pfDelta > 0) ? "PARTLY" : "NO",
+      e: `WR ${pctStr(wrDelta)} · PF ${pfDelta >= 0 ? "+" : ""}${pfDelta.toFixed(2)}`,
+    },
+    {
+      q: "Is AI Memory changing decisions?",
+      v: r.decisionDiffs.length >= 10 ? "YES" : r.decisionDiffs.length >= 3 ? "PARTLY" : "NO",
+      e: `${r.decisionDiffs.length} divergences · ${r.delta.removedByMemory} removed · ${r.delta.addedByMemory} added`,
+    },
+    {
+      q: "Is AI Memory increasing Win Rate?",
+      v: wrDelta > 0.05 ? "YES" : wrDelta > 0.01 ? "PARTLY" : "NO",
+      e: `${fmtWR(r.noMem.winRate)} → ${fmtWR(r.withMem.winRate)} (${pctStr(wrDelta)})`,
+    },
+    {
+      q: "Is AI Memory reducing losses / drawdown?",
+      v: ddDelta > 1.0 ? "YES" : ddDelta > 0.1 ? "PARTLY" : "NO",
+      e: `Drawdown ${r.noMem.simulated > 0 ? r.noMem.maxDrawdown.toFixed(1) : "—"}R → ${r.withMem.simulated > 0 ? r.withMem.maxDrawdown.toFixed(1) : "—"}R`,
+    },
+    {
+      q: "Is AI Memory preventing bad trades?",
+      v: ((r.lossesAvoided ?? 0) >= 3 || r.delta.removedByMemory >= 5) ? "YES"
+       : ((r.lossesAvoided ?? 0) >= 1 || r.delta.removedByMemory >= 1) ? "PARTLY" : "NO",
+      e: `${r.lossesAvoided ?? 0} confirmed losses prevented · ${r.delta.removedByMemory} trades filtered`,
+    },
+  ] : [];
+
+  const verdictCls = (v: string) =>
+    v === "YES"    ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/8"
+    : v === "PARTLY" ? "text-amber-400 border-amber-500/30 bg-amber-500/8"
+    : "text-red-400 border-red-500/30 bg-red-500/8";
+
+  const lossPreventedExamples = r?.candles?.filter(c =>
+    c.noMem.outcome === "sl_hit" && c.withMem.decision === "WAIT",
+  ).slice(0, 5) ?? [];
+
+  const winAddedExamples = r?.candles?.filter(c =>
+    c.withMem.outcome === "tp_hit" && c.noMem.decision === "WAIT",
+  ).slice(0, 5) ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* Config */}
+      <div className="bg-card border border-border rounded p-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-1.5">
+          <FlaskConical size={11} /> AI Memory Validation Center
+        </div>
+        <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
+          Replays the exact same historical candles twice — Memory OFF vs Memory ON — and generates objective, measurable proof of whether AI memory improves trading performance.
+        </p>
+        <div className="flex gap-2 mb-2">
+          <input
+            value={replaySymbol}
+            onChange={e => setReplaySymbol(e.target.value.toUpperCase())}
+            placeholder={activeSymbol ?? "TSLA"}
+            className="flex-1 h-7 text-xs bg-background border border-border rounded px-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <select
+            value={replayTf}
+            onChange={e => setReplayTf(e.target.value)}
+            className="h-7 text-[11px] bg-background border border-border rounded px-1.5 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="1h">1h</option>
+          </select>
+          <input
+            type="number" min={10} max={200}
+            value={replayLimit}
+            onChange={e => setReplayLimit(Math.max(10, Math.min(200, Number(e.target.value))))}
+            className="w-14 h-7 text-xs bg-background border border-border rounded px-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            title="Candles to replay (10–200)"
+          />
+        </div>
+        <button
+          onClick={onStartReplay}
+          disabled={replayRunning}
+          className="w-full h-8 text-xs rounded bg-violet-600 text-white font-semibold hover:bg-violet-500 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+        >
+          {replayRunning
+            ? <><RefreshCw size={11} className="animate-spin" /> Running validation…</>
+            : <><Play size={11} /> Run Memory Validation</>}
+        </button>
+        {replayRunning && replayTotal > 0 && (
+          <div className="mt-2 space-y-0.5">
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Replaying candles…</span>
+              <span className="font-mono">{replayProgress} / {replayTotal}</span>
+            </div>
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                style={{ width: `${Math.round((replayProgress / replayTotal) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+        {replayError && <p className="mt-2 text-[11px] text-red-400">{replayError}</p>}
+      </div>
+
+      {r && (() => {
+        return (
+          <>
+            {/* View switcher */}
+            <div className="flex gap-px bg-border rounded overflow-hidden text-[11px]">
+              {(["noMem", "withMem", "compare"] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`flex-1 py-1.5 font-medium transition-colors ${
+                    view === v
+                      ? v === "compare"
+                        ? "bg-violet-600 text-white"
+                        : "bg-card text-foreground"
+                      : "bg-muted/60 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {v === "noMem" ? "Memory OFF" : v === "withMem" ? "Memory ON" : "◆ Compare Results"}
+                </button>
+              ))}
+            </div>
+
+            {/* Single-pass view */}
+            {(view === "noMem" || view === "withMem") && (() => {
+              const pass  = view === "noMem" ? r.noMem : r.withMem;
+              const label = view === "noMem" ? "Memory OFF" : "Memory ON";
+              const wins  = pass.simulated > 0 ? Math.round(pass.winRate * pass.simulated) : null;
+              const losses = wins !== null ? pass.simulated - wins : null;
+              const rows: Array<{ l: string; v: string; c?: string }> = [
+                { l: "Total Decisions", v: String(pass.total) },
+                { l: "Approved Trades", v: String(pass.approve), c: "text-emerald-400" },
+                { l: "Waited",          v: String(pass.wait),    c: "text-amber-400" },
+                { l: "Rejected",        v: String(pass.reject),  c: "text-red-400" },
+                { l: "Approve Rate",    v: `${Math.round(pass.approveRate * 100)}%` },
+                { l: "Simulated Trades",v: String(pass.simulated) },
+                { l: "Win Rate",        v: pass.simulated > 0 ? fmtWR(pass.winRate) : "—",
+                    c: pass.winRate >= 0.55 ? "text-emerald-400" : pass.winRate >= 0.45 ? "text-amber-400" : "text-red-400" },
+                { l: "Wins / Losses",   v: wins !== null ? `${wins} / ${losses}` : "—" },
+                { l: "Profit Factor",   v: fmtPF(pass.profitFactor, pass.simulated),
+                    c: pass.profitFactor >= 1.5 ? "text-emerald-400" : pass.profitFactor >= 1.0 ? "text-amber-400" : "text-red-400" },
+                { l: "Avg R:R",         v: fmtRR(pass.avgRR) },
+                { l: "Avg Confidence",  v: `${pass.avgConf}` },
+                { l: "Max Drawdown",    v: fmtDD(pass.maxDrawdown, pass.simulated) },
+                { l: "Trade Grade",     v: pass.simulated > 0 ? pass.avgTradeGrade : "—",
+                    c: pass.avgTradeGrade === "A" ? "text-emerald-400" : pass.avgTradeGrade === "B" ? "text-blue-400" : pass.avgTradeGrade === "C" ? "text-amber-400" : "text-red-400" },
+              ];
+              return (
+                <div className="bg-card border border-border rounded p-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                    {label} — {r.processed} candles · {r.symbol} {r.timeframe}
+                  </div>
+                  <div className="space-y-0 text-[11px] font-mono">
+                    {rows.map(({ l, v, c }) => (
+                      <div key={l} className="flex justify-between py-0.5 border-b border-border/30 last:border-0">
+                        <span className="text-muted-foreground">{l}</span>
+                        <span className={c ?? "text-foreground"}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {view === "withMem" && pass.topLessons.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-[10px] font-semibold text-muted-foreground mb-1.5">Lessons Applied ({pass.topLessons.length})</div>
+                      <ul className="space-y-1">
+                        {pass.topLessons.map((l, i) => (
+                          <li key={i} className="flex gap-1.5 text-[10px]">
+                            <span className="text-violet-400 flex-shrink-0 font-mono">{i + 1}.</span>
+                            <span className="text-foreground">{l}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Compare view */}
+            {view === "compare" && (
+              <div className="space-y-4">
+                {/* Score gauges */}
+                <div className="bg-card border border-border rounded p-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
+                    {r.symbol} {r.timeframe} · {r.processed} candles replayed
+                  </div>
+                  <div className="flex justify-around">
+                    <ScoreCircle score={r.learningScore} label="AI Learning Effectiveness" />
+                    <ScoreCircle score={r.memoryValueScore ?? 0} label="Memory Value Score" />
+                  </div>
+                </div>
+
+                {/* 5 Questions */}
+                <div className="bg-card border border-border rounded p-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">Scientific Validation</div>
+                  <div className="space-y-2">
+                    {questions.map(({ q, v, e }, i) => (
+                      <div key={i} className="flex gap-2 items-start">
+                        <span className={`flex-shrink-0 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border min-w-[44px] text-center ${verdictCls(v)}`}>{v}</span>
+                        <div>
+                          <div className="text-[11px] text-foreground font-medium leading-tight">{q}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{e}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Comparison table */}
+                <div className="bg-card border border-border rounded p-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Performance Comparison</div>
+                  <div className="text-[11px] font-mono">
+                    <div className="grid grid-cols-4 gap-x-1 mb-1 text-[10px] text-muted-foreground">
+                      <div />
+                      <div className="text-center">OFF</div>
+                      <div className="text-center text-violet-400">ON</div>
+                      <div className="text-center">Δ</div>
+                    </div>
+                    {([
+                      { l: "Win Rate",      noV: r.noMem.simulated > 0 ? fmtWR(r.noMem.winRate) : "—",      memV: r.withMem.simulated > 0 ? fmtWR(r.withMem.winRate) : "—",      delta: r.noMem.simulated > 0 && r.withMem.simulated > 0 ? pctStr(wrDelta) : "—", better: wrDelta > 0 },
+                      { l: "Profit Factor", noV: fmtPF(r.noMem.profitFactor, r.noMem.simulated),            memV: fmtPF(r.withMem.profitFactor, r.withMem.simulated),              delta: r.noMem.simulated > 0 && r.withMem.simulated > 0 ? `${pfDelta >= 0 ? "+" : ""}${pfDelta.toFixed(2)}` : "—", better: pfDelta > 0 },
+                      { l: "Avg R:R",       noV: fmtRR(r.noMem.avgRR),                                      memV: fmtRR(r.withMem.avgRR),                                         delta: r.noMem.avgRR > 0 && r.withMem.avgRR > 0 ? `${rrDelta >= 0 ? "+" : ""}${rrDelta.toFixed(2)}` : "—", better: rrDelta > 0 },
+                      { l: "Max Drawdown",  noV: fmtDD(r.noMem.maxDrawdown, r.noMem.simulated),             memV: fmtDD(r.withMem.maxDrawdown, r.withMem.simulated),              delta: r.noMem.simulated > 0 && r.withMem.simulated > 0 ? `${ddDelta >= 0 ? "-" : "+"}${Math.abs(ddDelta).toFixed(1)}R` : "—", better: ddDelta > 0 },
+                      { l: "Wins",          noV: r.noMem.simulated > 0 ? String(Math.round(r.noMem.winRate * r.noMem.simulated)) : "—",     memV: r.withMem.simulated > 0 ? String(Math.round(r.withMem.winRate * r.withMem.simulated)) : "—",    delta: "—", better: r.withMem.winRate * r.withMem.simulated > r.noMem.winRate * r.noMem.simulated },
+                      { l: "Losses",        noV: r.noMem.simulated > 0 ? String(Math.round((1 - r.noMem.winRate) * r.noMem.simulated)) : "—", memV: r.withMem.simulated > 0 ? String(Math.round((1 - r.withMem.winRate) * r.withMem.simulated)) : "—", delta: "—", better: (1 - r.withMem.winRate) * r.withMem.simulated < (1 - r.noMem.winRate) * r.noMem.simulated },
+                      { l: "Avg Conf",      noV: String(r.noMem.avgConf),                                   memV: String(r.withMem.avgConf),                                      delta: `${r.delta.avgConfChange >= 0 ? "+" : ""}${r.delta.avgConfChange}`, better: r.delta.avgConfChange > 0 },
+                      { l: "Trade Grade",   noV: r.noMem.simulated > 0 ? r.noMem.avgTradeGrade : "—",       memV: r.withMem.simulated > 0 ? r.withMem.avgTradeGrade : "—",        delta: "—", better: r.withMem.avgTradeGrade < r.noMem.avgTradeGrade },
+                    ] as Array<{ l: string; noV: string; memV: string; delta: string; better: boolean }>).map(({ l, noV, memV, delta, better }, i) => (
+                      <div key={i} className="grid grid-cols-4 gap-x-1 py-0.5 border-t border-border/40">
+                        <div className="text-muted-foreground truncate text-[10px]">{l}</div>
+                        <div className="text-center">{noV}</div>
+                        <div className="text-center text-violet-300">{memV}</div>
+                        <div className={`text-center text-[10px] ${delta === "—" ? "text-muted-foreground/40" : better ? "text-emerald-400" : "text-red-400/80"}`}>{delta}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Memory Action Metrics */}
+                <div className="bg-card border border-border rounded p-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Memory Action Metrics</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: "Losses Prevented",  value: String(r.lossesAvoided ?? 0),    color: "text-emerald-400" },
+                      { label: "Trades Rejected",   value: String(r.delta.removedByMemory), color: "text-amber-400" },
+                      { label: "Trades Approved",   value: String(r.delta.addedByMemory),   color: "text-violet-400" },
+                      { label: "Changed Decisions", value: String(r.delta.changedByMemory), color: "text-blue-400" },
+                      { label: "Total Divergences", value: String(r.decisionDiffs.length),  color: "text-foreground" },
+                      { label: "Approval Rate Δ",   value: `${r.delta.approveRateDelta >= 0 ? "+" : ""}${Math.round(r.delta.approveRateDelta * 100)}%`, color: r.delta.approveRateDelta >= 0 ? "text-emerald-400" : "text-red-400" },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="bg-background border border-border rounded px-2 py-1.5 text-center">
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5 leading-tight">{label}</div>
+                        <div className={`text-lg font-mono font-bold ${color}`}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Loss Prevented Examples */}
+                {lossPreventedExamples.length > 0 && (
+                  <div className="bg-card border border-border rounded p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 mb-2 flex items-center gap-1.5">
+                      <CheckCircle size={10} /> Memory Prevented These Losses ({lossPreventedExamples.length})
+                    </div>
+                    <div className="space-y-2">
+                      {lossPreventedExamples.map((c, i) => {
+                        const ts = new Date(c.candleTime * 1000);
+                        return (
+                          <div key={i} className="text-[10px] bg-emerald-500/5 border border-emerald-500/20 rounded p-2">
+                            <div className="flex justify-between mb-1">
+                              <span className="font-mono text-muted-foreground">
+                                {ts.toLocaleDateString([], { month: "short", day: "numeric" })} {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              <span className="text-emerald-400 font-medium">Loss prevented ✓</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-3 font-mono text-[10px]">
+                              <div><span className="text-muted-foreground">No-Mem: </span><span className="text-red-400">{c.noMem.decision} → SL HIT</span></div>
+                              <div><span className="text-muted-foreground">With-Mem: </span><span className="text-emerald-400">WAIT (filtered)</span></div>
+                              <div><span className="text-muted-foreground">Conf: </span><span>{c.noMem.confidence}</span></div>
+                              {c.noMem.rr != null && <div><span className="text-muted-foreground">RR: </span><span>{c.noMem.rr.toFixed(2)}</span></div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Win Added Examples */}
+                {winAddedExamples.length > 0 && (
+                  <div className="bg-card border border-border rounded p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-400 mb-2 flex items-center gap-1.5">
+                      <Zap size={10} /> Memory Added These Wins ({winAddedExamples.length})
+                    </div>
+                    <div className="space-y-2">
+                      {winAddedExamples.map((c, i) => {
+                        const ts = new Date(c.candleTime * 1000);
+                        return (
+                          <div key={i} className="text-[10px] bg-violet-500/5 border border-violet-500/20 rounded p-2">
+                            <div className="flex justify-between mb-1">
+                              <span className="font-mono text-muted-foreground">
+                                {ts.toLocaleDateString([], { month: "short", day: "numeric" })} {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              <span className="text-violet-400 font-medium">Win added ✓</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-3 font-mono text-[10px]">
+                              <div><span className="text-muted-foreground">No-Mem: </span><span className="text-muted-foreground">WAIT (skipped)</span></div>
+                              <div><span className="text-muted-foreground">With-Mem: </span><span className="text-violet-400">{c.withMem.decision} → TP HIT</span></div>
+                              {c.withMem.rr != null && c.withMem.rr > 0 && <div><span className="text-muted-foreground">Return: </span><span className="text-emerald-400">+{c.withMem.rr.toFixed(2)}R</span></div>}
+                              <div><span className="text-muted-foreground">Conf: </span><span>{c.withMem.confidence}</span></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Top 20 Valuable Lessons */}
+                {r.withMem.topLessons.length > 0 && (
+                  <div className="bg-card border border-border rounded p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                      Top {r.withMem.topLessons.length} Most Valuable Lessons Applied
+                    </div>
+                    <ul className="space-y-1">
+                      {r.withMem.topLessons.map((l, i) => (
+                        <li key={i} className="flex gap-2 text-[10px]">
+                          <span className="text-violet-400 flex-shrink-0 w-5 text-right font-mono">{i + 1}.</span>
+                          <span className="text-foreground">{l}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Top 20 Decision-Changing Lessons */}
+                {(r.decisionChangingLessons?.length ?? 0) > 0 && (
+                  <div className="bg-card border border-border rounded p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-400 mb-2">
+                      Top {r.decisionChangingLessons!.length} Lessons That Changed Decisions
+                    </div>
+                    <ul className="space-y-1">
+                      {r.decisionChangingLessons!.map((l, i) => (
+                        <li key={i} className="flex gap-2 text-[10px]">
+                          <span className="text-amber-400 flex-shrink-0 w-5 text-right font-mono">{i + 1}.</span>
+                          <span className="text-foreground">{l}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Patterns memory still rejected */}
+                {r.withMem.topRejectLessons.length > 0 && (
+                  <div className="bg-card border border-border rounded p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-red-400/80 mb-2">
+                      Top Patterns Memory Still Rejected
+                    </div>
+                    <ul className="space-y-1">
+                      {r.withMem.topRejectLessons.slice(0, 10).map((l, i) => (
+                        <li key={i} className="flex gap-2 text-[10px]">
+                          <span className="text-red-400/60 flex-shrink-0 w-5 text-right font-mono">{i + 1}.</span>
+                          <span className="text-muted-foreground">{l}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        );
+      })()}
+    </div>
+  );
+}
+
 // ── Skeleton loader ───────────────────────────────────────────
 
 function LoadingSkeleton() {
@@ -1412,14 +1833,15 @@ interface DiagData {
 
 // ── Main page ─────────────────────────────────────────────────
 
-type TabId = "lessons" | "patterns" | "regimes" | "setups" | "tools";
+type TabId = "lessons" | "patterns" | "regimes" | "setups" | "tools" | "validation";
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: "lessons",  label: "Lessons",  icon: <BookOpen size={11} /> },
-  { id: "patterns", label: "Patterns", icon: <Activity size={11} /> },
-  { id: "regimes",  label: "Regimes",  icon: <BarChart2 size={11} /> },
-  { id: "setups",   label: "Setups",   icon: <TrendingUp size={11} /> },
-  { id: "tools",    label: "Tools",    icon: <Brain size={11} /> },
+  { id: "lessons",    label: "Lessons",    icon: <BookOpen size={11} /> },
+  { id: "patterns",   label: "Patterns",   icon: <Activity size={11} /> },
+  { id: "regimes",    label: "Regimes",    icon: <BarChart2 size={11} /> },
+  { id: "setups",     label: "Setups",     icon: <TrendingUp size={11} /> },
+  { id: "tools",      label: "Tools",      icon: <Brain size={11} /> },
+  { id: "validation", label: "Validation", icon: <FlaskConical size={11} /> },
 ];
 
 export default function AiMemoryPage() {
@@ -1994,6 +2416,33 @@ export default function AiMemoryPage() {
         {activeTab === "regimes"  && <RegimesTab  regimes={regimes}   loading={tabLoading} />}
         {activeTab === "setups"   && <SetupsTab   memory={memory}     loading={false} />}
         {activeTab === "tools"    && <ToolsTab
+          ollamaStatus={ollamaStatus}
+          activeSymbol={activeSymbol}
+          closedSignals={closedSignals}
+          reflectId={reflectId}
+          setReflectId={setReflectId}
+          reflecting={reflecting}
+          reflectResult={reflectResult}
+          onReflect={handleReflect}
+          batchSymbol={batchSymbol}
+          setBatchSymbol={setBatchSymbol}
+          batching={batching}
+          batchResult={batchResult}
+          onBatchImport={handleBatchImport}
+          replaySymbol={replaySymbol}
+          setReplaySymbol={setReplaySymbol}
+          replayTf={replayTf}
+          setReplayTf={setReplayTf}
+          replayLimit={replayLimit}
+          setReplayLimit={setReplayLimit}
+          replayRunning={replayRunning}
+          replayProgress={replayProgress}
+          replayTotal={replayTotal}
+          replayResult={replayResult}
+          replayError={replayError}
+          onStartReplay={handleStartReplay}
+        />}
+        {activeTab === "validation" && <ValidationTab
           ollamaStatus={ollamaStatus}
           activeSymbol={activeSymbol}
           closedSignals={closedSignals}

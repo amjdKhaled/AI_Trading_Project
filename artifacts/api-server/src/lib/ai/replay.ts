@@ -20,8 +20,8 @@ export interface ReplayPassResult {
 
 export interface ReplayCandleResult {
   candleTime: number;
-  noMem:   Omit<ReplayPassResult, "lessons" | "memoryUsed">;
-  withMem: ReplayPassResult;
+  noMem:   Omit<ReplayPassResult, "lessons" | "memoryUsed"> & { outcome?: string };
+  withMem: ReplayPassResult & { outcome?: string };
 }
 
 export interface ReplayDecisionDiff {
@@ -68,15 +68,18 @@ export interface ReplayDelta {
 }
 
 export interface ReplayResult {
-  symbol:        string;
-  timeframe:     string;
-  processed:     number;
-  candles:       ReplayCandleResult[];
-  noMem:         ReplayPassStats;
-  withMem:       ReplayPassStats;
-  delta:         ReplayDelta;
-  learningScore: number;
-  decisionDiffs: ReplayDecisionDiff[];
+  symbol:                   string;
+  timeframe:                string;
+  processed:                number;
+  candles:                  ReplayCandleResult[];
+  noMem:                    ReplayPassStats;
+  withMem:                  ReplayPassStats;
+  delta:                    ReplayDelta;
+  learningScore:            number;
+  memoryValueScore:         number;
+  lossesAvoided:            number;
+  decisionChangingLessons:  string[];
+  decisionDiffs:            ReplayDecisionDiff[];
 }
 
 export type OnReplayProgress = (done: number, total: number) => void;
@@ -141,6 +144,28 @@ function passStats(
     simulated:     acc.wins + acc.losses,
     avgTradeGrade: tradeGrade(winRate, profitFactor),
   };
+}
+
+/**
+ * 0–100 memory value score:
+ *   40 pts — Loss avoidance (each avoided loss = 4 pts; 10 = max)
+ *   30 pts — Win rate improvement (each +1pp = 3 pts; +10pp = max)
+ *   20 pts — Profit factor improvement (each +0.1 PF = 2 pts; +1.0 = max)
+ *   10 pts — Trade filtration (each memory-removed = 1 pt; 10 = max)
+ */
+function computeMemoryValueScore(
+  noMem:          Pick<ReplayPassStats, "winRate" | "profitFactor">,
+  withMem:        Pick<ReplayPassStats, "winRate" | "profitFactor">,
+  lossesAvoided:  number,
+  removedByMem:   number,
+): number {
+  const lossAvoidPts = Math.min(40, lossesAvoided * 4);
+  const wrDelta      = withMem.winRate - noMem.winRate;
+  const wrPts        = Math.max(0, Math.min(30, Math.round(wrDelta * 300)));
+  const pfDelta      = withMem.profitFactor - noMem.profitFactor;
+  const pfPts        = Math.max(0, Math.min(20, Math.round(pfDelta * 20)));
+  const removedPts   = Math.min(10, removedByMem);
+  return Math.max(0, Math.min(100, lossAvoidPts + wrPts + pfPts + removedPts));
 }
 
 /**
@@ -236,16 +261,6 @@ export async function runReplay(
       const noMem   = await runCandlePassForReplay(ctx, stats, false);
       const withMem = await runCandlePassForReplay(ctx, stats, true);
 
-      candles.push({
-        candleTime,
-        noMem: {
-          decision: noMem.decision, confidence: noMem.confidence,
-          entry: noMem.entry, stopLoss: noMem.stopLoss,
-          takeProfit: noMem.takeProfit, rr: noMem.rr,
-        },
-        withMem,
-      });
-
       noMemConfs.push(noMem.confidence);
       withMemConfs.push(withMem.confidence);
       if (noMem.rr   !== null && noMem.rr   > 0) noMemRRs.push(noMem.rr);
@@ -263,6 +278,7 @@ export async function runReplay(
       // Lifecycle simulation — noMem approved signals (run first for outcome-aware lossesAvoided)
       const noMemSide = noMem.decision === "LONG" ? "long" : noMem.decision === "SHORT" ? "short" : null;
       let noMemOutcome: string | null = null;
+      let withMemOutcome: string | null = null;
       if (
         noMemCls === "approve" && noMemSide &&
         noMem.entry != null && noMem.stopLoss != null && noMem.takeProfit != null
@@ -288,6 +304,7 @@ export async function runReplay(
             bars, i, withSide as "long" | "short",
             withMem.entry, withMem.stopLoss, withMem.takeProfit,
           );
+          withMemOutcome = lc.state;
           recordOutcome(withMemAcc, lc.state, withMem.rr ?? 1.5);
         } catch { /* skip */ }
       }
@@ -319,6 +336,18 @@ export async function runReplay(
       if (noMemOutcome === "sl_hit" && memCls !== "approve") {
         noMemLossesAvoided++;
       }
+
+      // Record candle result with lifecycle outcomes for trade examples display
+      candles.push({
+        candleTime,
+        noMem: {
+          decision: noMem.decision, confidence: noMem.confidence,
+          entry: noMem.entry, stopLoss: noMem.stopLoss,
+          takeProfit: noMem.takeProfit, rr: noMem.rr,
+          outcome: noMemOutcome ?? undefined,
+        },
+        withMem: { ...withMem, outcome: withMemOutcome ?? undefined },
+      });
 
     } catch (err) {
       logger.warn({ err, symbol, candleTime }, "replay candle failed — skipping");
@@ -381,8 +410,8 @@ export async function runReplay(
     maxDrawdown:      withMemSim.maxDrawdown,
     simulated:        withMemSim.simulated,
     avgTradeGrade:    withMemSim.avgTradeGrade,
-    topLessons:       topN(lessonsBag),
-    topRejectLessons: topN(rejectLessonsBag),
+    topLessons:       topN(lessonsBag, 20),
+    topRejectLessons: topN(rejectLessonsBag, 20),
   };
 
   const removedByMem = decisionDiffs.filter(d => d.direction === "memory_removed").length;
@@ -391,7 +420,11 @@ export async function runReplay(
     d.direction === "conf_boost" || d.direction === "conf_drop" || d.direction === "direction_flipped",
   ).length;
 
-  const learningScore = computeLearningScore(noMemStats, withMemStats, noMemLossesAvoided);
+  const learningScore    = computeLearningScore(noMemStats, withMemStats, noMemLossesAvoided);
+  const memoryValueScore = computeMemoryValueScore(noMemStats, withMemStats, noMemLossesAvoided, removedByMem);
+
+  const changingLessonBag      = decisionDiffs.map(d => d.keyLesson).filter(Boolean) as string[];
+  const decisionChangingLessons = topN(changingLessonBag, 20);
 
   return {
     symbol, timeframe,
@@ -410,6 +443,9 @@ export async function runReplay(
       ) / 1000,
     },
     learningScore,
+    memoryValueScore,
+    lossesAvoided: noMemLossesAvoided,
+    decisionChangingLessons,
     decisionDiffs,
   };
 }

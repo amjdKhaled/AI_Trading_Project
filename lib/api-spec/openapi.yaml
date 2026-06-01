@@ -1289,6 +1289,19 @@ components:
           description: 0–100 composite learning effectiveness score
           minimum: 0
           maximum: 100
+        memoryValueScore:
+          type: integer
+          description: 0–100 memory value score (loss avoidance, WR improvement, PF improvement, trade filtration)
+          minimum: 0
+          maximum: 100
+        lossesAvoided:
+          type: integer
+          description: Count of noMem sl_hit outcomes that memory prevented by not approving the trade
+        decisionChangingLessons:
+          type: array
+          description: Top 20 lessons most frequently associated with memory-driven decision divergences
+          items:
+            type: string
         decisionDiffs:
           type: array
           description: Candles where noMem and withMem verdicts diverged
