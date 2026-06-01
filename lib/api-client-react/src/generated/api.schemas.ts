@@ -5,6 +5,14 @@
  * Trading Signal Platform API
  * OpenAPI spec version: 0.1.0
  */
+export interface NewsItem {
+  title: string;
+  publishedUtc: string;
+  articleUrl: string;
+  source: string;
+  tickers: string[];
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -998,5 +1006,13 @@ export type GetReplayStatus404 = {
 
 export type GetHistoricalReplayStatus404 = {
   error?: string;
+};
+
+export type GetNewsParams = {
+symbol: string;
+/**
+ * @maximum 50
+ */
+limit?: number;
 };
 

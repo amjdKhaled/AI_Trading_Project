@@ -849,3 +849,26 @@ export const GetHistoricalReplayStatusResponse = zod.object({
 })
 
 
+/**
+ * @summary Get recent news headlines for a symbol
+ */
+export const getNewsQueryLimitDefault = 10;
+export const getNewsQueryLimitMax = 50;
+
+
+
+export const GetNewsQueryParams = zod.object({
+  "symbol": zod.coerce.string(),
+  "limit": zod.coerce.number().max(getNewsQueryLimitMax).default(getNewsQueryLimitDefault)
+})
+
+export const GetNewsResponseItem = zod.object({
+  "title": zod.string(),
+  "publishedUtc": zod.coerce.date(),
+  "articleUrl": zod.string(),
+  "source": zod.string(),
+  "tickers": zod.array(zod.string())
+})
+export const GetNewsResponse = zod.array(GetNewsResponseItem)
+
+

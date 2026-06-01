@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 import { WatchlistPanel } from "@/components/WatchlistPanel";
 import { TradingChart } from "@/components/TradingChart";
 import { SignalPanel } from "@/components/SignalPanel";
+import { NewsPanel } from "@/components/NewsPanel";
 import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 import { useBinanceSocket } from "@/hooks/useBinanceSocket";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
@@ -468,6 +469,8 @@ export default function ChartPage() {
   const [snapshotMode,       setSnapshotMode]        = useState(() => {
     try { return localStorage.getItem("ai-snapshot-mode") === "true"; } catch { return false; }
   });
+
+  const [rightTab, setRightTab] = useState<"signals" | "news">("signals");
 
   // Clear snapshot markers/latest when symbol or timeframe changes to prevent
   // cross-symbol contamination (entries carry candleTime but not symbol key).
@@ -1261,15 +1264,35 @@ export default function ChartPage() {
 
       {/* ── Right panel ── */}
       <div className="w-56 flex-shrink-0 flex flex-col">
+        {/* Signals / News tab bar — stocks only */}
+        {isStocks && (
+          <div className="flex border-b border-border flex-shrink-0">
+            {(["signals", "news"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setRightTab(tab)}
+                className={`flex-1 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  rightTab === tab
+                    ? "text-foreground border-b-2 border-blue-500 -mb-px"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex-1 min-h-0 overflow-hidden">
           {isStocks
-            ? <SignalPanel
-                symbol={activeSymbol}
-                newSignals={wsSignals}
-                activeTrade={activeTrade}
-                onActivateTrade={handleActivateTrade}
-                onCloseTrade={handleCloseTrade}
-              />
+            ? rightTab === "news"
+              ? <NewsPanel symbol={activeSymbol} />
+              : <SignalPanel
+                  symbol={activeSymbol}
+                  newSignals={wsSignals}
+                  activeTrade={activeTrade}
+                  onActivateTrade={handleActivateTrade}
+                  onCloseTrade={handleCloseTrade}
+                />
             : <CryptoLivePanel
                 symbol={cryptoSymbol}
                 connected={connected}
