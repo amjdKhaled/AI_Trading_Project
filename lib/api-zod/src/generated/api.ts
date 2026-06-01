@@ -510,6 +510,7 @@ export const ListSnapshotDecisionsResponseItem = zod.object({
   "grade": zod.enum(['A+', 'A', 'B', 'C', 'WAIT']),
   "strengths": zod.array(zod.string()).optional(),
   "weaknesses": zod.array(zod.string()).optional(),
+  "snapshotJson": zod.record(zod.string(), zod.unknown()).optional().describe('Full MarketSnapshot object stored at decision time (indicators, structure, S\/R, pivots, patterns, HTF context).'),
   "createdAt": zod.coerce.date()
 })
 export const ListSnapshotDecisionsResponse = zod.array(ListSnapshotDecisionsResponseItem)
@@ -538,6 +539,7 @@ export const GetSnapshotDecisionHistoryResponseItem = zod.object({
   "grade": zod.enum(['A+', 'A', 'B', 'C', 'WAIT']),
   "strengths": zod.array(zod.string()).optional(),
   "weaknesses": zod.array(zod.string()).optional(),
+  "snapshotJson": zod.record(zod.string(), zod.unknown()).optional().describe('Full MarketSnapshot object stored at decision time (indicators, structure, S\/R, pivots, patterns, HTF context).'),
   "createdAt": zod.coerce.date()
 })
 export const GetSnapshotDecisionHistoryResponse = zod.array(GetSnapshotDecisionHistoryResponseItem)

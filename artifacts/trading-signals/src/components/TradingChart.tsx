@@ -1392,27 +1392,21 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
             );
           })}
 
-          {/* ── Snapshot markers — amber filled triangles (BUY/SELL, confidence ≥ 75) ── */}
+          {/* ── Snapshot markers — amber filled triangles, labeled "AI·S {conf}%" ── */}
           {snapshotMarkerPositions.map((m) => {
-            const col  = "#f59e0b";
-            const sz   = 8;
-            const pts  = m.isLong
+            const col    = "#f59e0b";
+            const sz     = 8;
+            const pts    = m.isLong
               ? `${m.x},${m.y - sz} ${m.x - sz},${m.y + sz} ${m.x + sz},${m.y + sz}`
               : `${m.x},${m.y + sz} ${m.x - sz},${m.y - sz} ${m.x + sz},${m.y - sz}`;
             const labelY = m.isLong ? m.y + sz + 10 : m.y - sz - 3;
             return (
               <g key={m.key}>
                 <polygon points={pts} fill={col} opacity={0.88} />
-                <text x={m.x} y={m.isLong ? m.y + 2 : m.y - 1}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fill="#0b0e14" fontSize={5}
-                  fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="900">
-                  S
-                </text>
                 <text x={m.x} y={labelY} textAnchor="middle" fill={col}
                   fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace"
                   fontWeight="700" opacity={0.9}>
-                  {m.isLong ? "BUY" : "SELL"} {m.confidence}
+                  AI·S {m.confidence}%
                 </text>
               </g>
             );

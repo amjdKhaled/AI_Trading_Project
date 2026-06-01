@@ -466,6 +466,13 @@ export default function ChartPage() {
   const [latestSnapshot,     setLatestSnapshot]     = useState<SnapshotEntry | null>(null);
   const [snapshotPanelOpen,  setSnapshotPanelOpen]  = useState(false);
 
+  // Clear snapshot markers/latest when symbol or timeframe changes to prevent
+  // cross-symbol contamination (entries carry candleTime but not symbol key).
+  useEffect(() => {
+    setSnapshotEntries([]);
+    setLatestSnapshot(null);
+  }, [activeSymbol, stockTf]);
+
   const [liveModeEnabled, setLiveModeEnabled] = useState(() => {
     try { return localStorage.getItem("live-mode") === "true"; } catch { return false; }
   });

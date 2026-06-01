@@ -90,6 +90,7 @@ export * from './snapshotDecisionGrade';
 export * from './snapshotDecisionRow';
 export * from './snapshotDecisionRowDecision';
 export * from './snapshotDecisionRowGrade';
+export * from './snapshotDecisionRowSnapshotJson';
 export * from './symbol';
 export * from './symbolInput';
 export * from './weeklyTrendSlice';

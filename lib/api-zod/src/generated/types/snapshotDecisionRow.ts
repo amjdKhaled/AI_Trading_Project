@@ -7,6 +7,7 @@
  */
 import type { SnapshotDecisionRowDecision } from './snapshotDecisionRowDecision';
 import type { SnapshotDecisionRowGrade } from './snapshotDecisionRowGrade';
+import type { SnapshotDecisionRowSnapshotJson } from './snapshotDecisionRowSnapshotJson';
 
 export interface SnapshotDecisionRow {
   id: number;
@@ -27,5 +28,7 @@ export interface SnapshotDecisionRow {
   grade: SnapshotDecisionRowGrade;
   strengths?: string[];
   weaknesses?: string[];
+  /** Full MarketSnapshot object stored at decision time (indicators, structure, S/R, pivots, patterns, HTF context). */
+  snapshotJson?: SnapshotDecisionRowSnapshotJson;
   createdAt: Date;
 }

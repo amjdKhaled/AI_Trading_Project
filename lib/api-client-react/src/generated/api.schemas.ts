@@ -771,6 +771,11 @@ export const SnapshotDecisionRowGrade = {
   WAIT: 'WAIT',
 } as const;
 
+/**
+ * Full MarketSnapshot object stored at decision time (indicators, structure, S/R, pivots, patterns, HTF context).
+ */
+export type SnapshotDecisionRowSnapshotJson = {[key: string]: unknown};
+
 export interface SnapshotDecisionRow {
   id: number;
   symbol: string;
@@ -790,6 +795,8 @@ export interface SnapshotDecisionRow {
   grade: SnapshotDecisionRowGrade;
   strengths?: string[];
   weaknesses?: string[];
+  /** Full MarketSnapshot object stored at decision time (indicators, structure, S/R, pivots, patterns, HTF context). */
+  snapshotJson?: SnapshotDecisionRowSnapshotJson;
   createdAt: string;
 }
 
