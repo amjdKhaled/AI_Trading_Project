@@ -1580,10 +1580,18 @@ export const getPipelineComparisonUrl = () => {
 }
 
 /**
- * Runs generateSignals (deterministic, no Ollama) over the last `barCount` historical bars
-and cross-references stored AI snapshot decisions for the same symbol/timeframe window.
-Returns a side-by-side report with signal counts, avg confidence, overlap, and divergence.
-No live Ollama calls — uses decisions already stored from live candle-close events.
+ * Runs BOTH pipelines in-memory on the same historical bar window and returns a side-by-side
+comparison report with signal counts, avg confidence, overlap, divergence, and per-bar
+disagreements.
+
+Old pipeline: generateSignals (deterministic, no Ollama) — fast, always runs.
+
+New pipeline: filterCandleWithSnapshot called for EVERY bar in the window sequentially
+with 200 ms pacing. Pre-gates (relativeVolume < 0.4, Ollama offline) short-circuit most
+bars instantly. Live Ollama calls are made when Ollama is available.
+
+If Ollama is offline the new pipeline falls back to previously stored AI snapshot
+decisions from live candle-close events (snapshotDataAvailable=false when no rows exist).
 
  * @summary Compare classic signal engine vs AI snapshot decisions over a historical window
  */

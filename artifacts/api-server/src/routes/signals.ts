@@ -1334,8 +1334,10 @@ router.get("/signals/snapshot-decision/:symbol/:timeframe", async (req, res): Pr
 // ── POST /signals/pipeline-comparison ─────────────────────────────────────────
 // Runs BOTH pipelines in-memory on the same historical bar window:
 //   Old pipeline: generateSignals (deterministic, no Ollama)
-//   New pipeline: filterCandleWithSnapshot (Ollama) run on each old-pipeline
-//                 signal bar — sequentially with 200 ms rate-limit-safe pacing.
+//   New pipeline: filterCandleWithSnapshot called for EVERY bar in the window
+//                 sequentially with 200 ms rate-limit-safe pacing between Ollama
+//                 calls. Pre-gates (volume < 0.4, Ollama offline) short-circuit
+//                 most bars instantly so the real Ollama call count is low.
 // If Ollama is offline the new pipeline falls back to stored DB rows.
 router.post("/signals/pipeline-comparison", async (req, res): Promise<void> => {
   const { symbol, timeframe = "5m", barCount = 100 } = req.body as {
@@ -1410,22 +1412,25 @@ router.post("/signals/pipeline-comparison", async (req, res): Promise<void> => {
     const ollamaOk = await isOllamaAvailable();
 
     if (ollamaOk) {
-      // In-memory run: evaluate each classic-signal bar through the AI Snapshot pipeline.
-      // Iterate in ascending bar order so indicators are computed on the right slice.
-      const signalTimes = [...oldByTime.keys()].sort((a, b) => a - b);
-      for (const sigTime of signalTimes) {
-        // Slice bars up to and including this candle so indicators are point-in-time.
-        const idx = allBars.findIndex((b) => toSec(b.time) >= sigTime);
-        const targetIdx = idx === -1 ? allBars.length - 1 : idx;
+      // In-memory run: evaluate EVERY bar in the window through the AI Snapshot pipeline.
+      // This is the true A/B comparison — same bar set for both pipelines.
+      // filterCandleWithSnapshot pre-gates low-volume bars instantly (no Ollama call),
+      // so the real Ollama invocation count is much lower than the bar count.
+      // Iterate ascending so bar slices are point-in-time for indicator computation.
+      for (const bar of windowBars) {
+        const barTime   = toSec(bar.time);
+        // allBars index of the last bar ≤ barTime (point-in-time slice)
+        const targetIdx = allBars.reduce((best, b, i) =>
+          toSec(b.time) <= barTime ? i : best, -1);
         if (targetIdx < 49) continue; // need ≥50 bars for indicators
         const barsSlice = allBars.slice(0, targetIdx + 1);
         try {
-          const snapshot = buildMarketSnapshot(barsSlice, htfBars, htfTf, sym, timeframe, sigTime);
+          const snapshot = buildMarketSnapshot(barsSlice, htfBars, htfTf, sym, timeframe, barTime);
           const decision = await filterCandleWithSnapshot(snapshot);
-          newByTime.set(sigTime, { decision: decision.decision, confidence: decision.confidence });
+          newByTime.set(barTime, { decision: decision.decision, confidence: decision.confidence });
           snapshotDataAvailable = true;
         } catch (snapErr) {
-          req.log?.warn({ snapErr, sigTime }, "pipeline-comparison: snapshot call failed for bar");
+          req.log?.warn({ snapErr, barTime }, "pipeline-comparison: snapshot call failed for bar");
         }
         // Rate-limit-safe pacing between sequential Ollama calls
         await sleep(200);
