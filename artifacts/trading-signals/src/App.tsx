@@ -9,6 +9,7 @@ import WatchlistPage from "@/pages/WatchlistPage";
 import AiMemoryPage from "@/pages/AiMemoryPage";
 import AiChartPage from "@/pages/AiChartPage";
 import { ActiveSymbolProvider } from "@/lib/ActiveSymbolContext";
+import { useSignalAlerts } from "@/hooks/useSignalAlerts";
 import { BarChart2, LineChart, ListOrdered, Activity, Database, Eye } from "lucide-react";
 
 const queryClient = new QueryClient({
@@ -58,6 +59,7 @@ function TopNav() {
 }
 
 function AppLayout() {
+  useSignalAlerts();
   return (
     <div className="flex flex-col h-full">
       <TopNav />

@@ -85,6 +85,30 @@ export const ListSignalsResponse = zod.array(ListSignalsResponseItem)
 
 
 /**
+ * @summary Get recent AI signal alerts for watchlist symbols
+ */
+export const GetSignalAlertsQueryParams = zod.object({
+  "since": zod.coerce.number().optional(),
+  "symbols": zod.coerce.string().optional(),
+  "minConfidence": zod.coerce.number().optional()
+})
+
+export const GetSignalAlertsResponseItem = zod.object({
+  "id": zod.number(),
+  "symbol": zod.string(),
+  "timeframe": zod.string(),
+  "verdict": zod.string().describe('LONG or SHORT'),
+  "confidence": zod.number(),
+  "entryPrice": zod.number().nullish(),
+  "rrRatio": zod.number().nullish(),
+  "regime": zod.string().nullish(),
+  "candleTime": zod.coerce.date(),
+  "createdAt": zod.coerce.date()
+})
+export const GetSignalAlertsResponse = zod.array(GetSignalAlertsResponseItem)
+
+
+/**
  * @summary Get aggregated signal statistics
  */
 export const GetSignalStatsQueryParams = zod.object({

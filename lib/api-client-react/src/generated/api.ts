@@ -31,6 +31,7 @@ import type {
   ChartAnalysisResponse,
   GetAiDecisionStatsParams,
   GetReplayStatus404,
+  GetSignalAlertsParams,
   GetSignalStatsParams,
   HealthStatus,
   ListBarsParams,
@@ -40,6 +41,7 @@ import type {
   ReplayStartRequest,
   ReplayStartResponse,
   Signal,
+  SignalAlert,
   SignalStats,
   SimilarityRequest,
   SimilarityResponse,
@@ -426,6 +428,90 @@ export function useListSignals<TData = Awaited<ReturnType<typeof listSignals>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSignalsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetSignalAlertsUrl = (params?: GetSignalAlertsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/signals/alerts?${stringifiedParams}` : `/api/signals/alerts`
+}
+
+/**
+ * @summary Get recent AI signal alerts for watchlist symbols
+ */
+export const getSignalAlerts = async (params?: GetSignalAlertsParams, options?: RequestInit): Promise<SignalAlert[]> => {
+
+  return customFetch<SignalAlert[]>(getGetSignalAlertsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSignalAlertsQueryKey = (params?: GetSignalAlertsParams,) => {
+    return [
+    `/api/signals/alerts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSignalAlertsQueryOptions = <TData = Awaited<ReturnType<typeof getSignalAlerts>>, TError = ErrorType<unknown>>(params?: GetSignalAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSignalAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSignalAlertsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSignalAlerts>>> = ({ signal }) => getSignalAlerts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSignalAlerts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSignalAlertsQueryResult = NonNullable<Awaited<ReturnType<typeof getSignalAlerts>>>
+export type GetSignalAlertsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get recent AI signal alerts for watchlist symbols
+ */
+
+export function useGetSignalAlerts<TData = Awaited<ReturnType<typeof getSignalAlerts>>, TError = ErrorType<unknown>>(
+ params?: GetSignalAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSignalAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSignalAlertsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

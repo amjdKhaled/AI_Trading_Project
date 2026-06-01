@@ -1,0 +1,402 @@
+TASK #1 – FULL AI MEMORY INTEGRATION INTO LIVE CANDLE-CLOSE DECISION ENGINE
+
+OBJECTIVE
+
+The current AI Memory system stores lessons, patterns, reasoning, failure categories, winner analysis, loser analysis, and historical statistics.
+
+However, the live candle-close decision engine still behaves largely as a technical-analysis engine with only limited historical context.
+
+I want AI Memory to become a first-class component of every live decision.
+
+The AI should no longer decide based only on indicators.
+
+It should decide based on:
+
+Current Market State
++
+Technical Analysis
++
+Historical Experience
++
+Memory Lessons
++
+Failure Analysis
++
+Historical Winners
++
+Historical Losers
+
+====================================================
+CURRENT PROBLEM
+===============
+
+The codebase already contains:
+
+buildCandleMemoryContext()
+
+getRecentLessonsFromDb()
+
+getWinnerLoserSummary()
+
+getFailureCategoryStats()
+
+getMostRecentLossReasoning()
+
+findSimilarHistoricalSetups()
+
+These systems exist.
+
+But they are not fully wired into the live candle-close execution path.
+
+As a result:
+
+AI learns.
+
+AI stores lessons.
+
+AI stores reasoning.
+
+AI stores failures.
+
+But the live chart does not properly benefit from this knowledge.
+
+====================================================
+REQUIRED ARCHITECTURE
+=====================
+
+LIVE CANDLE CLOSE
+
+↓
+
+Technical Analysis
+
+↓
+
+AI Memory Retrieval
+
+↓
+
+Prompt Construction
+
+↓
+
+Qwen3 Decision
+
+↓
+
+Trade Approval
+
+↓
+
+Chart Rendering
+
+====================================================
+MEMORY RETRIEVAL STAGE
+======================
+
+Before every AI decision:
+
+Load:
+
+1. Most recent lessons for the current symbol.
+
+2. Most recent lessons for the current regime.
+
+3. Historical winner analysis.
+
+4. Historical loser analysis.
+
+5. Failure category statistics.
+
+6. Most recent loss reasoning.
+
+7. Historical setup performance.
+
+8. Historical symbol statistics.
+
+9. Historical RR performance.
+
+10. Similar historical setups.
+
+====================================================
+LESSON RETRIEVAL
+================
+
+For every symbol:
+
+TSLA
+
+NVDA
+
+META
+
+AAPL
+
+AMD
+
+etc.
+
+Load:
+
+Recent wins
+
+Recent losses
+
+Recent AI reasoning
+
+Recent lesson summaries
+
+Recent failure explanations
+
+Do not inject generic lessons.
+
+Inject lessons relevant to:
+
+Current symbol
+
+Current regime
+
+Current setup
+
+Current trend direction
+
+====================================================
+FAILURE ANALYSIS
+================
+
+The AI must understand:
+
+What repeatedly failed?
+
+Examples:
+
+Weak volume
+
+Late entry
+
+Trend reversal
+
+Liquidity sweep failure
+
+Resistance rejection
+
+Support failure
+
+Bad risk/reward
+
+Range-market breakout failure
+
+Fake breakout
+
+Poor momentum
+
+The AI should actively reduce confidence if the current setup resembles previous failures.
+
+====================================================
+WINNER ANALYSIS
+===============
+
+The AI must understand:
+
+What repeatedly succeeded?
+
+Examples:
+
+Strong volume
+
+Trend continuation
+
+Breakout retest
+
+VWAP reclaim
+
+EMA trend alignment
+
+Momentum expansion
+
+High-quality structure
+
+The AI should actively increase confidence when current conditions resemble previous winners.
+
+====================================================
+MOST RECENT LOSS REASONING
+==========================
+
+Inject the most recent loss reasoning directly into the prompt.
+
+Example:
+
+"Previous loss occurred because price entered directly into major resistance with declining volume."
+
+The AI should compare the current setup against that lesson.
+
+====================================================
+PROMPT DESIGN
+=============
+
+Before sending to Qwen3:
+
+Inject sections:
+
+MEMORY LESSONS
+
+WINNER ANALYSIS
+
+LOSER ANALYSIS
+
+FAILURE CATEGORY BREAKDOWN
+
+MOST RECENT LOSS ANALYSIS
+
+HISTORICAL PERFORMANCE
+
+SIMILAR SETUP HISTORY
+
+The AI must be explicitly instructed to use this information.
+
+====================================================
+DECISION LOGIC
+==============
+
+AI may:
+
+Increase confidence
+
+Decrease confidence
+
+Reject trades
+
+Approve trades
+
+Adjust risk rating
+
+Modify trade grade
+
+Adjust stop-loss quality assessment
+
+Adjust take-profit quality assessment
+
+====================================================
+NO TRADE INTELLIGENCE
+=====================
+
+The AI should learn to say:
+
+NO_TRADE
+
+when memory indicates:
+
+Repeated failures
+
+Poor historical performance
+
+Bad regime alignment
+
+Weak probability
+
+Historical setup underperformance
+
+====================================================
+MEMORY IMPACT SCORE
+===================
+
+For every decision calculate:
+
+Memory Impact Score
+
+0-100
+
+Examples:
+
+0 = no memory influence
+
+25 = small influence
+
+50 = moderate influence
+
+75 = strong influence
+
+100 = memory completely changed the decision
+
+====================================================
+DIAGNOSTICS
+===========
+
+For every decision store:
+
+Memory Used
+
+Lessons Loaded
+
+Winner Analysis Loaded
+
+Loser Analysis Loaded
+
+Failure Categories Loaded
+
+Most Recent Loss Loaded
+
+Memory Impact Score
+
+====================================================
+CHART VISIBILITY
+================
+
+Display on chart diagnostics:
+
+Memory Used: YES / NO
+
+Lessons Loaded: X
+
+Memory Impact Score: X%
+
+This allows validation that memory actually affected the trade.
+
+====================================================
+VALIDATION
+==========
+
+Create a test mode.
+
+Run:
+
+Memory OFF
+
+Generate decisions.
+
+Run:
+
+Memory ON
+
+Generate decisions.
+
+Compare:
+
+Win Rate
+
+Trade Count
+
+Profit Factor
+
+Average RR
+
+Approval Rate
+
+Confidence Distribution
+
+====================================================
+SUCCESS CRITERIA
+================
+
+The task is complete only if:
+
+1. Live candle-close decisions load memory.
+2. Memory changes confidence.
+3. Memory changes approvals.
+4. Memory changes rejections.
+5. Memory can reject bad trades.
+6. Diagnostics prove memory was used.
+7. Memory ON and OFF produce different results.
+8. Typecheck passes.
+9. Smoke tests pass.
+10. AI Memory is no longer passive storage and becomes part of the live decision engine.

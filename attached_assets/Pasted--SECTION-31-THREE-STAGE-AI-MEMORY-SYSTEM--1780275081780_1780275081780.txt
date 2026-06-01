@@ -1,0 +1,274 @@
+====================================================
+SECTION 31
+THREE-STAGE AI MEMORY SYSTEM
+====================================================
+
+This is one of the most important upgrades in the entire project.
+
+Do NOT use AI Memory only after a trade closes.
+
+AI Memory must participate in ALL THREE phases:
+
+1. BEFORE ENTRY
+2. DURING TRADE
+3. AFTER TRADE
+
+====================================================
+PHASE 1
+BEFORE ENTRY
+====================================================
+
+Before approving any LONG or SHORT trade:
+
+The AI must query memory and ask:
+
+Have we seen this setup before?
+
+How many times?
+
+What was the win rate?
+
+What caused previous failures?
+
+What market regime performed best?
+
+What confidence levels worked best?
+
+What confidence levels failed?
+
+What volume conditions worked best?
+
+What volume conditions failed?
+
+What session performed best?
+
+What session performed worst?
+
+What was the most recent loss?
+
+What lesson was learned from it?
+
+The AI must use these answers BEFORE deciding.
+
+Memory should influence:
+
+LONG approval
+
+SHORT approval
+
+NO TRADE decision
+
+Confidence
+
+Risk Rating
+
+Trade Grade
+
+SL Placement
+
+TP Placement
+
+Position Quality
+
+====================================================
+PHASE 2
+DURING TRADE
+====================================================
+
+Once a trade becomes active:
+
+The AI must continue thinking.
+
+The AI should NOT stop after entry.
+
+Every new candle:
+
+Re-evaluate the trade.
+
+Compare current behavior against:
+
+Winning historical trades
+
+Losing historical trades
+
+Memory lessons
+
+Failure categories
+
+Recent losses
+
+Historical winners
+
+If the trade starts behaving like historical losers:
+
+Reduce confidence.
+
+Generate warnings.
+
+Flag deteriorating trade quality.
+
+Example:
+
+"Warning: Current trade behavior resembles 72% of previous losing trades."
+
+or
+
+"Volume profile now matches historical failed breakout setups."
+
+or
+
+"Price structure resembles prior stop-loss events."
+
+Store these observations.
+
+====================================================
+ACTIVE TRADE HEALTH SCORE
+====================================================
+
+Create:
+
+Trade Health Score
+
+0 - 100
+
+Based on:
+
+Structure
+
+Volume
+
+Trend
+
+Momentum
+
+Memory Similarity
+
+Historical Success Profile
+
+Display live.
+
+Example:
+
+Trade Health
+92%
+
+Strong
+
+or
+
+Trade Health
+41%
+
+Deteriorating
+
+====================================================
+PHASE 3
+AFTER TRADE
+====================================================
+
+After TP or SL:
+
+Generate a complete lesson.
+
+Store:
+
+Why it worked
+
+Why it failed
+
+What indicators mattered
+
+What patterns mattered
+
+What structure mattered
+
+What volume mattered
+
+What memory signals were correct
+
+What memory signals were wrong
+
+Then update:
+
+Lessons
+
+Patterns
+
+Failure Categories
+
+Setup Rankings
+
+Regime Rankings
+
+Symbol Rankings
+
+====================================================
+SELF-LEARNING LOOP
+====================================================
+
+The AI should continuously become better.
+
+Trade closes
+
+↓
+
+Lesson generated
+
+↓
+
+Memory updated
+
+↓
+
+Future trades improved
+
+↓
+
+New lesson generated
+
+↓
+
+Memory updated again
+
+↓
+
+Future trades improved again
+
+The AI should become increasingly selective.
+
+It should avoid repeating identical mistakes.
+
+====================================================
+LIVE CHART BEHAVIOR
+====================================================
+
+The chart should feel like a professional trader sitting beside the user.
+
+Before entry:
+AI checks memory.
+
+During trade:
+AI monitors quality.
+
+After trade:
+AI learns.
+
+Then repeats forever.
+
+====================================================
+FINAL GOAL
+====================================================
+
+The AI Memory system must become:
+
+The experience of the AI.
+
+The AI Decision Engine must become:
+
+The reasoning of the AI.
+
+The Live Chart must become:
+
+The execution layer.
+
+Together they should behave like one intelligent trading system rather than separate modules.

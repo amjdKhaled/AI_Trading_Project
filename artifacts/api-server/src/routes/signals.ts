@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { eq, desc, and, gte, inArray, isNull, isNotNull, type SQL } from "drizzle-orm";
 import { db, signalsTable, aiDecisionsTable } from "@workspace/db";
 import {
   ListSignalsQueryParams,
@@ -703,6 +703,51 @@ router.get("/signals/stats", async (req, res): Promise<void> => {
     avgConfidence: Math.round(avgConf * 10) / 10,
     avgRR:         Math.round(avgRR * 100) / 100,
   }));
+});
+
+// ── GET /signals/alerts ───────────────────────────────────────
+// Returns recent AI candle decisions (LONG or SHORT) above a confidence
+// threshold for a comma-separated list of symbols, since a given Unix-ms
+// timestamp. Used by the frontend real-time signal alert system.
+router.get("/signals/alerts", async (req, res): Promise<void> => {
+  const sinceMs  = req.query.since           ? Number(req.query.since)           : Date.now() - 60 * 60_000;
+  const minConf  = req.query.minConfidence   ? Number(req.query.minConfidence)   : 70;
+  const symbols  = req.query.symbols
+    ? String(req.query.symbols).split(",").map(s => s.trim().toUpperCase()).filter(Boolean)
+    : [];
+
+  const since = new Date(sinceMs);
+
+  const conditions: SQL[] = [
+    inArray(aiDecisionsTable.verdict, ["LONG", "SHORT"]),
+    gte(aiDecisionsTable.confidence, minConf),
+    gte(aiDecisionsTable.createdAt, since),
+  ];
+  if (symbols.length > 0) conditions.push(inArray(aiDecisionsTable.symbol, symbols));
+
+  const rows = await db
+    .select({
+      id:         aiDecisionsTable.id,
+      symbol:     aiDecisionsTable.symbol,
+      timeframe:  aiDecisionsTable.timeframe,
+      verdict:    aiDecisionsTable.verdict,
+      confidence: aiDecisionsTable.confidence,
+      entryPrice: aiDecisionsTable.entryPrice,
+      rrRatio:    aiDecisionsTable.rrRatio,
+      regime:     aiDecisionsTable.regime,
+      candleTime: aiDecisionsTable.candleTime,
+      createdAt:  aiDecisionsTable.createdAt,
+    })
+    .from(aiDecisionsTable)
+    .where(and(...conditions))
+    .orderBy(desc(aiDecisionsTable.createdAt))
+    .limit(20);
+
+  res.json(rows.map(r => ({
+    ...r,
+    candleTime: r.candleTime.toISOString(),
+    createdAt:  r.createdAt.toISOString(),
+  })));
 });
 
 // ── POST /signals/replay ──────────────────────────────────────

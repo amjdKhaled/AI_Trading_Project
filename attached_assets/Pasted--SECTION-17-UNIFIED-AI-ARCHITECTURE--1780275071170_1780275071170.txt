@@ -1,0 +1,491 @@
+====================================================
+SECTION 17
+UNIFIED AI ARCHITECTURE
+====================================================
+
+Current problem:
+
+The project contains multiple AI systems:
+
+AI Memory
+
+AI Decision Engine
+
+AI Chart
+
+AI Signal Filter
+
+Pattern Engine
+
+Historical Analysis
+
+Live Chart
+
+These systems still behave like separate modules.
+
+I want them transformed into ONE unified AI architecture.
+
+====================================================
+TARGET ARCHITECTURE
+====================================================
+
+LIVE MARKET DATA
+
+↓
+
+CHART ENGINE
+
+↓
+
+INDICATORS
+
+↓
+
+PATTERN ENGINE
+
+↓
+
+MARKET STRUCTURE ENGINE
+
+↓
+
+AI MEMORY
+
+↓
+
+AI DECISION ENGINE
+
+↓
+
+ACTIVE TRADE ENGINE
+
+↓
+
+TRADE MANAGEMENT
+
+↓
+
+LESSON GENERATION
+
+↓
+
+MEMORY UPDATE
+
+↓
+
+FUTURE DECISIONS IMPROVE
+
+====================================================
+SECTION 18
+LIVE CHART AI
+====================================================
+
+The live chart must become the primary AI execution layer.
+
+While the market is open:
+
+Every tick updates chart state.
+
+Every candle close triggers:
+
+Pattern scan
+
+Structure scan
+
+Volume scan
+
+Trend scan
+
+Memory scan
+
+AI decision generation
+
+No manual buttons.
+
+No manual analysis.
+
+Everything automatic.
+
+====================================================
+SECTION 19
+REAL-TIME SIGNAL GENERATION
+====================================================
+
+I want the chart to behave like a professional AI indicator.
+
+Similar experience to:
+
+LuxAlgo
+
+Institutional Order Flow Systems
+
+Professional Trading Desks
+
+As candles form:
+
+AI continuously evaluates probability.
+
+When confidence reaches threshold:
+
+Generate signal immediately.
+
+Display:
+
+BUY
+
+SELL
+
+NO TRADE
+
+Signal should appear while market is live.
+
+Not after the move already happened.
+
+Not delayed.
+
+Not historical only.
+
+====================================================
+SECTION 20
+LIVE ENTRY SYSTEM
+====================================================
+
+When AI detects opportunity:
+
+Display entry directly on chart.
+
+Show:
+
+LONG
+
+or
+
+SHORT
+
+Confidence %
+
+Risk Rating
+
+Trade Grade
+
+Expected RR
+
+Display instantly.
+
+The user should be able to enter the trade immediately.
+
+The system should function as a real-time trading assistant.
+
+====================================================
+SECTION 21
+AI MEMORY + LIVE SIGNALS
+====================================================
+
+This is critical.
+
+When a new signal is evaluated:
+
+The AI must ask:
+
+Have we seen this setup before?
+
+What happened last time?
+
+How often did it win?
+
+How often did it fail?
+
+What caused failures?
+
+What improved performance?
+
+The memory should actively influence approval.
+
+====================================================
+SECTION 22
+AI CHART INTEGRATION
+====================================================
+
+AI Chart and AI Decision Engine must share the same intelligence.
+
+I do NOT want:
+
+AI Chart thinking one thing
+
+AI Decision Engine thinking another thing
+
+They must use:
+
+same memory
+
+same statistics
+
+same setup rankings
+
+same regime rankings
+
+same lessons
+
+same winner analysis
+
+same loser analysis
+
+same confidence logic
+
+same risk scoring
+
+same approval rules
+
+====================================================
+SECTION 23
+AI DECISION ENGINE
+====================================================
+
+AI Decision Engine becomes the brain.
+
+Inputs:
+
+Indicators
+
+Patterns
+
+Market Structure
+
+Volume
+
+AI Memory
+
+Historical Performance
+
+Outputs:
+
+LONG
+
+SHORT
+
+NO TRADE
+
+Confidence
+
+Reasoning
+
+Risk Score
+
+Trade Grade
+
+SL
+
+TP
+
+====================================================
+SECTION 24
+AI MEMORY BRAIN
+====================================================
+
+AI Memory becomes the experience layer.
+
+The AI Memory must answer:
+
+What worked?
+
+What failed?
+
+Why did it fail?
+
+What regime worked best?
+
+What setup worked best?
+
+What symbol performed best?
+
+What session performed best?
+
+What confidence levels were reliable?
+
+This knowledge must affect live decisions.
+
+====================================================
+SECTION 25
+SMART CONFIDENCE ENGINE
+====================================================
+
+Confidence should not come only from indicators.
+
+Confidence should combine:
+
+Technical Score
+
+Pattern Score
+
+Structure Score
+
+Volume Score
+
+Memory Score
+
+Historical Score
+
+Regime Score
+
+The final confidence should reflect everything.
+
+====================================================
+SECTION 26
+NO TRADE INTELLIGENCE
+====================================================
+
+One of the most important abilities:
+
+The AI must learn when NOT to trade.
+
+If memory shows:
+
+Repeated failures
+
+Poor regime
+
+Weak volume
+
+Bad historical performance
+
+Then AI should reject the trade.
+
+Display:
+
+NO TRADE
+
+and explain why.
+
+====================================================
+SECTION 27
+ACTIVE TRADE INTELLIGENCE
+====================================================
+
+Once trade is active:
+
+The AI continues thinking.
+
+It should monitor:
+
+Structure changes
+
+Volume changes
+
+Trend changes
+
+New candle behavior
+
+If trade quality deteriorates:
+
+Flag warning.
+
+If invalidation occurs:
+
+Close trade.
+
+The AI should not stop thinking after entry.
+
+====================================================
+SECTION 28
+AI PERFORMANCE SCORECARD
+====================================================
+
+Track AI performance itself.
+
+Metrics:
+
+Signal Accuracy
+
+Win Rate
+
+Average RR
+
+Profit Factor
+
+Drawdown
+
+Memory Impact
+
+Approval Accuracy
+
+Long Accuracy
+
+Short Accuracy
+
+Regime Accuracy
+
+Pattern Accuracy
+
+Display everything.
+
+====================================================
+SECTION 29
+LIVE MARKET MODE
+====================================================
+
+Create a dedicated LIVE MODE.
+
+When market is open:
+
+AI runs automatically.
+
+Every 5-minute candle:
+
+Analyze
+
+Decide
+
+Approve
+
+Manage
+
+Learn
+
+Repeat
+
+No manual interaction required.
+
+====================================================
+SECTION 30
+FINAL VISION
+====================================================
+
+The final product should feel like:
+
+A self-learning AI trading assistant.
+
+Not a chart.
+
+Not a signal list.
+
+Not a memory database.
+
+A complete AI trading system.
+
+It watches the market.
+
+Finds opportunities.
+
+Explains them.
+
+Manages them.
+
+Learns from them.
+
+Improves itself.
+
+And continuously feeds its learning back into future decisions.
+
+Before declaring complete:
+
+Generate a system map showing:
+
+Live Chart
+↔ AI Decision Engine
+↔ AI Memory
+↔ AI Chart
+↔ Trade Manager
+↔ Lesson Generator
+↔ Historical Analytics
+
+and verify data flows correctly between every component.

@@ -1,0 +1,520 @@
+TASK #5 – AI PERFORMANCE COMMAND CENTER & INTELLIGENCE DASHBOARD
+
+OBJECTIVE
+
+The project currently displays some statistics.
+
+However, there is no centralized intelligence dashboard that measures:
+
+The AI itself.
+
+The AI Memory.
+
+The AI Decision Engine.
+
+The quality of decisions.
+
+The quality of learning.
+
+The quality of setups.
+
+I want a complete AI Performance Command Center.
+
+====================================================
+CORE GOAL
+=========
+
+I do not want to only know:
+
+Win Rate
+
+I want to know:
+
+WHY the AI is performing the way it is.
+
+WHERE the AI is strongest.
+
+WHERE the AI is weakest.
+
+WHAT is improving.
+
+WHAT is deteriorating.
+
+====================================================
+AI PERFORMANCE DASHBOARD
+========================
+
+Create a dedicated dashboard.
+
+This becomes the headquarters of the AI.
+
+====================================================
+GLOBAL METRICS
+==============
+
+Display:
+
+Total Trades
+
+Total Wins
+
+Total Losses
+
+Current Win Rate
+
+Average RR
+
+Profit Factor
+
+Expectancy
+
+Maximum Drawdown
+
+Average Confidence
+
+Average Trade Grade
+
+Average Health Score
+
+====================================================
+AI ACCURACY METRICS
+===================
+
+Track:
+
+Signal Accuracy
+
+Decision Accuracy
+
+Approval Accuracy
+
+Rejection Accuracy
+
+NO_TRADE Accuracy
+
+====================================================
+LONG VS SHORT ANALYSIS
+======================
+
+Display:
+
+LONG Win Rate
+
+SHORT Win Rate
+
+LONG RR
+
+SHORT RR
+
+LONG Profit Factor
+
+SHORT Profit Factor
+
+====================================================
+SYMBOL ANALYSIS
+===============
+
+Track:
+
+TSLA
+
+NVDA
+
+META
+
+AAPL
+
+AMD
+
+MSFT
+
+QQQ
+
+etc.
+
+For every symbol display:
+
+Trades
+
+Win Rate
+
+RR
+
+Profit Factor
+
+Average Confidence
+
+Memory Impact
+
+====================================================
+BEST SYMBOLS
+============
+
+Display:
+
+Top Performing Symbols
+
+Rank #1
+
+Rank #2
+
+Rank #3
+
+====================================================
+WORST SYMBOLS
+=============
+
+Display:
+
+Worst Performing Symbols
+
+Rank #1
+
+Rank #2
+
+Rank #3
+
+====================================================
+SETUP ANALYSIS
+==============
+
+Track:
+
+Trend Pullback
+
+Breakout
+
+Breakout Retest
+
+VWAP Reclaim
+
+EMA Continuation
+
+Liquidity Sweep
+
+Range Breakout
+
+Momentum Expansion
+
+Every setup should have:
+
+Trades
+
+Win Rate
+
+RR
+
+Profit Factor
+
+====================================================
+SETUP LEADERBOARD
+=================
+
+Display:
+
+Best Setup
+
+Worst Setup
+
+Most Consistent Setup
+
+Most Improved Setup
+
+====================================================
+REGIME ANALYSIS
+===============
+
+Track:
+
+Trending Up
+
+Trending Down
+
+Range
+
+Volatile
+
+Low Volatility
+
+High Momentum
+
+Every regime should have:
+
+Trades
+
+Win Rate
+
+RR
+
+Profit Factor
+
+====================================================
+REGIME LEADERBOARD
+==================
+
+Display:
+
+Best Regime
+
+Worst Regime
+
+Most Reliable Regime
+
+Most Dangerous Regime
+
+====================================================
+AI MEMORY PERFORMANCE
+=====================
+
+Track:
+
+Lessons Count
+
+Patterns Count
+
+Failure Categories Count
+
+Memory Usage Rate
+
+Memory Impact Score
+
+====================================================
+MEMORY EFFECTIVENESS
+====================
+
+Display:
+
+How many trades were improved by memory.
+
+How many trades were rejected by memory.
+
+How many losses were prevented by memory.
+
+How much Win Rate memory added.
+
+====================================================
+MEMORY SCORECARD
+================
+
+Display:
+
+Memory OFF Win Rate
+
+Memory ON Win Rate
+
+Difference
+
+Memory OFF RR
+
+Memory ON RR
+
+Difference
+
+====================================================
+AI LEARNING METRICS
+===================
+
+Track:
+
+Lessons Generated
+
+Lessons Used
+
+Lessons Ignored
+
+Failure Categories Used
+
+Winner Analysis Used
+
+Loser Analysis Used
+
+====================================================
+AI EVOLUTION TRACKING
+=====================
+
+Track over time:
+
+Weekly Win Rate
+
+Monthly Win Rate
+
+Weekly RR
+
+Monthly RR
+
+Weekly Confidence
+
+Monthly Confidence
+
+====================================================
+TREND ANALYSIS
+==============
+
+Display:
+
+Is AI improving?
+
+YES / NO
+
+Is Memory improving?
+
+YES / NO
+
+Is Win Rate improving?
+
+YES / NO
+
+Is RR improving?
+
+YES / NO
+
+====================================================
+LEARNING EFFECTIVENESS SCORE
+============================
+
+Create:
+
+AI Learning Effectiveness Score
+
+Range:
+
+0 – 100
+
+Based on:
+
+Win Rate Growth
+
+RR Growth
+
+Drawdown Reduction
+
+Memory Impact
+
+Setup Improvements
+
+====================================================
+AI QUALITY SCORE
+================
+
+Create:
+
+AI Quality Score
+
+Range:
+
+0 – 100
+
+Based on:
+
+Accuracy
+
+Consistency
+
+Memory Usage
+
+Profitability
+
+Risk Management
+
+====================================================
+ALERT SYSTEM
+============
+
+Generate alerts:
+
+Setup Deterioration
+
+Regime Deterioration
+
+Symbol Deterioration
+
+Memory Regression
+
+Win Rate Drop
+
+Profit Factor Drop
+
+====================================================
+CHARTS & VISUALIZATION
+======================
+
+Create charts for:
+
+Win Rate Trend
+
+RR Trend
+
+Memory Impact Trend
+
+Setup Performance Trend
+
+Symbol Performance Trend
+
+====================================================
+SELF-AUDIT SYSTEM
+=================
+
+The AI should audit itself.
+
+Examples:
+
+"Trend Pullback setup performance has fallen from 58% to 42%."
+
+"Memory influence has increased 18% this month."
+
+"TSLA remains the strongest symbol."
+
+"AMD has become the weakest symbol."
+
+====================================================
+EXECUTIVE SUMMARY
+=================
+
+Create a top-level summary.
+
+Example:
+
+AI Status:
+Healthy
+
+Learning:
+Improving
+
+Memory Impact:
+High
+
+Best Setup:
+Breakout Retest
+
+Best Symbol:
+NVDA
+
+Worst Symbol:
+AMD
+
+Current Win Rate:
+52%
+
+====================================================
+SUCCESS CRITERIA
+================
+
+Task complete only if:
+
+1. Dashboard exists.
+2. Symbol analytics exist.
+3. Setup analytics exist.
+4. Regime analytics exist.
+5. Memory analytics exist.
+6. Learning metrics exist.
+7. Trend metrics exist.
+8. AI quality score exists.
+9. Learning effectiveness score exists.
+10. Self-audit system exists.
+11. Charts exist.
+12. Typecheck passes.
+13. Smoke tests pass.
+
+Final result:
+
+The user can measure the AI itself, not just the trades.

@@ -80,6 +80,20 @@ export interface Signal {
   createdAt: string;
 }
 
+export interface SignalAlert {
+  id: number;
+  symbol: string;
+  timeframe: string;
+  /** LONG or SHORT */
+  verdict: string;
+  confidence: number;
+  entryPrice?: number | null;
+  rrRatio?: number | null;
+  regime?: string | null;
+  candleTime: string;
+  createdAt: string;
+}
+
 export interface SignalStats {
   total: number;
   active: number;
@@ -537,6 +551,18 @@ export interface ReplayJobStatus {
 export type ListSignalsParams = {
 symbol?: string;
 limit?: number;
+};
+
+export type GetSignalAlertsParams = {
+/**
+ * Unix timestamp ms — only alerts created after this time
+ */
+since?: number;
+/**
+ * Comma-separated symbol list
+ */
+symbols?: string;
+minConfidence?: number;
 };
 
 export type GetSignalStatsParams = {

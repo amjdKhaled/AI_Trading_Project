@@ -1,0 +1,532 @@
+TASK #2 – COMPLETE ACTIVE TRADE LIFECYCLE SYSTEM
+
+OBJECTIVE
+
+The project currently generates AI trade signals.
+
+However, a signal is not enough.
+
+I want a complete active trade lifecycle system similar to professional trading platforms.
+
+The AI should not simply create a BUY or SELL marker.
+
+The AI should create, monitor, manage, close, archive, and learn from every trade.
+
+====================================================
+CURRENT PROBLEM
+===============
+
+The chart shows entries.
+
+The chart shows historical trades.
+
+But active trades do not feel alive.
+
+The user cannot visually track:
+
+Current TP zone
+
+Current SL zone
+
+Current RR
+
+Trade health
+
+Trade status
+
+Trade lifecycle
+
+The trade does not visually behave like a real position.
+
+====================================================
+TARGET EXPERIENCE
+=================
+
+When AI creates a trade:
+
+The user should instantly see:
+
+Entry
+
+Stop Loss
+
+Take Profit
+
+Risk Zone
+
+Reward Zone
+
+Trade Type
+
+Confidence
+
+Trade Grade
+
+All displayed directly on the chart.
+
+Exactly like professional trade-position tools.
+
+====================================================
+ACTIVE TRADE VISUALIZATION
+==========================
+
+Create a full trade box.
+
+LONG TRADE:
+
+Green area above entry.
+
+Red area below entry.
+
+SHORT TRADE:
+
+Green area below entry.
+
+Red area above entry.
+
+Display:
+
+AI LONG 87%
+
+or
+
+AI SHORT 84%
+
+inside the position box.
+
+====================================================
+LIVE POSITION BOX
+=================
+
+The box must remain visible while trade is active.
+
+The box must move with chart scrolling.
+
+The box must stay attached to the trade.
+
+The box must remain visible until:
+
+TP hit
+
+SL hit
+
+Trade invalidated
+
+Trade manually closed
+
+====================================================
+ACTIVE TRADE STATUS
+===================
+
+Each active trade should have:
+
+Pending
+
+Active
+
+TP Hit
+
+SL Hit
+
+Cancelled
+
+Expired
+
+Only one status at a time.
+
+====================================================
+TRADE ACTIVATION
+================
+
+When AI approves:
+
+LONG
+
+or
+
+SHORT
+
+Create:
+
+Active Trade Object
+
+Store:
+
+Direction
+
+Entry
+
+SL
+
+TP
+
+Confidence
+
+Trade Grade
+
+Timestamp
+
+Setup Type
+
+Pattern Type
+
+Memory Context
+
+AI Reasoning
+
+====================================================
+LIVE MARKET MONITORING
+======================
+
+While trade is active:
+
+Monitor:
+
+Current price
+
+Current candle
+
+Market structure
+
+Volume
+
+Trend
+
+Every update should check:
+
+Has TP been touched?
+
+Has SL been touched?
+
+====================================================
+AUTO TP CLOSE
+=============
+
+If price touches TP:
+
+Close trade immediately.
+
+Do NOT wait for candle close.
+
+Do NOT wait for user interaction.
+
+Close instantly.
+
+Update:
+
+Trade Status = TP Hit
+
+Move trade into historical trades.
+
+Generate lesson.
+
+Update AI Memory.
+
+====================================================
+AUTO SL CLOSE
+=============
+
+If price touches SL:
+
+Close trade immediately.
+
+Do NOT wait for candle close.
+
+Close instantly.
+
+Update:
+
+Trade Status = SL Hit
+
+Move trade into historical trades.
+
+Generate lesson.
+
+Update AI Memory.
+
+====================================================
+TRADE INVALIDATION
+==================
+
+If AI determines:
+
+Market structure broken
+
+Setup invalidated
+
+Trend reversed
+
+Critical condition violated
+
+Allow AI to invalidate trade.
+
+Status:
+
+Cancelled
+
+Store reasoning.
+
+Generate lesson.
+
+====================================================
+HISTORICAL TRADE ARCHIVE
+========================
+
+Once trade closes:
+
+Move it into historical trades.
+
+Store:
+
+Entry
+
+Exit
+
+Direction
+
+SL
+
+TP
+
+Confidence
+
+Trade Grade
+
+Pattern
+
+Regime
+
+Indicators
+
+AI Reasoning
+
+Memory Context
+
+Outcome
+
+RR
+
+Duration
+
+====================================================
+TRADE HISTORY VISUALIZATION
+===========================
+
+Historical trades should remain visible.
+
+Display:
+
+Entry marker
+
+Exit marker
+
+Result
+
+RR
+
+Direction
+
+Do NOT lose closed trades.
+
+====================================================
+TRADE HEALTH SCORE
+==================
+
+Create:
+
+Trade Health Score
+
+0-100
+
+Calculated using:
+
+Structure
+
+Trend
+
+Volume
+
+Momentum
+
+Historical similarity
+
+Memory influence
+
+Display live while trade is active.
+
+Examples:
+
+92%
+Excellent
+
+74%
+Healthy
+
+51%
+Weakening
+
+28%
+Danger
+
+====================================================
+LIVE TRADE PANEL
+================
+
+Create an Active Trade Panel.
+
+Display:
+
+Direction
+
+Entry
+
+SL
+
+TP
+
+Current Price
+
+Current RR
+
+Current Profit %
+
+Trade Health
+
+Confidence
+
+Trade Grade
+
+Memory Impact
+
+Reasoning
+
+====================================================
+MEMORY INTEGRATION
+==================
+
+When trade closes:
+
+Immediately generate:
+
+Lesson
+
+Failure Category
+
+Winner Analysis
+
+Loser Analysis
+
+Pattern Stats
+
+Regime Stats
+
+Store everything.
+
+Make the lesson available for the next AI decision immediately.
+
+No restart.
+
+No refresh.
+
+====================================================
+AI LEARNING LOOP
+================
+
+Trade Opens
+
+↓
+
+Trade Managed
+
+↓
+
+Trade Closes
+
+↓
+
+Lesson Generated
+
+↓
+
+Memory Updated
+
+↓
+
+Future Trade Improved
+
+Every trade must contribute to future intelligence.
+
+====================================================
+CHART BEHAVIOR
+==============
+
+The chart should always show:
+
+Current Active Trade
+
+Historical Trades
+
+Trade Lifecycle State
+
+Trade Health
+
+Risk Zone
+
+Reward Zone
+
+====================================================
+VALIDATION
+==========
+
+Test:
+
+LONG trade
+
+TP hit
+
+Verify:
+
+Auto close
+
+Lesson generation
+
+Memory update
+
+Historical archive
+
+Test:
+
+LONG trade
+
+SL hit
+
+Verify:
+
+Auto close
+
+Lesson generation
+
+Memory update
+
+Historical archive
+
+Repeat for SHORT trades.
+
+====================================================
+SUCCESS CRITERIA
+================
+
+Task is complete only if:
+
+1. Active trades display as full TP/SL boxes.
+2. Active trades remain visible while open.
+3. TP automatically closes trades.
+4. SL automatically closes trades.
+5. Closed trades move to historical archive.
+6. Lessons are generated automatically.
+7. AI Memory updates automatically.
+8. Trade Health Score works.
+9. Active Trade Panel works.
+10. Typecheck passes.
+11. Smoke tests pass.
+12. The user can visually track the entire lifecycle of every trade from entry to closure.

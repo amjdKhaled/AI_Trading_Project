@@ -106,6 +106,39 @@ paths:
                 items:
                   $ref: "#/components/schemas/Signal"
 
+  /signals/alerts:
+    get:
+      operationId: getSignalAlerts
+      tags: [signals]
+      summary: Get recent AI signal alerts for watchlist symbols
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: number
+            description: Unix timestamp ms — only alerts created after this time
+        - name: symbols
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Comma-separated symbol list
+        - name: minConfidence
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Array of signal alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SignalAlert"
+
   /signals/stats:
     get:
       operationId: getSignalStats
@@ -423,6 +456,37 @@ components:
           type: ["string", "null"]
         regime:
           type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    SignalAlert:
+      type: object
+      required: [id, symbol, timeframe, verdict, confidence, candleTime, createdAt]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        verdict:
+          type: string
+          description: LONG or SHORT
+        confidence:
+          type: integer
+        entryPrice:
+          type: number
+          nullable: true
+        rrRatio:
+          type: number
+          nullable: true
+        regime:
+          type: string
+          nullable: true
+        candleTime:
+          type: string
+          format: date-time
         createdAt:
           type: string
           format: date-time

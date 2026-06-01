@@ -1,0 +1,682 @@
+FINAL PROJECT INTEGRATION ROADMAP
+COMPLETE AI TRADING SYSTEM
+
+IMPORTANT:
+
+Do NOT treat these as independent features.
+
+Everything below must be connected together into a single AI ecosystem.
+
+The final goal is:
+
+Market Data
+→ Technical Analysis
+→ AI Analysis
+→ AI Memory
+→ Trade Decision
+→ Trade Management
+→ Trade Outcome
+→ Learning
+→ Updated Future Decisions
+
+Everything must feed everything else.
+
+====================================================
+SECTION 1
+LIVE AI MEMORY INTEGRATION
+====================================================
+
+Current problem:
+
+AI Memory exists.
+
+Lessons exist.
+
+Patterns exist.
+
+Regimes exist.
+
+Failure categories exist.
+
+Winner/Loser analysis exists.
+
+But the LIVE candle-close engine is not fully using all of them.
+
+This must be fixed.
+
+Every time a 5-minute candle closes:
+
+Load:
+
+Recent lessons
+
+Recent failures
+
+Recent winners
+
+Most recent loss reasoning
+
+Pattern statistics
+
+Historical setup statistics
+
+Regime statistics
+
+Symbol statistics
+
+Historical win rate
+
+Historical RR
+
+Failure category breakdown
+
+Winner profile
+
+Loser profile
+
+Then inject ALL of that into the decision prompt.
+
+The AI should not make decisions from indicators alone.
+
+It should make decisions from:
+
+Indicators
++
+Market Structure
++
+Historical Performance
++
+AI Memory
+
+====================================================
+SECTION 2
+LIVE DECISION ENGINE
+====================================================
+
+Every candle close:
+
+Run:
+
+EMA
+
+VWAP
+
+RSI
+
+MACD
+
+Volume
+
+Price Action
+
+Candlestick Patterns
+
+Market Structure
+
+Liquidity Sweeps
+
+Trend Analysis
+
+Then send everything to AI.
+
+AI must return:
+
+LONG
+
+SHORT
+
+NO_TRADE
+
+Confidence
+
+Reasoning
+
+Entry
+
+Stop Loss
+
+Take Profit
+
+Risk Score
+
+Setup Type
+
+Trade Grade
+
+Memory Influence Score
+
+====================================================
+SECTION 3
+ACTIVE TRADE MANAGEMENT
+====================================================
+
+CURRENT ISSUE:
+
+Active trade visualization is weak.
+
+I want active trades displayed exactly like the attached screenshot style.
+
+When AI opens a trade:
+
+Draw a full active position box.
+
+Display:
+
+Green TP area
+
+Red SL area
+
+Entry line
+
+Live Risk/Reward box
+
+Trade type
+
+Confidence
+
+Example:
+
+AI LONG
+78%
+
+or
+
+AI SHORT
+84%
+
+inside the active trade panel.
+
+The active trade should visually stay attached to the chart.
+
+====================================================
+SECTION 4
+LIVE TRADE MONITORING
+====================================================
+
+Once a trade is active:
+
+Every incoming price update must monitor:
+
+Has TP been hit?
+
+Has SL been hit?
+
+Has trade expired?
+
+Has market structure invalidated?
+
+If TP touched:
+
+Close trade automatically.
+
+Move trade to historical trades.
+
+Save outcome.
+
+Create lesson.
+
+Update memory.
+
+If SL touched:
+
+Close trade automatically.
+
+Move trade to historical trades.
+
+Save outcome.
+
+Create lesson.
+
+Update memory.
+
+NO MANUAL ACTION REQUIRED.
+
+====================================================
+SECTION 5
+TRADE LIFECYCLE
+====================================================
+
+Trade Lifecycle must become:
+
+Signal Created
+
+↓
+
+Trade Approved
+
+↓
+
+Trade Activated
+
+↓
+
+Trade Managed
+
+↓
+
+TP or SL Hit
+
+↓
+
+Trade Closed
+
+↓
+
+Lesson Generated
+
+↓
+
+Memory Updated
+
+↓
+
+Future Decisions Improved
+
+====================================================
+SECTION 6
+HISTORICAL TRADE STORAGE
+====================================================
+
+When trade closes:
+
+Store:
+
+Entry
+
+Exit
+
+Direction
+
+Confidence
+
+Indicators
+
+Pattern
+
+Regime
+
+Market Context
+
+Memory Context
+
+Reasoning
+
+Outcome
+
+TP/SL result
+
+RR
+
+Duration
+
+Store everything.
+
+Future AI decisions should be able to learn from it.
+
+====================================================
+SECTION 7
+REPLAY SYSTEM
+====================================================
+
+Create:
+
+Replay Using Current AI
+
+The replay system must:
+
+Re-run all historical candles.
+
+Rebuild every trade.
+
+Rebuild every decision.
+
+Rebuild every rejection.
+
+Rebuild every NO_TRADE.
+
+Rebuild every lesson.
+
+Then compare:
+
+Memory OFF
+
+vs
+
+Memory ON
+
+Display:
+
+Win Rate
+
+RR
+
+Profit Factor
+
+Total Trades
+
+Max Drawdown
+
+Approval Rate
+
+This will prove if AI Memory actually improves results.
+
+====================================================
+SECTION 8
+MEMORY IMPACT SYSTEM
+====================================================
+
+For every live decision:
+
+Store:
+
+Memory Used
+
+YES / NO
+
+Lessons Loaded
+
+Failure Stats Loaded
+
+Winner Analysis Loaded
+
+Recent Loss Loaded
+
+Memory Influence Score
+
+Then display it in diagnostics.
+
+I want proof memory was actually used.
+
+====================================================
+SECTION 9
+SELF IMPROVEMENT LOOP
+====================================================
+
+AI must continuously learn.
+
+When losses repeat:
+
+Detect patterns.
+
+Example:
+
+Repeated loss on:
+
+Weak volume
+
+Bad entry timing
+
+Late breakout
+
+Trend reversal
+
+Fake breakout
+
+Low volatility
+
+Range market
+
+Liquidity trap
+
+Resistance rejection
+
+Support failure
+
+The AI should automatically lower confidence for similar future setups.
+
+====================================================
+SECTION 10
+PATTERN EVOLUTION
+====================================================
+
+Patterns must evolve.
+
+Example:
+
+Trend Pullback
+
+Initially:
+
+38% WR
+
+Later:
+
+60% WR
+
+AI should know:
+
+What changed?
+
+Which market regime helped?
+
+Which volume profile helped?
+
+Which session helped?
+
+Store those insights.
+
+====================================================
+SECTION 11
+SETUP RANKING SYSTEM
+====================================================
+
+Create a dynamic ranking engine.
+
+Best setups:
+
+Rank #1
+
+Rank #2
+
+Rank #3
+
+...
+
+Use:
+
+Win Rate
+
+RR
+
+Sample Size
+
+Confidence
+
+Consistency
+
+Recent Performance
+
+Display rankings in AI Memory.
+
+====================================================
+SECTION 12
+REAL-TIME PERFORMANCE TRACKING
+====================================================
+
+Track:
+
+Daily WR
+
+Weekly WR
+
+Monthly WR
+
+Per Symbol WR
+
+Per Regime WR
+
+Per Setup WR
+
+Per Pattern WR
+
+Per Direction WR
+
+LONG WR
+
+SHORT WR
+
+====================================================
+SECTION 13
+AI MEMORY PAGE IMPROVEMENTS
+====================================================
+
+The AI Memory page should become the command center.
+
+Show:
+
+Top Winners
+
+Top Losers
+
+Most Common Failure Reasons
+
+Most Improved Setup
+
+Worst Setup
+
+Most Reliable Symbol
+
+Least Reliable Symbol
+
+Most Successful Regime
+
+Worst Regime
+
+====================================================
+SECTION 14
+ACTIVE TRADE PANEL
+====================================================
+
+Create a dedicated active trade panel.
+
+Show:
+
+Current Trade
+
+Direction
+
+Confidence
+
+Entry
+
+SL
+
+TP
+
+Current RR
+
+Current Profit %
+
+Time Active
+
+Reasoning
+
+Memory Influence
+
+Trade Grade
+
+====================================================
+SECTION 15
+AI REASONING
+====================================================
+
+Every trade should preserve full AI reasoning.
+
+Not short summaries.
+
+Store complete reasoning.
+
+Example:
+
+"Price reclaimed VWAP after liquidity sweep. Volume expanded above average. Historical memory shows similar setups achieved 61% win rate in trending-up regimes. Most recent loss was caused by weak volume, which is not present here. Confidence increased."
+
+Store it.
+
+Display it.
+
+Reuse it.
+
+====================================================
+SECTION 16
+FINAL SYSTEM GOAL
+====================================================
+
+The final architecture should be:
+
+Market Data
+
+↓
+
+Indicators
+
+↓
+
+Pattern Engine
+
+↓
+
+Market Structure Engine
+
+↓
+
+AI Memory
+
+↓
+
+Qwen3 Decision Engine
+
+↓
+
+Trade Creation
+
+↓
+
+Active Trade Tracking
+
+↓
+
+TP/SL Monitoring
+
+↓
+
+Trade Close
+
+↓
+
+Lesson Creation
+
+↓
+
+Memory Update
+
+↓
+
+Future Decisions Improve
+
+Nothing should be isolated.
+
+Everything must be connected.
+
+Before marking complete:
+
+Trace the entire execution path.
+
+Verify every subsystem is actually connected.
+
+Verify AI Memory affects live decisions.
+
+Verify active trades automatically close.
+
+Verify lessons are generated.
+
+Verify memory updates.
+
+Verify future decisions use updated memory.
+
+Run full typecheck.
+
+Run smoke tests.
+
+Run replay validation.
+
+Then provide a final architecture report showing exactly how each subsystem is connected.
