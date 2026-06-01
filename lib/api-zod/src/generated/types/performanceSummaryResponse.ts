@@ -5,11 +5,13 @@
  * Trading Signal Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { MemoryScorecard } from './memoryScorecard';
 import type { PerformanceSlice } from './performanceSlice';
 import type { PerformanceSummaryResponseByPattern } from './performanceSummaryResponseByPattern';
 import type { PerformanceSummaryResponseByRegime } from './performanceSummaryResponseByRegime';
 import type { PerformanceSummaryResponseBySide } from './performanceSummaryResponseBySide';
 import type { PerformanceSummaryResponseBySymbol } from './performanceSummaryResponseBySymbol';
+import type { WeeklyTrendSlice } from './weeklyTrendSlice';
 
 export interface PerformanceSummaryResponse {
   ok: boolean;
@@ -18,5 +20,8 @@ export interface PerformanceSummaryResponse {
   bySymbol: PerformanceSummaryResponseBySymbol;
   byRegime: PerformanceSummaryResponseByRegime;
   byPattern: PerformanceSummaryResponseByPattern;
+  memoryScorecard: MemoryScorecard;
+  /** Win rate per week (most recent 12 weeks), oldest first */
+  weeklyTrend: WeeklyTrendSlice[];
   updatedAt: string;
 }

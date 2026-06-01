@@ -533,6 +533,20 @@ export const GetPerformanceSummaryResponse = zod.object({
   "avgRR": zod.number(),
   "avgConf": zod.number()
 })),
+  "memoryScorecard": zod.object({
+  "noMemWinRate": zod.number().describe('Win rate from decisions made before memory was built up (reflected=false)'),
+  "withMemWinRate": zod.number().describe('Win rate from decisions made with active memory (reflected=true)'),
+  "noMemAvgRR": zod.number(),
+  "withMemAvgRR": zod.number(),
+  "noMemTotal": zod.number(),
+  "withMemTotal": zod.number()
+}),
+  "weeklyTrend": zod.array(zod.object({
+  "week": zod.string().describe('ISO week label, e.g. \'2025-W22\''),
+  "winRate": zod.number(),
+  "total": zod.number(),
+  "memoryImpact": zod.number().describe('Lessons created \/ closed signals in that week (proxy for memory accumulation)')
+})).describe('Win rate per week (most recent 12 weeks), oldest first'),
   "updatedAt": zod.string()
 })
 
@@ -571,6 +585,7 @@ export const GetReplayStatusResponse = zod.object({
   "profitFactor": zod.number().describe('sum(winning RR multiples) \/ count(losses), max 9.99'),
   "maxDrawdown": zod.number().describe('Max peak-to-trough drawdown in R units from equity curve'),
   "simulated": zod.number().describe('Number of approved signals with lifecycle outcome simulated'),
+  "avgTradeGrade": zod.string().describe('Letter grade A–F based on winRate + profitFactor'),
   "topLessons": zod.array(zod.string()),
   "topRejectLessons": zod.array(zod.string()).describe('Lessons most frequently cited when memory still returned REJECT or WAIT')
 }),
@@ -586,12 +601,14 @@ export const GetReplayStatusResponse = zod.object({
   "profitFactor": zod.number().describe('sum(winning RR multiples) \/ count(losses), max 9.99'),
   "maxDrawdown": zod.number().describe('Max peak-to-trough drawdown in R units from equity curve'),
   "simulated": zod.number().describe('Number of approved signals with lifecycle outcome simulated'),
+  "avgTradeGrade": zod.string().describe('Letter grade A–F based on winRate + profitFactor'),
   "topLessons": zod.array(zod.string()),
   "topRejectLessons": zod.array(zod.string()).describe('Lessons most frequently cited when memory still returned REJECT or WAIT')
 }),
   "delta": zod.object({
   "removedByMemory": zod.number(),
   "addedByMemory": zod.number(),
+  "changedByMemory": zod.number().describe('Candles where memory changed confidence class (conf_boost or conf_drop)'),
   "avgConfChange": zod.number(),
   "approveRateDelta": zod.number().describe('withMem.approveRate − noMem.approveRate; positive = memory increased signal rate')
 }),
@@ -602,7 +619,8 @@ export const GetReplayStatusResponse = zod.object({
   "noMemVerdict": zod.string(),
   "withMemVerdict": zod.string(),
   "noMemConf": zod.number(),
-  "withMemConf": zod.number()
+  "withMemConf": zod.number(),
+  "keyLesson": zod.string().nullish().describe('Top lesson from the with-memory pass that caused this divergence')
 })).describe('Candles where noMem and withMem verdicts diverged')
 }),zod.null()]).optional(),
   "error": zod.string().nullish()

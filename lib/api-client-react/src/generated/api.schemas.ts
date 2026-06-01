@@ -586,6 +586,8 @@ export interface ReplayPassStats {
   maxDrawdown: number;
   /** Number of approved signals with lifecycle outcome simulated */
   simulated: number;
+  /** Letter grade A–F based on winRate + profitFactor */
+  avgTradeGrade: string;
   topLessons: string[];
   /** Lessons most frequently cited when memory still returned REJECT or WAIT */
   topRejectLessons: string[];
@@ -594,6 +596,8 @@ export interface ReplayPassStats {
 export interface ReplayDelta {
   removedByMemory: number;
   addedByMemory: number;
+  /** Candles where memory changed confidence class (conf_boost or conf_drop) */
+  changedByMemory: number;
   avgConfChange: number;
   /** withMem.approveRate − noMem.approveRate; positive = memory increased signal rate */
   approveRateDelta: number;
@@ -616,6 +620,8 @@ export interface ReplayDecisionDiff {
   withMemVerdict: string;
   noMemConf: number;
   withMemConf: number;
+  /** Top lesson from the with-memory pass that caused this divergence */
+  keyLesson?: string | null;
 }
 
 export type ReplayResultCandlesItem = { [key: string]: unknown };
@@ -652,6 +658,26 @@ export interface PerformanceSlice {
   avgConf: number;
 }
 
+export interface MemoryScorecard {
+  /** Win rate from decisions made before memory was built up (reflected=false) */
+  noMemWinRate: number;
+  /** Win rate from decisions made with active memory (reflected=true) */
+  withMemWinRate: number;
+  noMemAvgRR: number;
+  withMemAvgRR: number;
+  noMemTotal: number;
+  withMemTotal: number;
+}
+
+export interface WeeklyTrendSlice {
+  /** ISO week label, e.g. '2025-W22' */
+  week: string;
+  winRate: number;
+  total: number;
+  /** Lessons created / closed signals in that week (proxy for memory accumulation) */
+  memoryImpact: number;
+}
+
 export type PerformanceSummaryResponseBySide = {[key: string]: PerformanceSlice};
 
 export type PerformanceSummaryResponseBySymbol = {[key: string]: PerformanceSlice};
@@ -667,6 +693,9 @@ export interface PerformanceSummaryResponse {
   bySymbol: PerformanceSummaryResponseBySymbol;
   byRegime: PerformanceSummaryResponseByRegime;
   byPattern: PerformanceSummaryResponseByPattern;
+  memoryScorecard: MemoryScorecard;
+  /** Win rate per week (most recent 12 weeks), oldest first */
+  weeklyTrend: WeeklyTrendSlice[];
   updatedAt: string;
 }
 

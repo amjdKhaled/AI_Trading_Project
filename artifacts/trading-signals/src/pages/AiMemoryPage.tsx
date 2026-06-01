@@ -652,6 +652,7 @@ interface ReplayPassStats {
   total: number; approveRate: number;
   avgConf: number; avgRR: number;
   winRate: number; profitFactor: number; maxDrawdown: number; simulated: number;
+  avgTradeGrade: string;
   topLessons: string[]; topRejectLessons: string[];
 }
 interface ReplayCandleResult {
@@ -664,13 +665,14 @@ interface ReplayDecisionDiff {
   direction: "memory_added" | "memory_removed" | "conf_boost" | "conf_drop";
   noMemVerdict: string; withMemVerdict: string;
   noMemConf: number; withMemConf: number;
+  keyLesson: string | null;
 }
 interface ReplayJobResult {
   symbol: string; timeframe: string; processed: number;
   candles?: ReplayCandleResult[];
   noMem:   ReplayPassStats;
   withMem: ReplayPassStats;
-  delta:   { removedByMemory: number; addedByMemory: number; avgConfChange: number; approveRateDelta: number };
+  delta:   { removedByMemory: number; addedByMemory: number; changedByMemory: number; avgConfChange: number; approveRateDelta: number };
   learningScore: number;
   decisionDiffs: ReplayDecisionDiff[];
 }
@@ -997,11 +999,21 @@ function ToolsTab({
                   memNum: replayResult.withMem.profitFactor,
                 },
                 {
+                  label: "Avg Trade Grade",
+                  noVal: replayResult.noMem.simulated > 0 ? replayResult.noMem.avgTradeGrade : "—",
+                  memVal: replayResult.withMem.simulated > 0 ? replayResult.withMem.avgTradeGrade : "—",
+                  noNum: undefined, memNum: undefined,
+                  fixedClass: (() => {
+                    const g = replayResult.withMem.avgTradeGrade;
+                    return g === "A" ? "text-emerald-400" : g === "B" ? "text-blue-400" : g === "C" ? "text-amber-400" : "text-red-400";
+                  })(),
+                },
+                {
                   label: "Max Drawdown",
                   noVal: replayResult.noMem.simulated > 0 ? `${replayResult.noMem.maxDrawdown.toFixed(1)}R` : "—",
                   memVal: replayResult.withMem.simulated > 0 ? `${replayResult.withMem.maxDrawdown.toFixed(1)}R` : "—",
-                  noNum: replayResult.withMem.maxDrawdown,
-                  memNum: replayResult.noMem.maxDrawdown,
+                  noNum: replayResult.noMem.maxDrawdown,
+                  memNum: replayResult.withMem.maxDrawdown,
                   lowerIsBetter: true,
                 },
               ] as Array<{ label: string; noVal: string; memVal: string; noNum?: number; memNum?: number; fixedClass?: string; lowerIsBetter?: boolean }>).map((row, i) => {
@@ -1034,6 +1046,10 @@ function ToolsTab({
                 −{replayResult.delta.removedByMemory} removed
               </span>
               <span className="text-muted-foreground">·</span>
+              <span className={replayResult.delta.changedByMemory > 0 ? "text-blue-400" : "text-muted-foreground"}>
+                ~{replayResult.delta.changedByMemory} changed
+              </span>
+              <span className="text-muted-foreground">·</span>
               <span className={replayResult.delta.approveRateDelta >= 0 ? "text-emerald-400" : "text-red-400"}>
                 AR {replayResult.delta.approveRateDelta >= 0 ? "+" : ""}{Math.round(replayResult.delta.approveRateDelta * 100)}%
               </span>
@@ -1057,13 +1073,20 @@ function ToolsTab({
                                 : d.direction === "conf_boost"     ? { text: "↑CONF",  cls: "text-blue-400" }
                                 :                                    { text: "↓CONF",  cls: "text-red-400" };
                     return (
-                      <div key={i} className="flex items-center gap-2 font-mono text-muted-foreground border-l-2 border-border/40 pl-1.5">
-                        <span className="text-[9px] w-16 flex-shrink-0">
-                          {ts.toLocaleDateString([], { month: "short", day: "numeric" })} {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        <span className={`font-bold flex-shrink-0 w-10 ${label.cls}`}>{label.text}</span>
-                        <span className="text-[9px]">{d.noMemVerdict}→{d.withMemVerdict}</span>
-                        <span className="text-[9px] ml-auto">{d.noMemConf}→{d.withMemConf}</span>
+                      <div key={i} className="flex flex-col border-l-2 border-border/40 pl-1.5 py-0.5 gap-0.5">
+                        <div className="flex items-center gap-2 font-mono text-muted-foreground">
+                          <span className="text-[9px] w-16 flex-shrink-0">
+                            {ts.toLocaleDateString([], { month: "short", day: "numeric" })} {ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          <span className={`font-bold flex-shrink-0 w-10 ${label.cls}`}>{label.text}</span>
+                          <span className="text-[9px]">{d.noMemVerdict}→{d.withMemVerdict}</span>
+                          <span className="text-[9px] ml-auto">{d.noMemConf}→{d.withMemConf}</span>
+                        </div>
+                        {d.keyLesson && (
+                          <div className="text-[9px] text-violet-300/80 truncate pl-26" style={{ paddingLeft: "6.5rem" }}>
+                            ↳ {d.keyLesson}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   TrendingUp, TrendingDown, RefreshCw, BarChart2,
-  Award, Target, Zap, Shield,
+  Award, Target, Zap, Shield, Brain, Activity,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -25,6 +25,22 @@ interface PerformanceSlice {
   avgConf: number;
 }
 
+interface MemoryScorecard {
+  noMemWinRate: number;
+  withMemWinRate: number;
+  noMemAvgRR: number;
+  withMemAvgRR: number;
+  noMemTotal: number;
+  withMemTotal: number;
+}
+
+interface WeeklyTrendSlice {
+  week: string;
+  winRate: number;
+  total: number;
+  memoryImpact: number;
+}
+
 interface PerformanceSummary {
   ok: boolean;
   global: PerformanceSlice;
@@ -32,7 +48,33 @@ interface PerformanceSummary {
   bySymbol: Record<string, PerformanceSlice>;
   byRegime: Record<string, PerformanceSlice>;
   byPattern: Record<string, PerformanceSlice>;
+  memoryScorecard: MemoryScorecard;
+  weeklyTrend: WeeklyTrendSlice[];
   updatedAt: string;
+}
+
+function Sparkline({ data, color = "#10b981", height = 32 }: { data: number[]; color?: string; height?: number }) {
+  if (data.length < 2) return <div className="text-[10px] text-muted-foreground italic">Not enough data</div>;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const w = 200;
+  const h = height;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - ((v - min) / range) * h * 0.85 - h * 0.075;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
+      <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      {data.map((v, i) => {
+        const x = (i / (data.length - 1)) * w;
+        const y = h - ((v - min) / range) * h * 0.85 - h * 0.075;
+        return <circle key={i} cx={x} cy={y} r="2" fill={color} />;
+      })}
+    </svg>
+  );
 }
 
 function wrColor(wr: number): string {
@@ -260,6 +302,116 @@ export default function PerformancePage() {
                 </div>
               </section>
             )}
+
+            {/* ── Memory Scorecard ── */}
+            {(summary.memoryScorecard.noMemTotal > 0 || summary.memoryScorecard.withMemTotal > 0) && (
+              <section>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <Brain size={10} /> Memory Scorecard
+                  <span className="text-[9px] font-normal">(AI decisions: with vs without memory reflection)</span>
+                </div>
+                <div className="bg-card border border-border rounded p-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    {([
+                      { label: "No Memory", key: "noMem" as const, color: "text-muted-foreground", total: summary.memoryScorecard.noMemTotal, wr: summary.memoryScorecard.noMemWinRate, rr: summary.memoryScorecard.noMemAvgRR },
+                      { label: "With Memory", key: "withMem" as const, color: "text-violet-400", total: summary.memoryScorecard.withMemTotal, wr: summary.memoryScorecard.withMemWinRate, rr: summary.memoryScorecard.withMemAvgRR },
+                    ]).map(({ label, color, total, wr, rr }) => (
+                      <div key={label}>
+                        <div className={`text-[10px] font-semibold mb-1.5 ${color}`}>{label}</div>
+                        <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                          {[
+                            ["Win Rate", `${Math.round(wr * 100)}%`, wrColor(wr)],
+                            ["Avg R:R",  rr > 0 ? rr.toFixed(2) : "—", "text-blue-400"],
+                            ["Decisions", String(total), "text-foreground"],
+                          ].map(([lbl, val, cls]) => (
+                            <div key={lbl} className="bg-background border border-border/60 rounded px-1.5 py-1 text-center">
+                              <div className="text-[9px] text-muted-foreground uppercase tracking-wider mb-0.5">{lbl}</div>
+                              <div className={`font-mono font-bold ${cls}`}>{val}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-1.5 h-1 bg-muted rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${wrBar(wr)}`} style={{ width: `${Math.round(wr * 100)}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {summary.memoryScorecard.withMemTotal > 0 && summary.memoryScorecard.noMemTotal > 0 && (() => {
+                    const delta = summary.memoryScorecard.withMemWinRate - summary.memoryScorecard.noMemWinRate;
+                    const pct = Math.round(delta * 100);
+                    const isPos = delta > 0.005;
+                    const isNeg = delta < -0.005;
+                    return (
+                      <div className={`mt-2 text-[10px] font-mono text-center ${isPos ? "text-emerald-400" : isNeg ? "text-red-400" : "text-muted-foreground"}`}>
+                        Memory {isPos ? "improved" : isNeg ? "reduced" : "had no net effect on"} win rate by {isPos ? "+" : ""}{pct}pp
+                      </div>
+                    );
+                  })()}
+                </div>
+              </section>
+            )}
+
+            {/* ── AI Evolution ── */}
+            {summary.weeklyTrend.length > 0 && (() => {
+              const trend = summary.weeklyTrend;
+              const last4 = trend.slice(-4).filter(t => t.total >= 3);
+              const aiTrend: "improving" | "stable" | "declining" | "insufficient" = (() => {
+                if (last4.length < 2) return "insufficient";
+                const first = last4.slice(0, Math.ceil(last4.length / 2)).reduce((s, t) => s + t.winRate, 0) / Math.ceil(last4.length / 2);
+                const last  = last4.slice(-Math.floor(last4.length / 2)).reduce((s, t) => s + t.winRate, 0) / Math.floor(last4.length / 2);
+                const delta = last - first;
+                return delta > 0.03 ? "improving" : delta < -0.03 ? "declining" : "stable";
+              })();
+              const trendColor = aiTrend === "improving" ? "text-emerald-400" : aiTrend === "declining" ? "text-red-400" : "text-amber-400";
+              const trendLabel = aiTrend === "improving" ? "↑ Improving" : aiTrend === "declining" ? "↓ Declining" : aiTrend === "stable" ? "→ Stable" : "— Insufficient data";
+              return (
+                <section>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Activity size={10} /> AI Evolution
+                    <span className={`text-[10px] font-bold ${trendColor}`}>{trendLabel}</span>
+                  </div>
+                  <div className="bg-card border border-border rounded p-3 space-y-3">
+                    {/* Win Rate sparkline */}
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-1.5">Win Rate over time</div>
+                      <Sparkline data={trend.map(t => t.winRate * 100)} color="#10b981" height={40} />
+                      <div className="flex justify-between text-[9px] text-muted-foreground mt-0.5">
+                        <span>{trend[0]?.week}</span>
+                        <span>{trend[trend.length - 1]?.week}</span>
+                      </div>
+                    </div>
+                    {/* Memory impact sparkline */}
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-1.5">Memory Impact over time <span className="text-[9px]">(lessons/signals per week)</span></div>
+                      <Sparkline data={trend.map(t => t.memoryImpact)} color="#a78bfa" height={30} />
+                    </div>
+                    {/* Weekly table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[10px] font-mono">
+                        <thead>
+                          <tr className="text-muted-foreground border-b border-border">
+                            <th className="text-left pb-1 font-normal">Week</th>
+                            <th className="text-right pb-1 font-normal">Signals</th>
+                            <th className="text-right pb-1 font-normal">Win Rate</th>
+                            <th className="text-right pb-1 font-normal">Memory↑</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...trend].reverse().map(t => (
+                            <tr key={t.week} className="border-b border-border/30">
+                              <td className="py-0.5 text-foreground">{t.week}</td>
+                              <td className="py-0.5 text-right text-muted-foreground">{t.total}</td>
+                              <td className={`py-0.5 text-right font-bold ${wrColor(t.winRate)}`}>{Math.round(t.winRate * 100)}%</td>
+                              <td className="py-0.5 text-right text-violet-400">{t.memoryImpact > 0 ? t.memoryImpact.toFixed(2) : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
 
             {/* ── By Symbol leaderboard ── */}
             {symbolRows.length > 0 && (

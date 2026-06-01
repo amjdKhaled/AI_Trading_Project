@@ -31,6 +31,8 @@ export interface ReplayDecisionDiff {
   withMemVerdict: string;
   noMemConf:      number;
   withMemConf:    number;
+  /** Top lesson from the with-memory pass that caused this divergence */
+  keyLesson:      string | null;
 }
 
 export interface ReplayPassStats {
@@ -45,6 +47,7 @@ export interface ReplayPassStats {
   profitFactor:     number;
   maxDrawdown:      number;
   simulated:        number;
+  avgTradeGrade:    string;
   topLessons:       string[];
   topRejectLessons: string[];
 }
@@ -52,6 +55,7 @@ export interface ReplayPassStats {
 export interface ReplayDelta {
   removedByMemory:  number;
   addedByMemory:    number;
+  changedByMemory:  number;
   avgConfChange:    number;
   approveRateDelta: number;
 }
@@ -107,7 +111,7 @@ function recordOutcome(acc: TradeAcc, state: string, rr: number): void {
 
 function passStats(
   acc: TradeAcc,
-): { winRate: number; profitFactor: number; maxDrawdown: number; simulated: number } {
+): { winRate: number; profitFactor: number; maxDrawdown: number; simulated: number; avgTradeGrade: string } {
   const closed = acc.wins + acc.losses;
   const winRate = closed > 0 ? Math.round((acc.wins / closed) * 1000) / 1000 : 0;
   const profitFactor =
@@ -126,29 +130,49 @@ function passStats(
   return {
     winRate,
     profitFactor,
-    maxDrawdown: Math.round(maxDrawdown * 100) / 100,
-    simulated:   acc.wins + acc.losses,
+    maxDrawdown:   Math.round(maxDrawdown * 100) / 100,
+    simulated:     acc.wins + acc.losses,
+    avgTradeGrade: tradeGrade(winRate, profitFactor),
   };
 }
 
+/**
+ * 0–100 composite learning effectiveness score using the spec-defined weights:
+ *   40 pts — Win Rate improvement %  (each +0.1% WR improvement = 4 pts; +10% = 40 pts max)
+ *   30 pts — R:R improvement %       (each +10% relative RR gain = 3 pts; +100% = 30 pts max)
+ *   20 pts — Loss avoidance count    (each memory-removed signal = 2 pts; 10 removals = 20 pts max)
+ *   10 pts — Confidence improvement  (each +1 conf point = 1 pt; +10 = 10 pts max)
+ */
 function computeLearningScore(
-  noMem:   Pick<ReplayPassStats, "winRate" | "avgConf" | "profitFactor">,
-  withMem: Pick<ReplayPassStats, "winRate" | "avgConf" | "profitFactor">,
+  noMem:        Pick<ReplayPassStats, "winRate" | "avgConf" | "avgRR">,
+  withMem:      Pick<ReplayPassStats, "winRate" | "avgConf" | "avgRR">,
+  lossesAvoided: number,
 ): number {
-  // Factor 1: absolute win rate quality of withMem (0–40 pts; 60%WR = 40, 40%WR = 0)
-  const wrQuality = Math.max(0, Math.min(40, Math.round((withMem.winRate - 0.4) / 0.2 * 40)));
+  // WR improvement: +10pp WR improvement = 40 pts
+  const wrDelta = withMem.winRate - noMem.winRate;
+  const wrPts   = Math.max(0, Math.min(40, Math.round(wrDelta * 400)));
 
-  // Factor 2: win rate improvement vs noMem (−10..+20)
-  const wrDelta     = withMem.winRate - noMem.winRate;
-  const wrImprove   = Math.max(-10, Math.min(20, Math.round(wrDelta * 200)));
+  // RR improvement %: +100% relative RR gain = 30 pts
+  const rrDelta = withMem.avgRR - noMem.avgRR;
+  const rrPct   = noMem.avgRR > 0 ? rrDelta / noMem.avgRR : (rrDelta > 0 ? 0.2 : 0);
+  const rrPts   = Math.max(0, Math.min(30, Math.round(rrPct * 30)));
 
-  // Factor 3: confidence quality (0–20; conf≥80 = 20)
-  const confQuality = Math.max(0, Math.min(20, Math.round((withMem.avgConf - 60) / 20 * 20)));
+  // Losses avoided by memory: each removal = 2 pts, max 20
+  const lossAvoidPts = Math.max(0, Math.min(20, lossesAvoided * 2));
 
-  // Factor 4: profit factor (0–20; PF≥2.0 = 20)
-  const pfQuality   = Math.max(0, Math.min(20, Math.round((withMem.profitFactor - 1) / 1 * 20)));
+  // Confidence improvement: each +1 conf point = 1 pt, max 10
+  const confDelta = withMem.avgConf - noMem.avgConf;
+  const confPts   = Math.max(0, Math.min(10, Math.round(confDelta)));
 
-  return Math.max(0, Math.min(100, wrQuality + wrImprove + confQuality + pfQuality));
+  return Math.max(0, Math.min(100, wrPts + rrPts + lossAvoidPts + confPts));
+}
+
+function tradeGrade(winRate: number, profitFactor: number): string {
+  if (profitFactor >= 2.0 && winRate >= 0.55) return "A";
+  if (profitFactor >= 1.5 && winRate >= 0.50) return "B";
+  if (profitFactor >= 1.2 && winRate >= 0.40) return "C";
+  if (profitFactor >= 1.0)                    return "D";
+  return "F";
 }
 
 export async function runReplay(
@@ -242,6 +266,9 @@ export async function runReplay(
           withMemVerdict: memCls,
           noMemConf:      noMem.confidence,
           withMemConf:    withMem.confidence,
+          keyLesson:      (direction === "memory_added" || direction === "conf_boost")
+                            ? (withMem.lessons[0] ?? null)
+                            : null,
         });
       }
 
@@ -318,6 +345,7 @@ export async function runReplay(
     profitFactor:     noMemSim.profitFactor,
     maxDrawdown:      noMemSim.maxDrawdown,
     simulated:        noMemSim.simulated,
+    avgTradeGrade:    noMemSim.avgTradeGrade,
     topLessons:       [],
     topRejectLessons: [],
   };
@@ -334,11 +362,16 @@ export async function runReplay(
     profitFactor:     withMemSim.profitFactor,
     maxDrawdown:      withMemSim.maxDrawdown,
     simulated:        withMemSim.simulated,
+    avgTradeGrade:    withMemSim.avgTradeGrade,
     topLessons:       topN(lessonsBag),
     topRejectLessons: topN(rejectLessonsBag),
   };
 
-  const learningScore = computeLearningScore(noMemStats, withMemStats);
+  const removedByMem = decisionDiffs.filter(d => d.direction === "memory_removed").length;
+  const addedByMem   = decisionDiffs.filter(d => d.direction === "memory_added").length;
+  const changedByMem = decisionDiffs.filter(d => d.direction === "conf_boost" || d.direction === "conf_drop").length;
+
+  const learningScore = computeLearningScore(noMemStats, withMemStats, removedByMem);
 
   return {
     symbol, timeframe,
@@ -347,14 +380,9 @@ export async function runReplay(
     noMem:    noMemStats,
     withMem:  withMemStats,
     delta: {
-      removedByMemory: candles.filter(c =>
-        classify(c.noMem.decision,   c.noMem.confidence)   === "approve" &&
-        classify(c.withMem.decision, c.withMem.confidence) !== "approve",
-      ).length,
-      addedByMemory: candles.filter(c =>
-        classify(c.noMem.decision,   c.noMem.confidence)   !== "approve" &&
-        classify(c.withMem.decision, c.withMem.confidence) === "approve",
-      ).length,
+      removedByMemory:  removedByMem,
+      addedByMemory:    addedByMem,
+      changedByMemory:  changedByMem,
       avgConfChange: Math.round((withMemAvgConf - noMemAvgConf) * 10) / 10,
       approveRateDelta: Math.round(
         ((withMemTotal > 0 ? withMemApprove / withMemTotal : 0) -

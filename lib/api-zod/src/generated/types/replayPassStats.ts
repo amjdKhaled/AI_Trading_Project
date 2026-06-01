@@ -23,6 +23,8 @@ export interface ReplayPassStats {
   maxDrawdown: number;
   /** Number of approved signals with lifecycle outcome simulated */
   simulated: number;
+  /** Letter grade A–F based on winRate + profitFactor */
+  avgTradeGrade: string;
   topLessons: string[];
   /** Lessons most frequently cited when memory still returned REJECT or WAIT */
   topRejectLessons: string[];

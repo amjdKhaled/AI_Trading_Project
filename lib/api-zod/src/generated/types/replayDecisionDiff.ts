@@ -14,4 +14,6 @@ export interface ReplayDecisionDiff {
   withMemVerdict: string;
   noMemConf: number;
   withMemConf: number;
+  /** Top lesson from the with-memory pass that caused this divergence */
+  keyLesson?: string | null;
 }

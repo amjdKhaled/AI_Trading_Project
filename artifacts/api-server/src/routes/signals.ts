@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, gte, inArray, isNull, isNotNull, type SQL } from "drizzle-orm";
-import { db, signalsTable, aiDecisionsTable } from "@workspace/db";
+import { db, signalsTable, aiDecisionsTable, aiLessonsTable } from "@workspace/db";
 import {
   ListSignalsQueryParams,
   ListSignalsResponse,
@@ -922,8 +922,75 @@ router.get("/signals/performance/summary", async (req, res): Promise<void> => {
       byPattern[pat!] = computeSlice(rows.filter(r => r.pattern === pat));
     }
 
+    // ── Memory Scorecard — ai_decisions: reflected vs not-yet-reflected ──
+    const decisions = await db.select().from(aiDecisionsTable)
+      .where(isNotNull(aiDecisionsTable.outcome));
+
+    function decisionsWR(items: typeof decisions): { winRate: number; avgRR: number; total: number } {
+      const total = items.length;
+      if (total === 0) return { winRate: 0, avgRR: 0, total: 0 };
+      const wins = items.filter(d => d.outcome === "tp_hit").length;
+      const closed = wins + items.filter(d => d.outcome === "sl_hit").length;
+      const winRate = closed > 0 ? Math.round((wins / closed) * 1000) / 1000 : 0;
+      const rrs = items.filter(d => d.rrRatio != null && d.rrRatio > 0).map(d => d.rrRatio!);
+      const avgRR = rrs.length > 0 ? Math.round(rrs.reduce((s, v) => s + v, 0) / rrs.length * 100) / 100 : 0;
+      return { winRate, avgRR, total };
+    }
+
+    const noMemDecisions   = decisions.filter(d => !d.reflected);
+    const withMemDecisions = decisions.filter(d =>  d.reflected);
+    const noMemStats2   = decisionsWR(noMemDecisions);
+    const withMemStats2 = decisionsWR(withMemDecisions);
+    const memoryScorecard = {
+      noMemWinRate:  noMemStats2.winRate,
+      withMemWinRate: withMemStats2.winRate,
+      noMemAvgRR:    noMemStats2.avgRR,
+      withMemAvgRR:  withMemStats2.avgRR,
+      noMemTotal:    noMemStats2.total,
+      withMemTotal:  withMemStats2.total,
+    };
+
+    // ── Weekly trend — group signalsTable rows by ISO year-week ──────────
+    function isoWeek(date: Date): string {
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const dayOfWeek = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayOfWeek);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const weekNum = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+      return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+    }
+
+    // Get ai_lessons per week for memoryImpact
+    const lessons = await db.select({ createdAt: aiLessonsTable.createdAt }).from(aiLessonsTable);
+    const lessonsByWeek: Record<string, number> = {};
+    for (const l of lessons) {
+      const w = isoWeek(new Date(l.createdAt));
+      lessonsByWeek[w] = (lessonsByWeek[w] ?? 0) + 1;
+    }
+
+    const weekMap: Record<string, { tp_hit: number; sl_hit: number; total: number }> = {};
+    for (const r of rows) {
+      const w = isoWeek(new Date(r.createdAt));
+      if (!weekMap[w]) weekMap[w] = { tp_hit: 0, sl_hit: 0, total: 0 };
+      weekMap[w].total++;
+      if (r.state === "tp_hit") weekMap[w].tp_hit++;
+      if (r.state === "sl_hit") weekMap[w].sl_hit++;
+    }
+
+    const weeklyTrend = Object.entries(weekMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([week, v]) => {
+        const closed = v.tp_hit + v.sl_hit;
+        const winRate = closed > 0 ? Math.round((v.tp_hit / closed) * 1000) / 1000 : 0;
+        const memImpact = v.total > 0
+          ? Math.round(((lessonsByWeek[week] ?? 0) / v.total) * 100) / 100
+          : 0;
+        return { week, winRate, total: v.total, memoryImpact: memImpact };
+      });
+
     res.setHeader("Cache-Control", "no-store");
-    res.json({ ok: true, global, bySide, bySymbol, byRegime, byPattern, updatedAt: new Date().toISOString() });
+    res.json({ ok: true, global, bySide, bySymbol, byRegime, byPattern, memoryScorecard, weeklyTrend, updatedAt: new Date().toISOString() });
   } catch (err) {
     req.log?.error({ err }, "performance/summary failed");
     res.status(500).json({ error: "Failed to compute performance summary" });

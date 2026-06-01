@@ -9,6 +9,8 @@
 export interface ReplayDelta {
   removedByMemory: number;
   addedByMemory: number;
+  /** Candles where memory changed confidence class (conf_boost or conf_drop) */
+  changedByMemory: number;
   avgConfChange: number;
   /** withMem.approveRate − noMem.approveRate; positive = memory increased signal rate */
   approveRateDelta: number;
