@@ -294,6 +294,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/SimilarityResponse"
 
+  /signals/replay:
+    post:
+      operationId: startReplay
+      tags: [signals]
+      summary: Start a memory-vs-no-memory replay job for a symbol
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayStartRequest"
+      responses:
+        "200":
+          description: Job started or already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayStartResponse"
+
+  /signals/replay/{jobId}:
+    get:
+      operationId: getReplayStatus
+      tags: [signals]
+      summary: Poll a replay job for status and result
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status and optional result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayJobStatus"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
 components:
   schemas:
     HealthStatus:
@@ -938,3 +985,94 @@ components:
         technicalContext:
           type: object
           additionalProperties: true
+
+    ReplayStartRequest:
+      type: object
+      required: [symbol]
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+          default: "5m"
+        limit:
+          type: integer
+          minimum: 5
+          maximum: 200
+          default: 50
+
+    ReplayStartResponse:
+      type: object
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+        alreadyRunning:
+          type: boolean
+
+    ReplayPassStats:
+      type: object
+      required: [approve, wait, reject, avgConf, avgRR, topLessons]
+      properties:
+        approve:
+          type: integer
+        wait:
+          type: integer
+        reject:
+          type: integer
+        avgConf:
+          type: number
+        avgRR:
+          type: number
+        topLessons:
+          type: array
+          items:
+            type: string
+
+    ReplayDelta:
+      type: object
+      required: [removedByMemory, addedByMemory, avgConfChange]
+      properties:
+        removedByMemory:
+          type: integer
+        addedByMemory:
+          type: integer
+        avgConfChange:
+          type: number
+
+    ReplayResult:
+      type: object
+      required: [symbol, timeframe, processed, noMem, withMem, delta]
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        processed:
+          type: integer
+        noMem:
+          $ref: "#/components/schemas/ReplayPassStats"
+        withMem:
+          $ref: "#/components/schemas/ReplayPassStats"
+        delta:
+          $ref: "#/components/schemas/ReplayDelta"
+
+    ReplayJobStatus:
+      type: object
+      required: [jobId, status, progress, total]
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [running, done, error]
+        progress:
+          type: integer
+        total:
+          type: integer
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/ReplayResult"
+            - type: "null"
+        error:
+          type: ["string", "null"]

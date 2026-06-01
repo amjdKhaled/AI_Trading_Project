@@ -215,7 +215,7 @@ async function buildCandleMemoryContext(
 
 const CANDLE_SYSTEM = `You are an institutional Trade Intelligence Engine with 20 years of market experience. A deterministic Market Analysis Engine has computed complete context for you. Your sole job: read ALL the data and generate a precise LONG, SHORT, or WAIT decision. Respond ONLY with valid JSON. No preamble, no markdown, no text outside the JSON object.`;
 
-function buildMarketContextPrompt(ctx: MarketContext, stats: HistoricalSetupStats): string {
+function buildMarketContextPrompt(ctx: MarketContext, stats: HistoricalSetupStats, memBlock?: string): string {
   const { indicators: ind, structure: str, htf } = ctx;
   const price = ctx.currentBar.close;
 
@@ -290,7 +290,7 @@ HISTORICAL PERFORMANCE (${ctx.symbol})
   Closed trades: ${stats.samples}  |  Win Rate: ${(stats.winRate * 100).toFixed(1)}%
   Avg R:R (wins): ${stats.avgRR.toFixed(2)}  |  Avg loss: ${stats.avgLoss.toFixed(2)}R
   Regime "${ctx.regime}" AI approve rate: ${(stats.regimeApproveRate * 100).toFixed(0)}%
-
+${memBlock ? `\n══════════════════════════════════════════════\nAI MEMORY — lessons from past trades:\n══════════════════════════════════════════════\n${memBlock}\n` : ""}
 ══════════════════════════════════════════════
 MANDATORY DECISION RULES — ALL MUST BE APPLIED
 ══════════════════════════════════════════════
@@ -489,5 +489,67 @@ export async function filterCandleWithAi(
   } catch (parseErr) {
     logger.warn({ parseErr, raw, symbol: ctx.symbol }, "Candle decision JSON parse failed — WAIT");
     return noTrade(ctx, "AI response could not be parsed — defaulting to WAIT.");
+  }
+}
+
+// ── Replay pass ───────────────────────────────────────────────────────────────
+// Runs one Ollama call for the replay engine (no full AiCandleDecision needed).
+// Called twice per historical candle: pass 1 without memory, pass 2 with memory.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function runCandlePassForReplay(
+  ctx:       MarketContext,
+  stats:     HistoricalSetupStats,
+  useMemory: boolean,
+): Promise<{
+  decision:   "LONG" | "SHORT" | "WAIT";
+  confidence: number;
+  entry:      number | null;
+  stopLoss:   number | null;
+  takeProfit: number | null;
+  rr:         number | null;
+  lessons:    string[];
+  memoryUsed: boolean;
+}> {
+  let memBlock:  string | undefined;
+  let lessons:   string[] = [];
+  let memoryUsed = false;
+
+  if (useMemory) {
+    const mem = await buildCandleMemoryContext(ctx);
+    if (mem.memoryUsed) {
+      memBlock   = mem.text;
+      lessons    = mem.lessons;
+      memoryUsed = true;
+    }
+  }
+
+  let raw = "";
+  try {
+    raw = await ollamaGenerateWithFallback(
+      buildMarketContextPrompt(ctx, stats, memBlock),
+      CANDLE_SYSTEM,
+    );
+  } catch {
+    return { decision: "WAIT", confidence: 0, entry: null, stopLoss: null, takeProfit: null, rr: null, lessons, memoryUsed };
+  }
+
+  try {
+    const p        = parseJsonFromResponse(raw) as Record<string, unknown>;
+    const rawDec   = typeof p.decision === "string" ? p.decision.toUpperCase() : "WAIT";
+    const decision: "LONG" | "SHORT" | "WAIT" =
+      rawDec === "LONG" ? "LONG" : rawDec === "SHORT" ? "SHORT" : "WAIT";
+    const confidence = typeof p.confidence === "number"
+      ? Math.max(0, Math.min(100, Math.round(p.confidence))) : 0;
+    const entry      = typeof p.entry      === "number" ? p.entry      : null;
+    const stopLoss   = typeof p.stopLoss   === "number" ? p.stopLoss   : null;
+    const takeProfit = typeof p.takeProfit === "number" ? p.takeProfit : null;
+    const risk       = entry !== null && stopLoss   !== null ? Math.abs(entry - stopLoss)   : null;
+    const reward     = entry !== null && takeProfit !== null ? Math.abs(takeProfit - entry) : null;
+    const rr         = risk && reward && risk > 0
+      ? Math.round((reward / risk) * 100) / 100
+      : typeof p.riskReward === "number" ? (p.riskReward as number) : null;
+    return { decision, confidence, entry, stopLoss, takeProfit, rr, lessons, memoryUsed };
+  } catch {
+    return { decision: "WAIT", confidence: 0, entry: null, stopLoss: null, takeProfit: null, rr: null, lessons, memoryUsed };
   }
 }

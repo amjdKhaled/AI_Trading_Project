@@ -1,0 +1,318 @@
+PROJECT GOAL
+
+The AI Memory system must become part of the LIVE trading decision engine.
+
+Currently AI Memory learns and stores lessons, but the live candle-close path does not truly use those lessons when generating BUY / SELL / NO_TRADE decisions.
+
+I want AI Memory and the AI Decision Engine to work together in real-time during live market hours.
+
+====================================================
+MODEL CONFIGURATION (FINAL)
+===========================
+
+Set ALL text-generation subsystems to:
+
+Primary Model:
+qwen3:8b
+
+Fallback Model:
+qwen2.5:7b
+
+Vision Model:
+qwen2.5-vl:7b
+
+Verify there are ZERO remaining references to:
+
+qwen3:14b
+qwen2.5:14b
+
+The entire project should use:
+
+AI Decision Engine      -> qwen3:8b
+AI Memory Reflection    -> qwen3:8b
+Learn Everything        -> qwen3:8b
+AI Chart Analyzer       -> qwen3:8b
+Signal Filter           -> qwen3:8b
+Historical Analysis     -> qwen3:8b
+
+Fallback:
+qwen2.5:7b
+
+====================================================
+CRITICAL REQUIREMENT
+WIRE AI MEMORY INTO LIVE TRADING
+================================
+
+I do NOT want AI Memory to be a passive database.
+
+I want AI Memory to directly influence:
+
+* BUY decisions
+* SELL decisions
+* NO_TRADE decisions
+* confidence score
+* trade approval
+* trade rejection
+* risk rating
+* stop-loss placement validation
+
+The live candle-close path must use AI Memory.
+
+====================================================
+LIVE MARKET BEHAVIOR
+====================
+
+Every time a new 5-minute candle closes:
+
+1. Recalculate indicators
+2. Recalculate market structure
+3. Recalculate pattern detection
+4. Load AI Memory
+5. Generate a fresh AI decision
+
+This must happen automatically.
+
+No manual button required.
+
+====================================================
+MEMORY CONTEXT TO LOAD
+======================
+
+For every live decision load:
+
+1. Most recent lessons for current symbol
+2. Most recent lessons for current regime
+3. Winner/loser analysis
+4. Failure category statistics
+5. Most recent loss reasoning
+6. Historical setup performance
+7. Historical win rate
+8. Historical RR performance
+9. Similar pattern history
+
+Required functions:
+
+getRecentLessonsFromDb()
+
+getWinnerLoserSummary()
+
+getFailureCategoryStats()
+
+getMostRecentLossReasoning()
+
+findSimilarHistoricalSetups()
+
+buildCandleMemoryContext()
+
+====================================================
+PROMPT INJECTION
+================
+
+Before sending the prompt to Qwen3:
+
+Inject:
+
+---
+
+MEMORY LESSONS
+
+* lesson 1
+* lesson 2
+* lesson 3
+* lesson 4
+* lesson 5
+* lesson 6
+
+---
+
+WINNER ANALYSIS
+
+What winning trades had in common
+
+---
+
+LOSER ANALYSIS
+
+What losing trades had in common
+
+---
+
+FAILURE CATEGORIES
+
+Top reasons for losses
+
+---
+
+MOST RECENT LOSS
+
+Full reasoning text
+
+---
+
+HISTORICAL PERFORMANCE
+
+Win rate
+Average RR
+Approval rate
+
+---
+
+The AI must be able to REJECT trades if memory indicates a repeated failure pattern.
+
+====================================================
+REAL-TIME LEARNING LOOP
+=======================
+
+When a trade closes:
+
+TP HIT:
+
+* create lesson
+* save reasoning
+* update pattern stats
+* update setup stats
+
+SL HIT:
+
+* create lesson
+* save reasoning
+* update failure categories
+* update regime statistics
+
+Immediately make those lessons available to future decisions.
+
+No restart required.
+
+====================================================
+LIVE DECISION RULE
+==================
+
+The next candle decision must use:
+
+Current Market Data
++
+Historical AI Memory
+
+The AI should continuously evolve as trades close.
+
+====================================================
+CHART REPLAY VALIDATION
+=======================
+
+Create a new feature:
+
+"Replay Using Current AI Memory"
+
+Purpose:
+
+Re-analyze historical candles using the CURRENT memory database.
+
+The replay should:
+
+1. Re-run AI decisions candle by candle.
+2. Rebuild BUY markers.
+3. Rebuild SELL markers.
+4. Rebuild NO_TRADE decisions.
+5. Show final statistics.
+
+Display:
+
+Win Rate
+Profit Factor
+Average RR
+Total Trades
+Wins
+Losses
+
+====================================================
+MEMORY IMPACT TESTING
+=====================
+
+Add two modes:
+
+MEMORY OFF
+
+MEMORY ON
+
+Replay the exact same chart.
+
+Compare:
+
+Win Rate
+RR
+Trade Count
+Profit Factor
+
+I want objective proof that AI Memory improves performance.
+
+====================================================
+AI MEMORY PAGE IMPROVEMENTS
+===========================
+
+Replace the current ugly checkbox:
+
+[ ] Use AI
+
+with a professional toggle:
+
+AI Reflection
+OFF / ON
+
+Use the same design language as:
+
+Auto Learn ON
+
+The current checkbox looks unfinished.
+
+====================================================
+DIAGNOSTICS PANEL
+=================
+
+Add a diagnostics section showing:
+
+Current Model
+Fallback Model
+Memory Enabled
+Lessons Loaded
+Failure Stats Loaded
+Winner Analysis Loaded
+Recent Loss Loaded
+Memory Influence Score
+
+For every live decision show:
+
+Decision:
+BUY / SELL / NO_TRADE
+
+Memory Used:
+YES / NO
+
+Lessons Injected:
+Count
+
+Winner Analysis:
+Loaded / Not Loaded
+
+Failure Stats:
+Loaded / Not Loaded
+
+====================================================
+SUCCESS CRITERIA
+================
+
+A completed implementation means:
+
+1. AI Memory actively affects live candle-close decisions.
+2. Every 5-minute candle uses memory context.
+3. New lessons immediately influence future trades.
+4. Replay mode proves memory improves performance.
+5. Diagnostics confirm memory was used.
+6. Entire project runs on qwen3:8b.
+7. Fallback is qwen2.5:7b.
+8. No dead AI Memory code paths remain.
+9. No legacy decision paths remain disconnected from live trading.
+10. Full typecheck passes with zero errors.
+
+Do not stop at comments or partial wiring.
+
+Verify the actual live candle-close execution path is using AI Memory.

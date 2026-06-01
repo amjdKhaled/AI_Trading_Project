@@ -30,11 +30,15 @@ import type {
   ChartAnalysisRequest,
   ChartAnalysisResponse,
   GetAiDecisionStatsParams,
+  GetReplayStatus404,
   GetSignalStatsParams,
   HealthStatus,
   ListBarsParams,
   ListChartAnalysesParams,
   ListSignalsParams,
+  ReplayJobStatus,
+  ReplayStartRequest,
+  ReplayStartResponse,
   Signal,
   SignalStats,
   SimilarityRequest,
@@ -1141,4 +1145,152 @@ export const useQuerySimilarity = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getQuerySimilarityMutationOptions(options));
     }
+
+export const getStartReplayUrl = () => {
+
+
+
+
+  return `/api/signals/replay`
+}
+
+/**
+ * @summary Start a memory-vs-no-memory replay job for a symbol
+ */
+export const startReplay = async (replayStartRequest: ReplayStartRequest, options?: RequestInit): Promise<ReplayStartResponse> => {
+
+  return customFetch<ReplayStartResponse>(getStartReplayUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      replayStartRequest,)
+  }
+);}
+
+
+
+
+export const getStartReplayMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startReplay>>, TError,{data: BodyType<ReplayStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startReplay>>, TError,{data: BodyType<ReplayStartRequest>}, TContext> => {
+
+const mutationKey = ['startReplay'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startReplay>>, {data: BodyType<ReplayStartRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startReplay(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartReplayMutationResult = NonNullable<Awaited<ReturnType<typeof startReplay>>>
+    export type StartReplayMutationBody = BodyType<ReplayStartRequest>
+    export type StartReplayMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a memory-vs-no-memory replay job for a symbol
+ */
+export const useStartReplay = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startReplay>>, TError,{data: BodyType<ReplayStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startReplay>>,
+        TError,
+        {data: BodyType<ReplayStartRequest>},
+        TContext
+      > => {
+      return useMutation(getStartReplayMutationOptions(options));
+    }
+
+export const getGetReplayStatusUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/signals/replay/${jobId}`
+}
+
+/**
+ * @summary Poll a replay job for status and result
+ */
+export const getReplayStatus = async (jobId: string, options?: RequestInit): Promise<ReplayJobStatus> => {
+
+  return customFetch<ReplayJobStatus>(getGetReplayStatusUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetReplayStatusQueryKey = (jobId: string,) => {
+    return [
+    `/api/signals/replay/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetReplayStatusQueryOptions = <TData = Awaited<ReturnType<typeof getReplayStatus>>, TError = ErrorType<GetReplayStatus404>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReplayStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReplayStatusQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReplayStatus>>> = ({ signal }) => getReplayStatus(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(jobId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReplayStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetReplayStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getReplayStatus>>>
+export type GetReplayStatusQueryError = ErrorType<GetReplayStatus404>
+
+
+/**
+ * @summary Poll a replay job for status and result
+ */
+
+export function useGetReplayStatus<TData = Awaited<ReturnType<typeof getReplayStatus>>, TError = ErrorType<GetReplayStatus404>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReplayStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetReplayStatusQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 

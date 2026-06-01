@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Database, BookOpen, BarChart2, Activity, RefreshCw,
   TrendingUp, TrendingDown, Minus, AlertTriangle, Clock, Filter,
-  GraduationCap, Zap, Brain, CheckCircle, XCircle,
+  GraduationCap, Zap, Brain, CheckCircle, XCircle, Play,
 } from "lucide-react";
+import { setReplayMarkers, clearReplayMarkers } from "@/lib/replayStore";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -645,6 +646,24 @@ interface ReflectResult {
   error?:   string;
 }
 
+// ── Replay types ─────────────────────────────────────────────
+interface ReplayPassStats {
+  approve: number; wait: number; reject: number;
+  avgConf: number; avgRR: number; topLessons: string[];
+}
+interface ReplayCandleResult {
+  candleTime: number;
+  noMem:   { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null };
+  withMem: { decision: string; confidence: number; entry: number | null; stopLoss: number | null; takeProfit: number | null; rr: number | null; lessons: string[]; memoryUsed: boolean };
+}
+interface ReplayJobResult {
+  symbol: string; timeframe: string; processed: number;
+  candles?: ReplayCandleResult[];
+  noMem:   ReplayPassStats;
+  withMem: ReplayPassStats;
+  delta:   { removedByMemory: number; addedByMemory: number; avgConfChange: number };
+}
+
 // ── Tab: Tools (Ollama + Reflect + Import) ─────────────────────
 
 interface ToolsTabProps {
@@ -661,12 +680,28 @@ interface ToolsTabProps {
   batching:       boolean;
   batchResult:    string | null;
   onBatchImport:  () => void;
+  // Replay
+  replaySymbol:   string;
+  setReplaySymbol:(s: string) => void;
+  replayTf:       string;
+  setReplayTf:    (s: string) => void;
+  replayLimit:    number;
+  setReplayLimit: (n: number) => void;
+  replayRunning:  boolean;
+  replayProgress: number;
+  replayTotal:    number;
+  replayResult:   ReplayJobResult | null;
+  replayError:    string | null;
+  onStartReplay:  () => void;
 }
 
 function ToolsTab({
   ollamaStatus, activeSymbol, closedSignals,
   reflectId, setReflectId, reflecting, reflectResult, onReflect,
   batchSymbol, setBatchSymbol, batching, batchResult, onBatchImport,
+  replaySymbol, setReplaySymbol, replayTf, setReplayTf,
+  replayLimit, setReplayLimit, replayRunning, replayProgress,
+  replayTotal, replayResult, replayError, onStartReplay,
 }: ToolsTabProps) {
   return (
     <div className="max-w-lg space-y-4">
@@ -797,6 +832,101 @@ function ToolsTab({
             {reflectResult.error && (
               <div className="text-[11px] text-red-400">{reflectResult.error}</div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Chart Replay */}
+      <div className="bg-card border border-border rounded p-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+          <Play size={11} /> Chart Replay — Memory vs No-Memory
+        </div>
+        <p className="text-[11px] text-muted-foreground mb-2.5">
+          Re-runs AI decisions on historical candles twice — first without memory, then with memory — and shows a comparison report. Memory-enhanced APPROVE signals appear as violet diamonds on the chart.
+        </p>
+        <div className="flex gap-2 mb-2">
+          <input
+            value={replaySymbol}
+            onChange={e => setReplaySymbol(e.target.value.toUpperCase())}
+            placeholder={activeSymbol ?? "TSLA"}
+            className="flex-1 h-7 text-xs bg-background border border-border rounded px-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <select
+            value={replayTf}
+            onChange={e => setReplayTf(e.target.value)}
+            className="h-7 text-[11px] bg-background border border-border rounded px-1.5 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="1h">1h</option>
+          </select>
+          <input
+            type="number"
+            min={5} max={200}
+            value={replayLimit}
+            onChange={e => setReplayLimit(Math.max(5, Math.min(200, Number(e.target.value))))}
+            className="w-14 h-7 text-xs bg-background border border-border rounded px-2 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+            title="Number of candles"
+          />
+        </div>
+        <button
+          onClick={onStartReplay}
+          disabled={replayRunning}
+          className="w-full h-7 text-xs rounded bg-violet-600 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
+        >
+          {replayRunning
+            ? <><RefreshCw size={11} className="animate-spin" /> Replaying… {replayProgress}/{replayTotal}</>
+            : <><Play size={11} /> Run Replay</>}
+        </button>
+        {replayError && (
+          <p className="mt-2 text-[11px] text-red-400">{replayError}</p>
+        )}
+        {replayResult && (
+          <div className="mt-3 space-y-2">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              {replayResult.processed} candles · {replayResult.symbol} {replayResult.timeframe}
+            </div>
+            <div className="grid grid-cols-3 gap-1 text-[10px] font-mono">
+              <div className="bg-background rounded p-1.5 border border-border">
+                <div className="text-muted-foreground mb-0.5">No Memory</div>
+                <div className="text-emerald-400">✓ {replayResult.noMem.approve}</div>
+                <div className="text-amber-400">~ {replayResult.noMem.wait}</div>
+                <div className="text-red-400">✗ {replayResult.noMem.reject}</div>
+                <div className="text-muted-foreground mt-1">conf {replayResult.noMem.avgConf}</div>
+              </div>
+              <div className="bg-background rounded p-1.5 border border-violet-500/30">
+                <div className="text-violet-400 mb-0.5">With Memory</div>
+                <div className="text-emerald-400">✓ {replayResult.withMem.approve}</div>
+                <div className="text-amber-400">~ {replayResult.withMem.wait}</div>
+                <div className="text-red-400">✗ {replayResult.withMem.reject}</div>
+                <div className="text-muted-foreground mt-1">conf {replayResult.withMem.avgConf}</div>
+              </div>
+              <div className="bg-background rounded p-1.5 border border-border">
+                <div className="text-muted-foreground mb-0.5">Delta</div>
+                <div className={replayResult.delta.addedByMemory > 0 ? "text-emerald-400" : "text-muted-foreground"}>
+                  +{replayResult.delta.addedByMemory} added
+                </div>
+                <div className={replayResult.delta.removedByMemory > 0 ? "text-amber-400" : "text-muted-foreground"}>
+                  -{replayResult.delta.removedByMemory} removed
+                </div>
+                <div className={`mt-1 ${replayResult.delta.avgConfChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  conf {replayResult.delta.avgConfChange >= 0 ? "+" : ""}{replayResult.delta.avgConfChange}
+                </div>
+              </div>
+            </div>
+            {replayResult.withMem.topLessons.length > 0 && (
+              <div className="text-[10px] text-muted-foreground">
+                <div className="font-semibold mb-1">Top lessons applied</div>
+                <ul className="space-y-0.5">
+                  {replayResult.withMem.topLessons.map((l, i) => (
+                    <li key={i} className="truncate">· {l}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-[10px] text-violet-400/80">
+              Violet ◇ diamonds on the chart = memory-enhanced APPROVE signals
+            </p>
           </div>
         )}
       </div>
@@ -1021,6 +1151,93 @@ export default function AiMemoryPage() {
   const [batchSymbol,   setBatchSymbol]   = useState("");
   const [batching,      setBatching]      = useState(false);
   const [batchResult,   setBatchResult]   = useState<string | null>(null);
+
+  // ── Replay tab state ────────────────────────────────────────
+  const [replaySymbol,   setReplaySymbol]   = useState("");
+  const [replayTf,       setReplayTf]       = useState("5m");
+  const [replayLimit,    setReplayLimit]    = useState(50);
+  const [replayJobId,    setReplayJobId]    = useState<string | null>(null);
+  const [replayRunning,  setReplayRunning]  = useState(false);
+  const [replayProgress, setReplayProgress] = useState(0);
+  const [replayTotal,    setReplayTotal]    = useState(0);
+  const [replayResult,   setReplayResult]   = useState<ReplayJobResult | null>(null);
+  const [replayError,    setReplayError]    = useState<string | null>(null);
+
+  // ── Replay handlers ──────────────────────────────────────────
+  const handleStartReplay = useCallback(async () => {
+    const sym = (replaySymbol.trim() || activeSymbol || "").toUpperCase();
+    if (!sym) return;
+    setReplayRunning(true);
+    setReplayResult(null);
+    setReplayError(null);
+    setReplayProgress(0);
+    clearReplayMarkers();
+    try {
+      const res = await fetch(`${BASE}/api/signals/replay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: sym, timeframe: replayTf, limit: replayLimit }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { jobId: string };
+      setReplayJobId(data.jobId);
+    } catch (e) {
+      setReplayError((e as Error).message);
+      setReplayRunning(false);
+    }
+  }, [activeSymbol, replaySymbol, replayTf, replayLimit]);
+
+  // Poll for replay job completion
+  useEffect(() => {
+    if (!replayJobId) return;
+    let cancelled = false;
+    const poll = async () => {
+      while (!cancelled) {
+        await new Promise<void>(r => setTimeout(r, 1800));
+        if (cancelled) break;
+        try {
+          const status = await apiFetch<{
+            status: "running" | "done" | "error";
+            progress: number; total: number;
+            result?: ReplayJobResult; error?: string;
+          }>(`/api/signals/replay/${replayJobId}`);
+          if (cancelled) break;
+          setReplayProgress(status.progress);
+          setReplayTotal(status.total);
+          if (status.status === "done" && status.result) {
+            setReplayResult(status.result);
+            setReplayRunning(false);
+            setReplayJobId(null);
+            // Push memory-enhanced APPROVE candles as chart markers
+            const markers = (status.result.candles ?? [])
+              .filter(c =>
+                (c.withMem.decision === "LONG" || c.withMem.decision === "SHORT") &&
+                c.withMem.confidence >= 80,
+              )
+              .map(c => ({
+                candleTime: c.candleTime,
+                decision:   c.withMem.decision as "LONG" | "SHORT",
+                confidence: c.withMem.confidence,
+                entry:      c.withMem.entry,
+                stopLoss:   c.withMem.stopLoss,
+                takeProfit: c.withMem.takeProfit,
+                rrRatio:    c.withMem.rr,
+              }));
+            const sym = (replaySymbol.trim() || activeSymbol || "").toUpperCase();
+            setReplayMarkers(`${sym}-${replayTf}`, markers);
+            break;
+          } else if (status.status === "error") {
+            setReplayError(status.error ?? "Unknown error");
+            setReplayRunning(false);
+            setReplayJobId(null);
+            break;
+          }
+        } catch { /* keep polling on transient network errors */ }
+      }
+    };
+    void poll();
+    return () => { cancelled = true; };
+  }, [replayJobId, activeSymbol, replaySymbol, replayTf]);
 
   const fetchMemory = useCallback(async () => {
     try {
@@ -1491,6 +1708,18 @@ export default function AiMemoryPage() {
           batching={batching}
           batchResult={batchResult}
           onBatchImport={handleBatchImport}
+          replaySymbol={replaySymbol}
+          setReplaySymbol={setReplaySymbol}
+          replayTf={replayTf}
+          setReplayTf={setReplayTf}
+          replayLimit={replayLimit}
+          setReplayLimit={setReplayLimit}
+          replayRunning={replayRunning}
+          replayProgress={replayProgress}
+          replayTotal={replayTotal}
+          replayResult={replayResult}
+          replayError={replayError}
+          onStartReplay={handleStartReplay}
         />}
       </div>
     </div>

@@ -16,6 +16,8 @@ import { isOllamaAvailable } from "../lib/ai/ollama";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection";
 import { rowToTradeEntry } from "./ai";
 import { filterCandleWithAi } from "../lib/ai/filter";
+import { runReplay } from "../lib/ai/replay";
+import type { ReplayResult } from "../lib/ai/replay";
 import { buildMarketContext, findSimilarHistoricalSetups } from "../lib/ai/market-context";
 import { getNewsSentiment } from "../lib/ai/news";
 import { checkOpenDecisions } from "../lib/ai/lifecycle-checker";
@@ -302,6 +304,22 @@ router.patch("/signals/:signalId/state", async (req, res): Promise<void> => {
 // Rate-limit safe: bars are sourced from fetchHistory which has a 24 h
 // disk+memory cache and stale-fallback on 429 — never breaks the chart.
 const HTF_MAP: Record<string, string> = { "5m": "15m", "15m": "1h", "1h": "1d" };
+
+// ── Replay job store (in-memory, one job per symbol-timeframe) ────────────────
+interface ReplayJob {
+  jobId:     string;
+  symbol:    string;
+  timeframe: string;
+  status:    "running" | "done" | "error";
+  progress:  number;
+  total:     number;
+  result?:   ReplayResult;
+  error?:    string;
+  startedAt: number;
+}
+
+const replayJobs       = new Map<string, ReplayJob>();
+const activeJobByKey   = new Map<string, string>(); // "SYM-tf" → jobId
 const TF_INTERVAL_SEC: Record<string, number> = { "5m": 300, "15m": 900, "1h": 3600, "1d": 86400 };
 
 router.post("/signals/candle-decision", async (req, res): Promise<void> => {
@@ -685,6 +703,102 @@ router.get("/signals/stats", async (req, res): Promise<void> => {
     avgConfidence: Math.round(avgConf * 10) / 10,
     avgRR:         Math.round(avgRR * 100) / 100,
   }));
+});
+
+// ── POST /signals/replay ──────────────────────────────────────
+// Starts an async memory-vs-no-memory replay job for a symbol+timeframe.
+// Returns immediately with { jobId }. Poll GET /signals/replay/:jobId for status.
+// Only one active job per symbol-timeframe at a time.
+router.post("/signals/replay", async (req, res): Promise<void> => {
+  const { symbol, timeframe = "5m", limit = 50 } = req.body as {
+    symbol?: string; timeframe?: string; limit?: number;
+  };
+  if (!symbol || typeof symbol !== "string") {
+    res.status(400).json({ error: "symbol required" });
+    return;
+  }
+
+  const sym = symbol.toUpperCase().trim();
+  const tf  = String(timeframe);
+  const lim = Math.max(5, Math.min(200, typeof limit === "number" ? Math.round(limit) : 50));
+  const key = `${sym}-${tf}`;
+
+  // Return existing running job
+  const existingId = activeJobByKey.get(key);
+  if (existingId) {
+    const existing = replayJobs.get(existingId);
+    if (existing?.status === "running") {
+      res.json({ jobId: existingId, alreadyRunning: true });
+      return;
+    }
+  }
+
+  const jobId = `${sym}-${tf}-${Date.now()}`;
+  const job: ReplayJob = {
+    jobId, symbol: sym, timeframe: tf,
+    status: "running", progress: 0, total: lim, startedAt: Date.now(),
+  };
+  replayJobs.set(jobId, job);
+  activeJobByKey.set(key, jobId);
+
+  // Evict oldest jobs if store grows beyond 30 entries
+  if (replayJobs.size > 30) {
+    const oldest = [...replayJobs.entries()]
+      .sort((a, b) => a[1].startedAt - b[1].startedAt)[0];
+    if (oldest) replayJobs.delete(oldest[0]);
+  }
+
+  // Respond immediately so the client can start polling
+  res.json({ jobId });
+
+  void (async () => {
+    try {
+      const htfTf = HTF_MAP[tf] ?? "15m";
+      const [barsRaw, htfBarsRaw] = await Promise.all([
+        fetchHistory(sym, tf),
+        fetchHistory(sym, htfTf),
+      ]);
+      const bars    = barsRaw    as OhlcvBar[];
+      const htfBars = htfBarsRaw as OhlcvBar[];
+
+      if (bars.length < 110) {
+        job.status = "error";
+        job.error  = `Insufficient bars (${bars.length} < 110) — fetch more history first`;
+        return;
+      }
+
+      const result = await runReplay(
+        bars, htfBars, htfTf, sym, tf, lim,
+        (done, total) => { job.progress = done; job.total = total; },
+      );
+
+      job.result   = result;
+      job.status   = "done";
+      job.progress = result.processed;
+    } catch (err) {
+      job.status = "error";
+      job.error  = (err instanceof Error) ? err.message : String(err);
+    }
+  })();
+});
+
+// ── GET /signals/replay/:jobId ────────────────────────────────
+router.get("/signals/replay/:jobId", (req, res): void => {
+  const { jobId } = req.params;
+  const job = replayJobs.get(jobId);
+  if (!job) {
+    res.status(404).json({ error: "Replay job not found" });
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    jobId:    job.jobId,
+    status:   job.status,
+    progress: job.progress,
+    total:    job.total,
+    result:   job.result ?? null,
+    error:    job.error ?? null,
+  });
 });
 
 export default router;

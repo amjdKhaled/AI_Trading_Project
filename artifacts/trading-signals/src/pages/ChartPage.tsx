@@ -6,6 +6,7 @@ import { SignalPanel } from "@/components/SignalPanel";
 import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 import { useBinanceSocket } from "@/hooks/useBinanceSocket";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
+import { subscribeReplayMarkers, getReplayState, clearReplayMarkers, type ReplayMarkerItem } from "@/lib/replayStore";
 
 // ── Timeframe constants ───────────────────────────────────────────────────────
 
@@ -282,6 +283,17 @@ export default function ChartPage() {
   const [aiAnalyzing,       setAiAnalyzing]       = useState(false);
   const [latestApproved,    setLatestApproved]    = useState<AiCandleDecision | null>(null);
   const [resolvedDecisions, setResolvedDecisions] = useState<ResolvedAiDecision[]>([]);
+  const [replayMarkers,     setReplayMarkers]     = useState<ReplayMarkerItem[]>(() => getReplayState().markers);
+
+  // Subscribe to replayStore updates (fired when AiMemoryPage completes a replay job)
+  useEffect(() => {
+    return subscribeReplayMarkers((_key, markers) => setReplayMarkers(markers));
+  }, []);
+
+  // Clear replay markers when the symbol changes
+  useEffect(() => {
+    clearReplayMarkers();
+  }, [activeSymbol]);
 
   const isStocks = marketType === "stocks";
   const isCrypto = marketType === "crypto";
@@ -681,6 +693,7 @@ export default function ChartPage() {
             aiAnalyzing={isStocks ? aiAnalyzing : false}
             activeApprovedDecision={isStocks ? latestApproved : null}
             resolvedAiDecisions={isStocks ? resolvedDecisions : []}
+            replayMarkers={isStocks ? replayMarkers : []}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">

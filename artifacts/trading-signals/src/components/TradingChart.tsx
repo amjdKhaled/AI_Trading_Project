@@ -6,6 +6,7 @@ import {
 } from "lightweight-charts";
 import type { PriceUpdate, SignalNew } from "@/hooks/useMarketSocket";
 import type { ActiveTrade, TradeResult, AiCandleDecision, ResolvedAiDecision } from "@/pages/ChartPage";
+import { type ReplayMarkerItem } from "@/lib/replayStore";
 import { CandleStateManager, type CSMTelemetry } from "@/lib/CandleStateManager";
 
 interface Bar { time: number; open: number; high: number; low: number; close: number; volume: number; }
@@ -72,6 +73,17 @@ interface ResolvedDecisionPos {
   candleTime: number;
 }
 
+interface ReplayMarkerPos {
+  key:        string;
+  x:          number;
+  y:          number;
+  isLong:     boolean;
+  confidence: number;
+  candleTime: number;
+  entry:      number | null;
+  rrRatio:    number | null;
+}
+
 interface Props {
   bars: Bar[];
   signals: SignalNew[];
@@ -96,6 +108,8 @@ interface Props {
   activeApprovedDecision?: AiCandleDecision | null;
   /** Resolved (outcome != null) APPROVED AI decisions — rendered as compact outcome markers */
   resolvedAiDecisions?: ResolvedAiDecision[];
+  /** Memory-enhanced APPROVE markers from a completed replay job */
+  replayMarkers?: ReplayMarkerItem[];
 }
 
 const PRICE_SCALE_W = 68;
@@ -121,7 +135,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [] }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [] }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -174,10 +188,12 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const aiDecisionsRef           = useRef<AiCandleDecision[]>([]);
   const activeApprovedRef        = useRef<AiCandleDecision | null>(null);
   const resolvedAiDecisionsRef   = useRef<ResolvedAiDecision[]>([]);
+  const replayMarkersRef         = useRef<ReplayMarkerItem[]>([]);
   onCandleCloseRef.current        = onCandleClose;
   aiDecisionsRef.current          = aiDecisions;
   activeApprovedRef.current       = activeApprovedDecision;
   resolvedAiDecisionsRef.current  = resolvedAiDecisions;
+  replayMarkersRef.current        = replayMarkers;
 
   const [barCount, setBarCount]   = useState(0);
   const [dateRange, setDateRange] = useState("");
@@ -192,6 +208,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const [selectedDecision, setSelectedDecision] = useState<AiCandleDecision | null>(null);
   const [resolvedDecisionMarkers, setResolvedDecisionMarkers] = useState<ResolvedDecisionPos[]>([]);
   const [hoveredResolvedKey, setHoveredResolvedKey] = useState<string | null>(null);
+  const [replayMarkerPositions, setReplayMarkerPositions] = useState<ReplayMarkerPos[]>([]);
 
   const removeSLTP = useCallback(() => {
     const cs = candleRef.current;
@@ -558,6 +575,61 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     setResolvedDecisionMarkers(positions);
   }, []);
 
+  const computeReplayMarkers = useCallback(() => {
+    const chart  = chartRef.current;
+    const series = candleRef.current;
+    const el     = containerRef.current;
+    if (!chart || !series || !el) return;
+
+    const W    = el.offsetWidth;
+    const H    = el.offsetHeight;
+    const maxX = W - PRICE_SCALE_W;
+    const maxY = H * (1 - VOLUME_RATIO);
+    const snap = barsRef.current;
+
+    const byTime = new Map<number, Bar>();
+    for (const b of snap) byTime.set(b.time, b);
+    const nearestBar = (targetSec: number): Bar | undefined => {
+      const hit = byTime.get(targetSec);
+      if (hit) return hit;
+      let lo = 0, hi = snap.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (snap[mid].time < targetSec) lo = mid + 1; else hi = mid;
+      }
+      const cand = snap[lo];
+      if (!cand) return undefined;
+      const prev = snap[lo - 1];
+      if (prev && Math.abs(prev.time - targetSec) < Math.abs(cand.time - targetSec)) return prev;
+      return cand;
+    };
+
+    const positions: ReplayMarkerPos[] = [];
+    for (const m of replayMarkersRef.current) {
+      const b = nearestBar(m.candleTime);
+      if (!b) continue;
+      const x = chart.timeScale().timeToCoordinate(b.time as Time);
+      if (x === null || x < 0 || x > maxX) continue;
+
+      const isLong   = m.decision === "LONG";
+      const priceRef = isLong ? b.low : b.high;
+      const y        = series.priceToCoordinate(priceRef);
+      if (y === null || y < 0 || y > maxY) continue;
+
+      positions.push({
+        key:        `replay-${m.candleTime}`,
+        x,
+        y:          isLong ? y + 18 : y - 18,
+        isLong,
+        confidence: m.confidence,
+        candleTime: m.candleTime,
+        entry:      m.entry,
+        rrRatio:    m.rrRatio,
+      });
+    }
+    setReplayMarkerPositions(positions);
+  }, []);
+
   // Chart init
   useEffect(() => {
     if (!containerRef.current) return;
@@ -656,6 +728,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeAiMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeDecisionMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(computeReplayMarkers);
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
       chartRef.current.applyOptions({ width: containerRef.current.offsetWidth, height: containerRef.current.offsetHeight || 500 });
@@ -663,6 +736,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       computeAiMarkers();
       computeDecisionMarkers();
       computeResolvedDecisionMarkers();
+      computeReplayMarkers();
     });
     ro.observe(containerRef.current);
 
@@ -672,6 +746,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeAiMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeDecisionMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeReplayMarkers);
       removeSLTP();
       tradeIdRef.current = null;
       csmRef.current?.detach();
@@ -679,7 +754,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.remove();
       chartRef.current = candleRef.current = volumeRef.current = null;
     };
-  }, [computeMarkers, removeSLTP, computeDecisionMarkers, computeResolvedDecisionMarkers]);
+  }, [computeMarkers, removeSLTP, computeDecisionMarkers, computeResolvedDecisionMarkers, computeReplayMarkers]);
 
   // Load bar data — validates every bar before rendering to prevent corrupted OHLC
   // from reaching the chart engine.  Also resets live-bar tracking so stale WebSocket
@@ -819,6 +894,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   useEffect(() => { setTimeout(computeAiMarkers, 30); }, [aiSignals, activeApprovedDecision, computeAiMarkers]);
   useEffect(() => { setTimeout(computeDecisionMarkers, 30); }, [aiDecisions, computeDecisionMarkers]);
   useEffect(() => { setTimeout(computeResolvedDecisionMarkers, 30); }, [resolvedAiDecisions, computeResolvedDecisionMarkers]);
+  useEffect(() => { setTimeout(computeReplayMarkers, 30); }, [replayMarkers, computeReplayMarkers]);
 
   // ── Live tick ingestion ────────────────────────────────────────────────────
   //
@@ -1177,6 +1253,37 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
                 <text x={m.x} y={labelY} textAnchor="middle" fill={col}
                   fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.85}>
                   {outcomeStr}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* ── Replay: memory-enhanced APPROVE markers ─────────────────────
+               Hollow violet diamonds at each candle where memory flipped the
+               AI decision to APPROVE (withMem=LONG/SHORT, confidence≥80).
+               Offset below candle for LONG, above for SHORT. */}
+          {replayMarkerPositions.map((m) => {
+            const col  = "#8b5cf6";
+            const dHW  = 8; const dHH = 11;
+            const diamondPts = [
+              `${m.x},${m.y - dHH}`,
+              `${m.x + dHW},${m.y}`,
+              `${m.x},${m.y + dHH}`,
+              `${m.x - dHW},${m.y}`,
+            ].join(" ");
+            const labelY = m.isLong ? m.y + dHH + 10 : m.y - dHH - 3;
+            return (
+              <g key={m.key}>
+                <polygon points={diamondPts} fill="none" opacity={0.9}
+                  stroke={col} strokeWidth={1.5} />
+                <text x={m.x} y={m.y + 1} textAnchor="middle" dominantBaseline="middle"
+                  fill={col} fontSize={5} fontWeight="900"
+                  fontFamily="'JetBrains Mono',Menlo,monospace">
+                  +M
+                </text>
+                <text x={m.x} y={labelY} textAnchor="middle" fill={col}
+                  fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.85}>
+                  {m.isLong ? "▲" : "▼"}{m.confidence}
                 </text>
               </g>
             );

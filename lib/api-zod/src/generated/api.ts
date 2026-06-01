@@ -379,3 +379,67 @@ export const QuerySimilarityResponse = zod.object({
 })
 
 
+/**
+ * @summary Start a memory-vs-no-memory replay job for a symbol
+ */
+export const startReplayBodyTimeframeDefault = `5m`;
+export const startReplayBodyLimitDefault = 50;
+export const startReplayBodyLimitMin = 5;
+export const startReplayBodyLimitMax = 200;
+
+
+
+export const StartReplayBody = zod.object({
+  "symbol": zod.string(),
+  "timeframe": zod.string().default(startReplayBodyTimeframeDefault),
+  "limit": zod.number().min(startReplayBodyLimitMin).max(startReplayBodyLimitMax).default(startReplayBodyLimitDefault)
+})
+
+export const StartReplayResponse = zod.object({
+  "jobId": zod.string(),
+  "alreadyRunning": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Poll a replay job for status and result
+ */
+export const GetReplayStatusParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const GetReplayStatusResponse = zod.object({
+  "jobId": zod.string(),
+  "status": zod.enum(['running', 'done', 'error']),
+  "progress": zod.number(),
+  "total": zod.number(),
+  "result": zod.union([zod.object({
+  "symbol": zod.string(),
+  "timeframe": zod.string(),
+  "processed": zod.number(),
+  "noMem": zod.object({
+  "approve": zod.number(),
+  "wait": zod.number(),
+  "reject": zod.number(),
+  "avgConf": zod.number(),
+  "avgRR": zod.number(),
+  "topLessons": zod.array(zod.string())
+}),
+  "withMem": zod.object({
+  "approve": zod.number(),
+  "wait": zod.number(),
+  "reject": zod.number(),
+  "avgConf": zod.number(),
+  "avgRR": zod.number(),
+  "topLessons": zod.array(zod.string())
+}),
+  "delta": zod.object({
+  "removedByMemory": zod.number(),
+  "addedByMemory": zod.number(),
+  "avgConfChange": zod.number()
+})
+}),zod.null()]).optional(),
+  "error": zod.string().nullish()
+})
+
+

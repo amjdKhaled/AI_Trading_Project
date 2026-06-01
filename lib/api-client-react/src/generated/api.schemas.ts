@@ -465,6 +465,64 @@ export interface AiCandleDecision {
   technicalContext?: AiCandleDecisionTechnicalContext;
 }
 
+export interface ReplayStartRequest {
+  symbol: string;
+  timeframe?: string;
+  /**
+     * @minimum 5
+     * @maximum 200
+     */
+  limit?: number;
+}
+
+export interface ReplayStartResponse {
+  jobId: string;
+  alreadyRunning?: boolean;
+}
+
+export interface ReplayPassStats {
+  approve: number;
+  wait: number;
+  reject: number;
+  avgConf: number;
+  avgRR: number;
+  topLessons: string[];
+}
+
+export interface ReplayDelta {
+  removedByMemory: number;
+  addedByMemory: number;
+  avgConfChange: number;
+}
+
+export interface ReplayResult {
+  symbol: string;
+  timeframe: string;
+  processed: number;
+  noMem: ReplayPassStats;
+  withMem: ReplayPassStats;
+  delta: ReplayDelta;
+}
+
+export type ReplayJobStatusStatus = typeof ReplayJobStatusStatus[keyof typeof ReplayJobStatusStatus];
+
+
+export const ReplayJobStatusStatus = {
+  running: 'running',
+  done: 'done',
+  error: 'error',
+} as const;
+
+export interface ReplayJobStatus {
+  jobId: string;
+  status: ReplayJobStatusStatus;
+  progress: number;
+  total: number;
+  result?: ReplayResult | null;
+  /** @nullable */
+  error?: string | null;
+}
+
 export type ListSignalsParams = {
 symbol?: string;
 limit?: number;
@@ -487,5 +545,9 @@ limit?: number;
 
 export type ListChartAnalysesParams = {
 limit?: number;
+};
+
+export type GetReplayStatus404 = {
+  error?: string;
 };
 
