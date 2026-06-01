@@ -9,6 +9,8 @@ import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 import { subscribeReplayMarkers, getReplayState, clearReplayMarkers, setReplayMarkers as storeSetReplayMarkers, type ReplayMarkerItem } from "@/lib/replayStore";
 import { computeOpportunityScore, type OpportunityScore, type CachedMemoryContext } from "@/lib/live-opportunity";
 import { useListSymbols } from "@workspace/api-client-react";
+import type { SnapshotDecision } from "@workspace/api-client-react";
+import { SnapshotDiagnosticsPanel } from "@/components/SnapshotDiagnosticsPanel";
 
 // ── Timeframe constants ───────────────────────────────────────────────────────
 
@@ -458,6 +460,12 @@ export default function ChartPage() {
   const [aiReplayJobId,     setAiReplayJobId]     = useState<string | null>(null);
   const [aiReplayRunning,   setAiReplayRunning]   = useState(false);
 
+  // ── Snapshot decision state ───────────────────────────────────────────────
+  interface SnapshotEntry { candleTime: number; snap: SnapshotDecision; }
+  const [snapshotEntries,    setSnapshotEntries]    = useState<SnapshotEntry[]>([]);
+  const [latestSnapshot,     setLatestSnapshot]     = useState<SnapshotEntry | null>(null);
+  const [snapshotPanelOpen,  setSnapshotPanelOpen]  = useState(false);
+
   const [liveModeEnabled, setLiveModeEnabled] = useState(() => {
     try { return localStorage.getItem("live-mode") === "true"; } catch { return false; }
   });
@@ -733,6 +741,28 @@ export default function ChartPage() {
     setLiveOpportunity(null);
     setAiAnalyzing(true);
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+
+    // Fire snapshot decision in parallel — independent of the AI candle pipeline
+    void (async () => {
+      try {
+        const snapRes = await fetch(`${base}/api/signals/snapshot-decision`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ symbol: activeSymbol, timeframe: stockTf, candleTime: barTime }),
+        });
+        if (!snapRes.ok) return;
+        const sd = await snapRes.json() as SnapshotDecision;
+        const entry = { candleTime: barTime, snap: sd };
+        setLatestSnapshot(entry);
+        if (sd.decision === "BUY" || sd.decision === "SELL") {
+          setSnapshotEntries((prev) => {
+            const filtered = prev.filter((e) => e.candleTime !== barTime);
+            return [entry, ...filtered].slice(0, 50);
+          });
+        }
+      } catch { /* never break the chart */ }
+    })();
+
     try {
       const res = await fetch(`${base}/api/signals/candle-decision`, {
         method: "POST",
@@ -953,7 +983,7 @@ export default function ChartPage() {
         }
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0b0e14]">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0b0e14] relative">
 
         {/* ── Toolbar ── */}
         <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-white/5 flex-shrink-0">
@@ -1011,6 +1041,23 @@ export default function ChartPage() {
                 </button>
               ))
           }
+
+          {/* Stock-only: Snapshot Diagnostics toggle */}
+          {isStocks && activeSymbol && (
+            <button
+              onClick={() => setSnapshotPanelOpen((v) => !v)}
+              title="Toggle AI Snapshot Diagnostics panel"
+              className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border transition-colors ${
+                snapshotPanelOpen
+                  ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                  : latestSnapshot
+                  ? "border-amber-500/30 bg-amber-500/8 text-amber-400/70"
+                  : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+              }`}
+            >
+              ◈ Snapshot
+            </button>
+          )}
 
           {/* Stock-only: AI Replay button */}
           {isStocks && activeSymbol && (
@@ -1148,6 +1195,13 @@ export default function ChartPage() {
             healthScore={isStocks && tradeHealth ? tradeHealth.score : undefined}
             resolvedAiDecisions={isStocks ? resolvedDecisions : []}
             replayMarkers={isStocks ? replayMarkers : []}
+            snapshotDecisions={
+              isStocks
+                ? snapshotEntries
+                    .filter((e) => (e.snap.decision === "BUY" || e.snap.decision === "SELL") && e.snap.confidence >= 75)
+                    .map((e) => ({ candleTime: e.candleTime, decision: e.snap.decision as "BUY" | "SELL", confidence: e.snap.confidence }))
+                : undefined
+            }
             liveOpportunity={
               isStocks && liveModeEnabled &&
               liveOpportunity && liveOpportunity.score >= 65 && liveOpportunity.direction !== "NONE"
@@ -1161,6 +1215,16 @@ export default function ChartPage() {
               {isStocks ? "Select a symbol from the watchlist" : "Select a crypto pair"}
             </p>
           </div>
+        )}
+
+        {/* ── Snapshot Diagnostics Panel (overlay) ── */}
+        {isStocks && snapshotPanelOpen && activeSymbol && (
+          <SnapshotDiagnosticsPanel
+            symbol={activeSymbol}
+            timeframe={stockTf}
+            latest={latestSnapshot?.snap ?? null}
+            latestCandleTime={latestSnapshot?.candleTime ?? null}
+          />
         )}
       </div>
 

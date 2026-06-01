@@ -85,6 +85,15 @@ interface ReplayMarkerPos {
   source?:    "validation" | "ai_replay";
 }
 
+interface SnapshotMarkerPos {
+  key:        string;
+  x:          number;
+  y:          number;
+  isLong:     boolean;
+  confidence: number;
+  candleTime: number;
+}
+
 interface Props {
   bars: Bar[];
   signals: SignalNew[];
@@ -111,6 +120,8 @@ interface Props {
   resolvedAiDecisions?: ResolvedAiDecision[];
   /** Memory-enhanced APPROVE markers from a completed replay job */
   replayMarkers?: ReplayMarkerItem[];
+  /** Snapshot decisions (BUY/SELL, confidence ≥ 75) to render as amber triangles */
+  snapshotDecisions?: Array<{ candleTime: number; decision: "BUY" | "SELL"; confidence: number }>;
   /** Composite health score 0–100 for the active approved AI trade — drives badge in position SVG */
   healthScore?: number;
   /** Live pre-signal opportunity from the frontend indicator scorer (Live Mode only) */
@@ -140,7 +151,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [], healthScore, liveOpportunity = null }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [], snapshotDecisions = [], healthScore, liveOpportunity = null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -194,11 +205,13 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const activeApprovedRef        = useRef<AiCandleDecision | null>(null);
   const resolvedAiDecisionsRef   = useRef<ResolvedAiDecision[]>([]);
   const replayMarkersRef         = useRef<ReplayMarkerItem[]>([]);
+  const snapshotDecisionsRef     = useRef<Array<{ candleTime: number; decision: "BUY" | "SELL"; confidence: number }>>([]);
   onCandleCloseRef.current        = onCandleClose;
   aiDecisionsRef.current          = aiDecisions;
   activeApprovedRef.current       = activeApprovedDecision;
   resolvedAiDecisionsRef.current  = resolvedAiDecisions;
   replayMarkersRef.current        = replayMarkers;
+  snapshotDecisionsRef.current    = snapshotDecisions;
 
   const liveOpportunityRef = useRef(liveOpportunity);
   liveOpportunityRef.current = liveOpportunity;
@@ -216,7 +229,8 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const [selectedDecision, setSelectedDecision] = useState<AiCandleDecision | null>(null);
   const [resolvedDecisionMarkers, setResolvedDecisionMarkers] = useState<ResolvedDecisionPos[]>([]);
   const [hoveredResolvedKey, setHoveredResolvedKey] = useState<string | null>(null);
-  const [replayMarkerPositions, setReplayMarkerPositions] = useState<ReplayMarkerPos[]>([]);
+  const [replayMarkerPositions, setReplayMarkerPositions]     = useState<ReplayMarkerPos[]>([]);
+  const [snapshotMarkerPositions, setSnapshotMarkerPositions] = useState<SnapshotMarkerPos[]>([]);
   const [livePreSignalPos, setLivePreSignalPos] = useState<{ x: number; y: number; isLong: boolean; score: number; setupLabel: string } | null>(null);
 
   const removeSLTP = useCallback(() => {
@@ -640,6 +654,59 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     setReplayMarkerPositions(positions);
   }, []);
 
+  const computeSnapshotMarkers = useCallback(() => {
+    const chart  = chartRef.current;
+    const series = candleRef.current;
+    const el     = containerRef.current;
+    if (!chart || !series || !el) return;
+
+    const W    = el.offsetWidth;
+    const H    = el.offsetHeight;
+    const maxX = W - PRICE_SCALE_W;
+    const maxY = H * (1 - VOLUME_RATIO);
+    const snap = barsRef.current;
+
+    const byTime = new Map<number, Bar>();
+    for (const b of snap) byTime.set(b.time, b);
+    const nearestBar = (targetSec: number): Bar | undefined => {
+      const hit = byTime.get(targetSec);
+      if (hit) return hit;
+      let lo = 0, hi = snap.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (snap[mid].time < targetSec) lo = mid + 1; else hi = mid;
+      }
+      const cand = snap[lo];
+      if (!cand) return undefined;
+      const prev = snap[lo - 1];
+      if (prev && Math.abs(prev.time - targetSec) < Math.abs(cand.time - targetSec)) return prev;
+      return cand;
+    };
+
+    const positions: SnapshotMarkerPos[] = [];
+    for (const m of snapshotDecisionsRef.current) {
+      const b = nearestBar(m.candleTime);
+      if (!b) continue;
+      const x = chart.timeScale().timeToCoordinate(b.time as Time);
+      if (x === null || x < 0 || x > maxX) continue;
+
+      const isLong   = m.decision === "BUY";
+      const priceRef = isLong ? b.low : b.high;
+      const y        = series.priceToCoordinate(priceRef);
+      if (y === null || y < 0 || y > maxY) continue;
+
+      positions.push({
+        key:        `snap-${m.candleTime}`,
+        x,
+        y:          isLong ? y + 20 : y - 20,
+        isLong,
+        confidence: m.confidence,
+        candleTime: m.candleTime,
+      });
+    }
+    setSnapshotMarkerPositions(positions);
+  }, []);
+
   const computeLivePreSignalMarker = useCallback(() => {
     const chart  = chartRef.current;
     const series = candleRef.current;
@@ -774,6 +841,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeDecisionMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeReplayMarkers);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(computeSnapshotMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeLivePreSignalMarker);
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
@@ -783,6 +851,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       computeDecisionMarkers();
       computeResolvedDecisionMarkers();
       computeReplayMarkers();
+      computeSnapshotMarkers();
       computeLivePreSignalMarker();
     });
     ro.observe(containerRef.current);
@@ -794,6 +863,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeDecisionMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeReplayMarkers);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeSnapshotMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeLivePreSignalMarker);
       removeSLTP();
       tradeIdRef.current = null;
@@ -802,7 +872,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.remove();
       chartRef.current = candleRef.current = volumeRef.current = null;
     };
-  }, [computeMarkers, removeSLTP, computeDecisionMarkers, computeResolvedDecisionMarkers, computeReplayMarkers, computeLivePreSignalMarker]);
+  }, [computeMarkers, removeSLTP, computeDecisionMarkers, computeResolvedDecisionMarkers, computeReplayMarkers, computeSnapshotMarkers, computeLivePreSignalMarker]);
 
   // Load bar data — validates every bar before rendering to prevent corrupted OHLC
   // from reaching the chart engine.  Also resets live-bar tracking so stale WebSocket
@@ -944,6 +1014,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   useEffect(() => { setTimeout(computeDecisionMarkers, 30); }, [aiDecisions, computeDecisionMarkers]);
   useEffect(() => { setTimeout(computeResolvedDecisionMarkers, 30); }, [resolvedAiDecisions, computeResolvedDecisionMarkers]);
   useEffect(() => { setTimeout(computeReplayMarkers, 30); }, [replayMarkers, computeReplayMarkers]);
+  useEffect(() => { setTimeout(computeSnapshotMarkers, 30); }, [snapshotDecisions, computeSnapshotMarkers]);
   useEffect(() => { setTimeout(computeLivePreSignalMarker, 30); }, [liveOpportunity, computeLivePreSignalMarker]);
 
   // ── Live tick ingestion ────────────────────────────────────────────────────
@@ -1316,6 +1387,32 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
                 <text x={m.x} y={labelY} textAnchor="middle" fill={col}
                   fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.85}>
                   {outcomeStr}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* ── Snapshot markers — amber filled triangles (BUY/SELL, confidence ≥ 75) ── */}
+          {snapshotMarkerPositions.map((m) => {
+            const col  = "#f59e0b";
+            const sz   = 8;
+            const pts  = m.isLong
+              ? `${m.x},${m.y - sz} ${m.x - sz},${m.y + sz} ${m.x + sz},${m.y + sz}`
+              : `${m.x},${m.y + sz} ${m.x - sz},${m.y - sz} ${m.x + sz},${m.y - sz}`;
+            const labelY = m.isLong ? m.y + sz + 10 : m.y - sz - 3;
+            return (
+              <g key={m.key}>
+                <polygon points={pts} fill={col} opacity={0.88} />
+                <text x={m.x} y={m.isLong ? m.y + 2 : m.y - 1}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fill="#0b0e14" fontSize={5}
+                  fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="900">
+                  S
+                </text>
+                <text x={m.x} y={labelY} textAnchor="middle" fill={col}
+                  fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace"
+                  fontWeight="700" opacity={0.9}>
+                  {m.isLong ? "BUY" : "SELL"} {m.confidence}
                 </text>
               </g>
             );
