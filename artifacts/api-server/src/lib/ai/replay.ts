@@ -292,18 +292,18 @@ export async function runReplay(
         } catch { /* skip */ }
       }
 
-      // Collect decision diffs — compare ACTUAL decisions (LONG/SHORT/WAIT), not just class labels.
-      // Diverges when: class changed, or both approve but chose opposite directions.
-      const directionFlipped =
-        noMemCls === "approve" && memCls === "approve" && noMem.decision !== withMem.decision;
-      if (noMemCls !== memCls || directionFlipped) {
+      // Collect decision diffs — any divergence in actual decision OR approval class.
+      // Captures ALL disagreements: class changes, direction flips (LONG↔SHORT),
+      // and sub-approve decision differences (e.g. WAIT vs LONG at low confidence).
+      const decisionDiffers = noMem.decision !== withMem.decision;
+      const classDiffers    = noMemCls !== memCls;
+      if (decisionDiffers || classDiffers) {
         let direction: ReplayDecisionDiff["direction"];
-        if (directionFlipped)                                         direction = "direction_flipped";
-        else if (noMemCls !== "approve" && memCls === "approve")      direction = "memory_added";
-        else if (noMemCls === "approve" && memCls !== "approve")      direction = "memory_removed";
-        else direction = withMem.confidence > noMem.confidence ? "conf_boost" : "conf_drop";
+        if (noMemCls !== "approve" && memCls === "approve")      direction = "memory_added";
+        else if (noMemCls === "approve" && memCls !== "approve") direction = "memory_removed";
+        else if (decisionDiffers)                                direction = "direction_flipped";
+        else direction = withMem.confidence > noMem.confidence  ? "conf_boost" : "conf_drop";
 
-        const isPositive = direction === "memory_added" || direction === "conf_boost" || direction === "direction_flipped";
         decisionDiffs.push({
           candleTime,
           direction,
@@ -311,7 +311,7 @@ export async function runReplay(
           withMemVerdict: withMem.decision, // actual LONG | SHORT | WAIT
           noMemConf:      noMem.confidence,
           withMemConf:    withMem.confidence,
-          keyLesson:      isPositive ? (withMem.lessons[0] ?? null) : null,
+          keyLesson:      withMem.lessons[0] ?? null,  // best available lesson for every divergence
         });
       }
 
@@ -387,7 +387,9 @@ export async function runReplay(
 
   const removedByMem = decisionDiffs.filter(d => d.direction === "memory_removed").length;
   const addedByMem   = decisionDiffs.filter(d => d.direction === "memory_added").length;
-  const changedByMem = decisionDiffs.filter(d => d.direction === "conf_boost" || d.direction === "conf_drop").length;
+  const changedByMem = decisionDiffs.filter(d =>
+    d.direction === "conf_boost" || d.direction === "conf_drop" || d.direction === "direction_flipped",
+  ).length;
 
   const learningScore = computeLearningScore(noMemStats, withMemStats, noMemLossesAvoided);
 
