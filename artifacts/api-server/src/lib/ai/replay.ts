@@ -24,12 +24,15 @@ export interface ReplayCandleResult {
 }
 
 export interface ReplayPassStats {
-  approve:    number;
-  wait:       number;
-  reject:     number;
-  avgConf:    number;
-  avgRR:      number;
-  topLessons: string[];
+  approve:         number;
+  wait:            number;
+  reject:          number;
+  total:           number;
+  approveRate:     number;   // 0–1, i.e. approve / total
+  avgConf:         number;
+  avgRR:           number;
+  topLessons:      string[];
+  topRejectLessons: string[]; // lessons most frequently cited when memory still said REJECT/WAIT
 }
 
 export interface ReplayResult {
@@ -75,14 +78,15 @@ export async function runReplay(
     cachedAt: Date.now(), stale: true,
   }));
 
-  const candles:      ReplayCandleResult[] = [];
-  const noMemConfs:   number[]             = [];
-  const withMemConfs: number[]             = [];
-  const noMemRRs:     number[]             = [];
-  const withMemRRs:   number[]             = [];
-  const noMemClass:   string[]             = [];
-  const withMemClass: string[]             = [];
-  const lessonsBag:   string[]             = [];
+  const candles:           ReplayCandleResult[] = [];
+  const noMemConfs:        number[]             = [];
+  const withMemConfs:      number[]             = [];
+  const noMemRRs:          number[]             = [];
+  const withMemRRs:        number[]             = [];
+  const noMemClass:        string[]             = [];
+  const withMemClass:      string[]             = [];
+  const lessonsBag:        string[]             = [];
+  const rejectLessonsBag:  string[]             = []; // lessons cited when memory still REJECT/WAIT
   let   done = 0;
 
   for (let i = startIdx; i < endIdx; i++) {
@@ -117,9 +121,15 @@ export async function runReplay(
       withMemConfs.push(withMem.confidence);
       if (noMem.rr   !== null && noMem.rr   > 0) noMemRRs.push(noMem.rr);
       if (withMem.rr !== null && withMem.rr > 0) withMemRRs.push(withMem.rr);
-      noMemClass.push(classify(noMem.decision, noMem.confidence));
-      withMemClass.push(classify(withMem.decision, withMem.confidence));
+      const noMemCls  = classify(noMem.decision,   noMem.confidence);
+      const memCls    = classify(withMem.decision,  withMem.confidence);
+      noMemClass.push(noMemCls);
+      withMemClass.push(memCls);
       lessonsBag.push(...withMem.lessons);
+      // Track lessons cited when memory-enhanced decision was still REJECT or WAIT
+      if (memCls !== "approve" && withMem.memoryUsed) {
+        rejectLessonsBag.push(...withMem.lessons);
+      }
     } catch (err) {
       logger.warn({ err, symbol, candleTime }, "replay candle failed — skipping");
     }
@@ -135,36 +145,45 @@ export async function runReplay(
 
   const count = (arr: string[], cls: string) => arr.filter(v => v === cls).length;
 
-  // Top lessons by frequency
-  const lessonCounts: Record<string, number> = {};
-  for (const l of lessonsBag) lessonCounts[l] = (lessonCounts[l] ?? 0) + 1;
-  const topLessons = Object.entries(lessonCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([l]) => l);
+  const topN = (bag: string[], n = 5) => {
+    const counts: Record<string, number> = {};
+    for (const l of bag) counts[l] = (counts[l] ?? 0) + 1;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n).map(([l]) => l);
+  };
 
   const noMemAvgConf   = avg(noMemConfs);
   const withMemAvgConf = avg(withMemConfs);
+
+  const noMemApprove   = count(noMemClass,   "approve");
+  const withMemApprove = count(withMemClass, "approve");
+  const noMemTotal     = noMemClass.length;
+  const withMemTotal   = withMemClass.length;
 
   return {
     symbol, timeframe,
     processed: candles.length,
     candles,
     noMem: {
-      approve:    count(noMemClass,   "approve"),
-      wait:       count(noMemClass,   "wait"),
-      reject:     count(noMemClass,   "reject"),
-      avgConf:    Math.round(noMemAvgConf * 10) / 10,
-      avgRR:      avg(noMemRRs),
-      topLessons: [],
+      approve:         noMemApprove,
+      wait:            count(noMemClass, "wait"),
+      reject:          count(noMemClass, "reject"),
+      total:           noMemTotal,
+      approveRate:     noMemTotal > 0 ? Math.round((noMemApprove / noMemTotal) * 1000) / 1000 : 0,
+      avgConf:         Math.round(noMemAvgConf * 10) / 10,
+      avgRR:           avg(noMemRRs),
+      topLessons:      [],
+      topRejectLessons: [],
     },
     withMem: {
-      approve:    count(withMemClass, "approve"),
-      wait:       count(withMemClass, "wait"),
-      reject:     count(withMemClass, "reject"),
-      avgConf:    Math.round(withMemAvgConf * 10) / 10,
-      avgRR:      avg(withMemRRs),
-      topLessons,
+      approve:         withMemApprove,
+      wait:            count(withMemClass, "wait"),
+      reject:          count(withMemClass, "reject"),
+      total:           withMemTotal,
+      approveRate:     withMemTotal > 0 ? Math.round((withMemApprove / withMemTotal) * 1000) / 1000 : 0,
+      avgConf:         Math.round(withMemAvgConf * 10) / 10,
+      avgRR:           avg(withMemRRs),
+      topLessons:      topN(lessonsBag),
+      topRejectLessons: topN(rejectLessonsBag),
     },
     delta: {
       removedByMemory: candles.filter(c =>

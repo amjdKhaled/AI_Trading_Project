@@ -10,7 +10,12 @@ export interface ReplayPassStats {
   approve: number;
   wait: number;
   reject: number;
+  total: number;
+  /** approve / total (0–1) */
+  approveRate: number;
   avgConf: number;
   avgRR: number;
   topLessons: string[];
+  /** Lessons most frequently cited when memory still returned REJECT or WAIT */
+  topRejectLessons: string[];
 }

@@ -649,7 +649,9 @@ interface ReflectResult {
 // ── Replay types ─────────────────────────────────────────────
 interface ReplayPassStats {
   approve: number; wait: number; reject: number;
-  avgConf: number; avgRR: number; topLessons: string[];
+  total: number; approveRate: number;
+  avgConf: number; avgRR: number;
+  topLessons: string[]; topRejectLessons: string[];
 }
 interface ReplayCandleResult {
   candleTime: number;
@@ -886,37 +888,94 @@ function ToolsTab({
             <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
               {replayResult.processed} candles · {replayResult.symbol} {replayResult.timeframe}
             </div>
-            <div className="grid grid-cols-3 gap-1 text-[10px] font-mono">
-              <div className="bg-background rounded p-1.5 border border-border">
-                <div className="text-muted-foreground mb-0.5">No Memory</div>
-                <div className="text-emerald-400">✓ {replayResult.noMem.approve}</div>
-                <div className="text-amber-400">~ {replayResult.noMem.wait}</div>
-                <div className="text-red-400">✗ {replayResult.noMem.reject}</div>
-                <div className="text-muted-foreground mt-1">conf {replayResult.noMem.avgConf}</div>
+            {/* Comparison table — two passes side by side */}
+            <div className="text-[10px] font-mono">
+              <div className="grid grid-cols-3 gap-x-1 mb-0.5">
+                <div className="text-muted-foreground" />
+                <div className="text-center text-muted-foreground">No Memory</div>
+                <div className="text-center text-violet-400">With Memory</div>
               </div>
-              <div className="bg-background rounded p-1.5 border border-violet-500/30">
-                <div className="text-violet-400 mb-0.5">With Memory</div>
-                <div className="text-emerald-400">✓ {replayResult.withMem.approve}</div>
-                <div className="text-amber-400">~ {replayResult.withMem.wait}</div>
-                <div className="text-red-400">✗ {replayResult.withMem.reject}</div>
-                <div className="text-muted-foreground mt-1">conf {replayResult.withMem.avgConf}</div>
-              </div>
-              <div className="bg-background rounded p-1.5 border border-border">
-                <div className="text-muted-foreground mb-0.5">Delta</div>
-                <div className={replayResult.delta.addedByMemory > 0 ? "text-emerald-400" : "text-muted-foreground"}>
-                  +{replayResult.delta.addedByMemory} added
+              {[
+                {
+                  label: "Total decisions",
+                  noVal: String(replayResult.noMem.total),
+                  memVal: String(replayResult.withMem.total),
+                  colClass: () => "",
+                },
+                {
+                  label: "Signal rate (WR proxy)",
+                  noVal: `${Math.round(replayResult.noMem.approveRate * 100)}%`,
+                  memVal: `${Math.round(replayResult.withMem.approveRate * 100)}%`,
+                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
+                  memNum: replayResult.withMem.approveRate,
+                  noNum: replayResult.noMem.approveRate,
+                },
+                {
+                  label: "Approve ✓",
+                  noVal: String(replayResult.noMem.approve),
+                  memVal: String(replayResult.withMem.approve),
+                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
+                  memNum: replayResult.withMem.approve,
+                  noNum: replayResult.noMem.approve,
+                },
+                {
+                  label: "Wait ~",
+                  noVal: String(replayResult.noMem.wait),
+                  memVal: String(replayResult.withMem.wait),
+                  colClass: () => "text-amber-400",
+                },
+                {
+                  label: "Reject ✗",
+                  noVal: String(replayResult.noMem.reject),
+                  memVal: String(replayResult.withMem.reject),
+                  colClass: () => "text-red-400",
+                },
+                {
+                  label: "Avg conf",
+                  noVal: String(replayResult.noMem.avgConf),
+                  memVal: String(replayResult.withMem.avgConf),
+                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
+                  memNum: replayResult.withMem.avgConf,
+                  noNum: replayResult.noMem.avgConf,
+                },
+                {
+                  label: "Avg R:R",
+                  noVal: replayResult.noMem.avgRR > 0 ? replayResult.noMem.avgRR.toFixed(2) : "—",
+                  memVal: replayResult.withMem.avgRR > 0 ? replayResult.withMem.avgRR.toFixed(2) : "—",
+                  colClass: (mem: number, no: number) => mem > no ? "text-emerald-400" : mem < no ? "text-amber-400" : "",
+                  memNum: replayResult.withMem.avgRR,
+                  noNum: replayResult.noMem.avgRR,
+                },
+              ].map((row, i) => (
+                <div key={i} className="grid grid-cols-3 gap-x-1 py-0.5 border-t border-border/40">
+                  <div className="text-muted-foreground truncate">{row.label}</div>
+                  <div className="text-center text-foreground">{row.noVal}</div>
+                  <div className={`text-center ${row.memNum !== undefined && row.noNum !== undefined ? row.colClass(row.memNum, row.noNum) : "text-foreground"}`}>
+                    {row.memVal}
+                  </div>
                 </div>
-                <div className={replayResult.delta.removedByMemory > 0 ? "text-amber-400" : "text-muted-foreground"}>
-                  -{replayResult.delta.removedByMemory} removed
-                </div>
-                <div className={`mt-1 ${replayResult.delta.avgConfChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                  conf {replayResult.delta.avgConfChange >= 0 ? "+" : ""}{replayResult.delta.avgConfChange}
-                </div>
-              </div>
+              ))}
             </div>
+
+            {/* Delta summary */}
+            <div className="flex gap-2 text-[10px] font-mono flex-wrap">
+              <span className={replayResult.delta.addedByMemory > 0 ? "text-emerald-400" : "text-muted-foreground"}>
+                +{replayResult.delta.addedByMemory} signals added by memory
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <span className={replayResult.delta.removedByMemory > 0 ? "text-amber-400" : "text-muted-foreground"}>
+                −{replayResult.delta.removedByMemory} removed
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <span className={replayResult.delta.avgConfChange >= 0 ? "text-emerald-400" : "text-red-400"}>
+                conf {replayResult.delta.avgConfChange >= 0 ? "+" : ""}{replayResult.delta.avgConfChange}
+              </span>
+            </div>
+
+            {/* Top lessons memory applied */}
             {replayResult.withMem.topLessons.length > 0 && (
               <div className="text-[10px] text-muted-foreground">
-                <div className="font-semibold mb-1">Top lessons applied</div>
+                <div className="font-semibold text-foreground mb-1">Top lessons applied by memory</div>
                 <ul className="space-y-0.5">
                   {replayResult.withMem.topLessons.map((l, i) => (
                     <li key={i} className="truncate">· {l}</li>
@@ -924,6 +983,19 @@ function ToolsTab({
                 </ul>
               </div>
             )}
+
+            {/* Top failure categories — lessons memory cited but still rejected */}
+            {replayResult.withMem.topRejectLessons.length > 0 && (
+              <div className="text-[10px] text-muted-foreground">
+                <div className="font-semibold text-amber-400 mb-1">Top failure categories (memory still said no)</div>
+                <ul className="space-y-0.5">
+                  {replayResult.withMem.topRejectLessons.map((l, i) => (
+                    <li key={i} className="truncate">· {l}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <p className="text-[10px] text-violet-400/80">
               Violet ◇ diamonds on the chart = memory-enhanced APPROVE signals
             </p>

@@ -46,6 +46,7 @@ export * from './replayJobStatus';
 export * from './replayJobStatusStatus';
 export * from './replayPassStats';
 export * from './replayResult';
+export * from './replayResultCandlesItem';
 export * from './replayStartRequest';
 export * from './replayStartResponse';
 export * from './signal';

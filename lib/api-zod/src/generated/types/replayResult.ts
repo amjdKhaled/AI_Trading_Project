@@ -7,11 +7,14 @@
  */
 import type { ReplayDelta } from './replayDelta';
 import type { ReplayPassStats } from './replayPassStats';
+import type { ReplayResultCandlesItem } from './replayResultCandlesItem';
 
 export interface ReplayResult {
   symbol: string;
   timeframe: string;
   processed: number;
+  /** Per-candle raw results used to derive chart markers */
+  candles?: ReplayResultCandlesItem[];
   noMem: ReplayPassStats;
   withMem: ReplayPassStats;
   delta: ReplayDelta;

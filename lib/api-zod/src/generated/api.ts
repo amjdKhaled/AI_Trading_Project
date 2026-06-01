@@ -417,21 +417,28 @@ export const GetReplayStatusResponse = zod.object({
   "symbol": zod.string(),
   "timeframe": zod.string(),
   "processed": zod.number(),
+  "candles": zod.array(zod.record(zod.string(), zod.unknown())).optional().describe('Per-candle raw results used to derive chart markers'),
   "noMem": zod.object({
   "approve": zod.number(),
   "wait": zod.number(),
   "reject": zod.number(),
+  "total": zod.number(),
+  "approveRate": zod.number().describe('approve \/ total (0–1)'),
   "avgConf": zod.number(),
   "avgRR": zod.number(),
-  "topLessons": zod.array(zod.string())
+  "topLessons": zod.array(zod.string()),
+  "topRejectLessons": zod.array(zod.string()).describe('Lessons most frequently cited when memory still returned REJECT or WAIT')
 }),
   "withMem": zod.object({
   "approve": zod.number(),
   "wait": zod.number(),
   "reject": zod.number(),
+  "total": zod.number(),
+  "approveRate": zod.number().describe('approve \/ total (0–1)'),
   "avgConf": zod.number(),
   "avgRR": zod.number(),
-  "topLessons": zod.array(zod.string())
+  "topLessons": zod.array(zod.string()),
+  "topRejectLessons": zod.array(zod.string()).describe('Lessons most frequently cited when memory still returned REJECT or WAIT')
 }),
   "delta": zod.object({
   "removedByMemory": zod.number(),

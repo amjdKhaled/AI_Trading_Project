@@ -1,0 +1,549 @@
+TASK #4 – LIVE TRADE HEALTH ENGINE & AI DIAGNOSTICS SYSTEM
+
+OBJECTIVE
+
+The AI currently generates entries.
+
+The AI currently generates exits.
+
+The AI currently creates lessons.
+
+However, once a trade becomes active, the user has very little visibility into what the AI is thinking.
+
+I want a professional AI diagnostics and trade health system.
+
+The goal is:
+
+To make the AI transparent.
+
+I want to see:
+
+What the AI is thinking.
+
+Why the AI entered.
+
+Why the AI remains confident.
+
+Why confidence changed.
+
+How memory is influencing the trade.
+
+Whether trade quality is improving or deteriorating.
+
+====================================================
+CORE CONCEPT
+============
+
+A trade should not be:
+
+Entry
+
+↓
+
+Wait
+
+↓
+
+TP or SL
+
+Instead:
+
+Entry
+
+↓
+
+Continuous AI Evaluation
+
+↓
+
+Trade Health Updates
+
+↓
+
+Memory Analysis
+
+↓
+
+Confidence Updates
+
+↓
+
+Trade Outcome
+
+====================================================
+TRADE HEALTH SCORE
+==================
+
+Create:
+
+Trade Health Score
+
+Range:
+
+0 – 100
+
+The score represents:
+
+How healthy the active trade currently is.
+
+====================================================
+HEALTH COMPONENTS
+=================
+
+The score should combine:
+
+Market Structure
+
+Trend Quality
+
+Momentum
+
+Volume Strength
+
+Pattern Integrity
+
+Memory Alignment
+
+Historical Similarity
+
+Regime Alignment
+
+Risk Profile
+
+====================================================
+EXAMPLE
+=======
+
+Trade Health
+
+92%
+
+Excellent
+
+or
+
+74%
+
+Healthy
+
+or
+
+53%
+
+Weakening
+
+or
+
+29%
+
+Danger
+
+====================================================
+LIVE UPDATES
+============
+
+The score should update:
+
+Every candle close
+
+Every AI re-evaluation
+
+Every structure change
+
+Every significant market event
+
+====================================================
+TRADE HEALTH HISTORY
+====================
+
+Store:
+
+Health Timeline
+
+Example:
+
+Entry:
+
+88%
+
+5 minutes later:
+
+91%
+
+10 minutes later:
+
+84%
+
+15 minutes later:
+
+71%
+
+20 minutes later:
+
+55%
+
+This creates a health evolution graph.
+
+====================================================
+CONFIDENCE TRACKING
+===================
+
+Current confidence is static.
+
+I want:
+
+Dynamic Confidence
+
+Track:
+
+Entry Confidence
+
+Current Confidence
+
+Confidence Change
+
+====================================================
+EXAMPLE
+=======
+
+Entry Confidence:
+
+86%
+
+Current Confidence:
+
+74%
+
+Change:
+
+-12%
+
+Reason:
+
+Volume deterioration
+
+====================================================
+MEMORY INFLUENCE ENGINE
+=======================
+
+This is critical.
+
+For every active trade:
+
+Show:
+
+Memory Influence Score
+
+Range:
+
+0 – 100
+
+====================================================
+PURPOSE
+=======
+
+I want proof that memory is actually being used.
+
+====================================================
+MEMORY CONTRIBUTIONS
+====================
+
+Display:
+
+Lessons Loaded
+
+Failure Categories Loaded
+
+Winner Analysis Loaded
+
+Loser Analysis Loaded
+
+Recent Loss Reasoning Loaded
+
+Pattern Memory Loaded
+
+====================================================
+MEMORY IMPACT ANALYSIS
+======================
+
+Example:
+
+Memory Influence Score
+
+42%
+
+Contributors:
+
++12%
+Winner Analysis
+
++8%
+Recent Similar Winners
+
++9%
+Historical Setup Performance
+
++13%
+Regime Success Rate
+
+====================================================
+NEGATIVE MEMORY EFFECTS
+=======================
+
+Example:
+
+Memory Influence Score
+
+-18%
+
+Reason:
+
+Repeated historical failures.
+
+Poor regime performance.
+
+Recent losses match current setup.
+
+====================================================
+DECISION EXPLAINABILITY
+=======================
+
+For every trade:
+
+Store:
+
+Why entered
+
+Why confidence increased
+
+Why confidence decreased
+
+Why memory agreed
+
+Why memory disagreed
+
+====================================================
+LIVE DIAGNOSTICS PANEL
+======================
+
+Create:
+
+AI Diagnostics Panel
+
+Display:
+
+Current Model
+
+Fallback Model
+
+Current Confidence
+
+Entry Confidence
+
+Confidence Delta
+
+Trade Health
+
+Memory Influence
+
+Pattern Quality
+
+Structure Quality
+
+Volume Quality
+
+Regime Quality
+
+====================================================
+AI THINKING PANEL
+=================
+
+Display:
+
+Current AI reasoning
+
+Examples:
+
+"Volume remains strong and supports continuation."
+
+"Current trade resembles historical winners."
+
+"Memory indicates strong performance in this regime."
+
+or
+
+"Momentum is weakening."
+
+"Trade behavior now resembles previous losers."
+
+====================================================
+WARNING SYSTEM
+==============
+
+Generate warnings.
+
+Examples:
+
+Trade Quality Deteriorating
+
+Memory Conflict Detected
+
+Weak Volume Detected
+
+Structure Breakdown Risk
+
+Regime Weakness Detected
+
+====================================================
+EARLY EXIT INTELLIGENCE
+=======================
+
+The AI should be allowed to recommend:
+
+Reduce confidence
+
+Monitor closely
+
+Potential early exit
+
+Trade invalidation
+
+before TP or SL is reached.
+
+====================================================
+HEALTH GRAPH
+============
+
+Create:
+
+Trade Health Chart
+
+Plot:
+
+Trade Health
+
+Confidence
+
+Memory Influence
+
+throughout trade duration.
+
+====================================================
+ACTIVE TRADE PANEL
+==================
+
+Display:
+
+Trade Type
+
+Entry
+
+SL
+
+TP
+
+Current Price
+
+Trade Health
+
+Confidence
+
+Memory Influence
+
+Trade Grade
+
+Current RR
+
+Current Profit %
+
+====================================================
+HISTORICAL STORAGE
+==================
+
+Store diagnostics for completed trades.
+
+Allow replay.
+
+Allow comparison between:
+
+Winning trades
+
+Losing trades
+
+====================================================
+POST-TRADE ANALYSIS
+===================
+
+After trade closes:
+
+Show:
+
+Final Health Score
+
+Final Confidence
+
+Final Memory Influence
+
+Health Evolution
+
+Reasoning Evolution
+
+====================================================
+AI SELF-EVALUATION
+==================
+
+The AI should evaluate itself.
+
+Example:
+
+Trade Health started at 91%.
+
+Dropped to 42%.
+
+SL occurred.
+
+Main cause:
+
+Weakening volume.
+
+This lesson should be saved.
+
+====================================================
+VALIDATION
+==========
+
+Verify:
+
+Health Score updates.
+
+Confidence updates.
+
+Memory Influence updates.
+
+Diagnostics update.
+
+Warnings trigger.
+
+Historical storage works.
+
+====================================================
+SUCCESS CRITERIA
+================
+
+Task complete only if:
+
+1. Trade Health Score exists.
+2. Memory Influence Score exists.
+3. Confidence tracking exists.
+4. Diagnostics panel exists.
+5. AI reasoning panel exists.
+6. Warning system exists.
+7. Historical storage exists.
+8. Post-trade analysis exists.
+9. Health graph exists.
+10. Typecheck passes.
+11. Smoke tests pass.
+
+Final result:
+
+The user can see exactly what the AI is thinking during every active trade instead of only seeing entry and exit markers.

@@ -1012,7 +1012,7 @@ components:
 
     ReplayPassStats:
       type: object
-      required: [approve, wait, reject, avgConf, avgRR, topLessons]
+      required: [approve, wait, reject, total, approveRate, avgConf, avgRR, topLessons, topRejectLessons]
       properties:
         approve:
           type: integer
@@ -1020,6 +1020,11 @@ components:
           type: integer
         reject:
           type: integer
+        total:
+          type: integer
+        approveRate:
+          type: number
+          description: approve / total (0–1)
         avgConf:
           type: number
         avgRR:
@@ -1028,6 +1033,11 @@ components:
           type: array
           items:
             type: string
+        topRejectLessons:
+          type: array
+          items:
+            type: string
+          description: Lessons most frequently cited when memory still returned REJECT or WAIT
 
     ReplayDelta:
       type: object
@@ -1050,6 +1060,12 @@ components:
           type: string
         processed:
           type: integer
+        candles:
+          type: array
+          description: Per-candle raw results used to derive chart markers
+          items:
+            type: object
+            additionalProperties: true
         noMem:
           $ref: "#/components/schemas/ReplayPassStats"
         withMem:
