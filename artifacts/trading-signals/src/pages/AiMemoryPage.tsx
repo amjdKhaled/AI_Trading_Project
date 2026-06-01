@@ -1166,6 +1166,23 @@ function AiDecisionStatsCard({
           </div>
         </div>
       )}
+      {expanded && (
+        <div className="border-t border-border bg-background/60 px-3 py-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+            Active Memory Sources
+          </div>
+          <div className="flex flex-wrap gap-1 mb-1.5">
+            {["Trade History", "Winner/Loser Analysis", "Failure Categories", "Recent Loss"].map(src => (
+              <span key={src} className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                ● {src}
+              </span>
+            ))}
+          </div>
+          <p className="text-[9px] text-muted-foreground">
+            All 4 sources injected into every live candle decision prompt.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

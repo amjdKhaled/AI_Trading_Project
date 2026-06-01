@@ -1,5 +1,5 @@
 import { ollamaGenerateWithFallback, isOllamaAvailable, parseJsonFromResponse } from "./ollama.js";
-import { getRelevantContextFromDb, getStrategyWinRateFromDb, getRegimeWinRateFromDb, getRecentLessonsFromDb } from "./shared-memory.js";
+import { getRelevantContextFromDb, getStrategyWinRateFromDb, getRegimeWinRateFromDb, getRecentLessonsFromDb, getWinnerLoserSummary, getFailureCategoryStats, getMostRecentLossReasoning } from "./shared-memory.js";
 import { getRelevantContext, getStrategyWinRate, getRegimeWinRate, loadMemory } from "./memory.js";
 import { logger } from "../logger.js";
 import type { AiSignalVerdict, AiCandleDecision, CandleVerdict } from "./types.js";
@@ -152,37 +152,62 @@ export async function filterSignalWithAi(ctx: SignalContext): Promise<AiSignalVe
 }
 
 // ── Candle-close memory context builder ──────────────────────────────────────
-// Fetches relevant AI memory lessons BEFORE the Ollama call so past trade
-// wisdom is injected into the decision prompt.
-async function buildCandleMemoryContext(
-  ctx: MarketContext,
-): Promise<{ text: string; lessons: string[]; memoryUsed: boolean }> {
+// Fetches ALL relevant AI memory sources in parallel BEFORE the Ollama call:
+//   1. Similar past setups (same symbol + regime, both sides)
+//   2. Recent AI lessons across all symbols
+//   3. Winner/loser summary for this symbol + regime
+//   4. Failure category statistics
+//   5. Most recent loss reasoning (helps avoid repeat mistakes)
+async function buildCandleMemoryContext(ctx: MarketContext): Promise<{
+  text:                 string;
+  lessons:              string[];
+  memoryUsed:           boolean;
+  winnerAnalysisLoaded: boolean;
+  failureStatsLoaded:   boolean;
+  recentLossLoaded:     boolean;
+}> {
   try {
-    const [longTrades, shortTrades, recentLessons] = await Promise.all([
+    const [longTrades, shortTrades, recentLessons, winnerSummary, failureStats, recentLoss] = await Promise.all([
       getRelevantContextFromDb(ctx.symbol, ctx.regime, "candle_decision", "long",  4).catch(() => []),
       getRelevantContextFromDb(ctx.symbol, ctx.regime, "candle_decision", "short", 4).catch(() => []),
       getRecentLessonsFromDb(undefined, undefined, 5).catch(() => []),
+      getWinnerLoserSummary(ctx.symbol, ctx.regime).catch(() => ""),
+      getFailureCategoryStats(ctx.symbol, ctx.regime).catch(() => ""),
+      getMostRecentLossReasoning(ctx.symbol).catch(() => ""),
     ]);
 
     const allTrades = [...longTrades, ...shortTrades]
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, 6);
 
-    if (allTrades.length === 0 && recentLessons.length === 0) {
-      return { text: "No relevant memory lessons found for this symbol/regime.", lessons: [], memoryUsed: false };
+    const winnerAnalysisLoaded = winnerSummary.length > 0 && !winnerSummary.startsWith("No ");
+    const failureStatsLoaded   = failureStats.length > 0  && !failureStats.startsWith("No ");
+    const recentLossLoaded     = recentLoss.length > 0    && !recentLoss.startsWith("No ");
+
+    if (allTrades.length === 0 && recentLessons.length === 0 && !winnerAnalysisLoaded && !failureStatsLoaded && !recentLossLoaded) {
+      return { text: "No relevant memory lessons found for this symbol/regime.", lessons: [], memoryUsed: false, winnerAnalysisLoaded: false, failureStatsLoaded: false, recentLossLoaded: false };
     }
 
     const lines: string[] = [];
     if (allTrades.length > 0) {
-      lines.push("Similar past setups (same symbol + regime):");
+      lines.push("SIMILAR PAST SETUPS (same symbol + regime):");
       for (const t of allTrades) {
         const wr = t.outcome === "tp_hit" ? "WIN" : "LOSS";
         lines.push(`  [${wr}] ${t.side.toUpperCase()} ${t.regime}/${t.session} RR:${t.rrRatio.toFixed(2)} conf:${t.confidence} — ${t.lesson ?? "no lesson"}`);
       }
     }
     if (recentLessons.length > 0) {
-      lines.push("Recent AI learning (all symbols, newest first):");
+      lines.push("RECENT AI LEARNING (all symbols, newest first):");
       for (const l of recentLessons) lines.push(`  • ${l.lesson}`);
+    }
+    if (winnerAnalysisLoaded) {
+      lines.push(`WINNER/LOSER ANALYSIS:\n${winnerSummary}`);
+    }
+    if (failureStatsLoaded) {
+      lines.push(`FAILURE CATEGORY STATS:\n${failureStats}`);
+    }
+    if (recentLossLoaded) {
+      lines.push(`MOST RECENT LOSS REASONING:\n${recentLoss}`);
     }
 
     const lessonTexts = [
@@ -190,10 +215,23 @@ async function buildCandleMemoryContext(
       ...recentLessons.map(l => l.lesson),
     ].filter((l, i, a) => a.indexOf(l) === i).slice(0, 8);
 
-    return { text: lines.join("\n"), lessons: lessonTexts, memoryUsed: true };
+    return { text: lines.join("\n"), lessons: lessonTexts, memoryUsed: true, winnerAnalysisLoaded, failureStatsLoaded, recentLossLoaded };
   } catch {
-    return { text: "Memory unavailable.", lessons: [], memoryUsed: false };
+    return { text: "Memory unavailable.", lessons: [], memoryUsed: false, winnerAnalysisLoaded: false, failureStatsLoaded: false, recentLossLoaded: false };
   }
+}
+
+function computeMemoryImpactScore(mem: {
+  lessons:              string[];
+  winnerAnalysisLoaded: boolean;
+  failureStatsLoaded:   boolean;
+  recentLossLoaded:     boolean;
+}): number {
+  const lessonScore  = Math.min(60, mem.lessons.length * 10);
+  const winnerScore  = mem.winnerAnalysisLoaded ? 15 : 0;
+  const failureScore = mem.failureStatsLoaded   ? 15 : 0;
+  const lossScore    = mem.recentLossLoaded     ? 10 : 0;
+  return Math.min(100, lessonScore + winnerScore + failureScore + lossScore);
 }
 
 // ── Candle-close Trade Intelligence Engine ────────────────────────────────────
@@ -357,8 +395,23 @@ export async function filterCandleWithAi(
 ): Promise<AiCandleDecision> {
   const ollamaOk = await isOllamaAvailable();
   if (!ollamaOk) {
-    return noTrade(ctx, "Ollama is offline — defaulting to WAIT to protect capital.");
+    return {
+      ...noTrade(ctx, "Ollama is offline — defaulting to WAIT to protect capital."),
+      memoryUsed: false, lessonsLoaded: 0, winnerAnalysisLoaded: false,
+      failureStatsLoaded: false, recentLossLoaded: false, memoryImpactScore: 0,
+    };
   }
+
+  // Fetch all memory sources in parallel BEFORE the Ollama call
+  const mem = await buildCandleMemoryContext(ctx);
+  const memDiag = {
+    memoryUsed:           mem.memoryUsed,
+    lessonsLoaded:        mem.lessons.length,
+    winnerAnalysisLoaded: mem.winnerAnalysisLoaded,
+    failureStatsLoaded:   mem.failureStatsLoaded,
+    recentLossLoaded:     mem.recentLossLoaded,
+    memoryImpactScore:    computeMemoryImpactScore(mem),
+  };
 
   const techCtx: Record<string, unknown> = {
     rsi14:    ctx.indicators.rsi14,  ema20:    ctx.indicators.ema20,
@@ -374,10 +427,13 @@ export async function filterCandleWithAi(
 
   let raw = "";
   try {
-    raw = await ollamaGenerateWithFallback(buildMarketContextPrompt(ctx, stats), CANDLE_SYSTEM);
+    raw = await ollamaGenerateWithFallback(
+      buildMarketContextPrompt(ctx, stats, mem.memoryUsed ? mem.text : undefined),
+      CANDLE_SYSTEM,
+    );
   } catch (err) {
     logger.warn({ symbol: ctx.symbol, timeframe: ctx.timeframe, err }, "Ollama candle decision timed out");
-    return noTrade(ctx, "Ollama request timed out — defaulting to WAIT.");
+    return { ...noTrade(ctx, "Ollama request timed out — defaulting to WAIT."), ...memDiag };
   }
 
   try {
@@ -418,6 +474,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
+        ...memDiag,
       };
     }
 
@@ -434,6 +491,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
+        ...memDiag,
       };
     }
 
@@ -452,6 +510,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
+        ...memDiag,
       };
     }
     if (direction === "short" && dS !== null && dS < 0.5) {
@@ -466,6 +525,7 @@ export async function filterCandleWithAi(
         regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
         patterns: ctx.candlestickPatterns,
         strengths, weaknesses, marketBias, technicalContext: techCtx,
+        ...memDiag,
       };
     }
 
@@ -485,10 +545,11 @@ export async function filterCandleWithAi(
       regime: ctx.regime, htfBias: ctx.htf.bias, session: ctx.session,
       patterns: ctx.candlestickPatterns,
       strengths, weaknesses, marketBias, technicalContext: techCtx,
+      ...memDiag,
     };
   } catch (parseErr) {
     logger.warn({ parseErr, raw, symbol: ctx.symbol }, "Candle decision JSON parse failed — WAIT");
-    return noTrade(ctx, "AI response could not be parsed — defaulting to WAIT.");
+    return { ...noTrade(ctx, "AI response could not be parsed — defaulting to WAIT."), ...memDiag };
   }
 }
 

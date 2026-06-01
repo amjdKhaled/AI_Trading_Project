@@ -96,6 +96,12 @@ export interface AiCandleDecision {
   weaknesses:        string[];
   marketBias:        "bullish" | "bearish" | "neutral";
   technicalContext:  Record<string, unknown>;
+  memoryUsed?:           boolean;
+  lessonsLoaded?:        number;
+  winnerAnalysisLoaded?: boolean;
+  failureStatsLoaded?:   boolean;
+  recentLossLoaded?:     boolean;
+  memoryImpactScore?:    number;
 }
 
 // ── History hook ─────────────────────────────────────────────────────────────

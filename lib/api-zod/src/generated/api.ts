@@ -170,6 +170,11 @@ export const PostCandleDecisionBody = zod.object({
 export const postCandleDecisionResponseConfidenceMin = 0;
 export const postCandleDecisionResponseConfidenceMax = 100;
 
+export const postCandleDecisionResponseLessonsLoadedMin = 0;
+
+export const postCandleDecisionResponseMemoryImpactScoreMin = 0;
+export const postCandleDecisionResponseMemoryImpactScoreMax = 100;
+
 
 
 export const PostCandleDecisionResponse = zod.object({
@@ -192,7 +197,13 @@ export const PostCandleDecisionResponse = zod.object({
   "htfBias": zod.string(),
   "session": zod.string(),
   "patterns": zod.array(zod.string()),
-  "technicalContext": zod.record(zod.string(), zod.unknown()).optional()
+  "technicalContext": zod.record(zod.string(), zod.unknown()).optional(),
+  "memoryUsed": zod.boolean().nullish(),
+  "lessonsLoaded": zod.number().min(postCandleDecisionResponseLessonsLoadedMin).nullish(),
+  "winnerAnalysisLoaded": zod.boolean().nullish(),
+  "failureStatsLoaded": zod.boolean().nullish(),
+  "recentLossLoaded": zod.boolean().nullish(),
+  "memoryImpactScore": zod.number().min(postCandleDecisionResponseMemoryImpactScoreMin).max(postCandleDecisionResponseMemoryImpactScoreMax).nullish()
 })
 
 

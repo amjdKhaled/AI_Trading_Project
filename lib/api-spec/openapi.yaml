@@ -1049,6 +1049,27 @@ components:
         technicalContext:
           type: object
           additionalProperties: true
+        memoryUsed:
+          type: boolean
+          nullable: true
+        lessonsLoaded:
+          type: integer
+          minimum: 0
+          nullable: true
+        winnerAnalysisLoaded:
+          type: boolean
+          nullable: true
+        failureStatsLoaded:
+          type: boolean
+          nullable: true
+        recentLossLoaded:
+          type: boolean
+          nullable: true
+        memoryImpactScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          nullable: true
 
     ReplayStartRequest:
       type: object

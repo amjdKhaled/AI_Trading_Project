@@ -42,4 +42,15 @@ export interface AiCandleDecision {
   session: string;
   patterns: string[];
   technicalContext?: AiCandleDecisionTechnicalContext;
+  memoryUsed?: boolean | null;
+  /** @minimum 0 */
+  lessonsLoaded?: number | null;
+  winnerAnalysisLoaded?: boolean | null;
+  failureStatsLoaded?: boolean | null;
+  recentLossLoaded?: boolean | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  memoryImpactScore?: number | null;
 }
