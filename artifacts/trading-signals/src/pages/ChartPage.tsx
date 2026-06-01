@@ -1209,7 +1209,7 @@ export default function ChartPage() {
           <TradingChart
             key={`${displaySymbol}-${displayTimeframe}`}
             bars={bars}
-            signals={isStocks && !snapshotMode ? allSignals : []}
+            signals={isStocks ? allSignals : []}
             activeTrade={isStocks ? activeTrade : null}
             tradeResult={isStocks ? tradeResult : null}
             lastPrice={isStocks ? lastPrice : null}
@@ -1219,12 +1219,12 @@ export default function ChartPage() {
             isMarketOpen={isMarketOpen}
             realtimeAvailable={realtimeAvailable}
             cryptoLiveBar={cryptoLiveBar}
-            aiDecisions={isStocks && !snapshotMode ? aiDecisions : []}
+            aiDecisions={isStocks ? aiDecisions : []}
             onCandleClose={isStocks ? handleCandleClose : undefined}
             aiAnalyzing={isStocks ? aiAnalyzing : false}
-            activeApprovedDecision={isStocks && !snapshotMode ? latestApproved : null}
+            activeApprovedDecision={isStocks ? latestApproved : null}
             healthScore={isStocks && tradeHealth ? tradeHealth.score : undefined}
-            resolvedAiDecisions={isStocks && !snapshotMode ? resolvedDecisions : []}
+            resolvedAiDecisions={isStocks ? resolvedDecisions : []}
             replayMarkers={isStocks ? replayMarkers : []}
             snapshotDecisions={
               isStocks

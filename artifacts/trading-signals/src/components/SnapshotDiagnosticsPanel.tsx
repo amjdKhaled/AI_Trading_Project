@@ -73,9 +73,19 @@ export function SnapshotDiagnosticsPanel({ symbol, timeframe, latest, latestCand
   const [loading, setLoading]                 = useState(false);
   const [compareData, setCompareData]         = useState<CompareReport | null>(null);
   const [compareLoading, setCompareLoading]   = useState(false);
+  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
 
   const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
   const histUrl = `${base}/api/signals/snapshot-decisions?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=20`;
+
+  // Check Ollama availability once on mount so the empty state can show a clear message
+  useEffect(() => {
+    void fetch(`${base}/api/ai/status`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ available: boolean }>) : Promise.resolve({ available: false })))
+      .then((s) => setOllamaAvailable(s.available))
+      .catch(() => setOllamaAvailable(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch single latest row (with snapshotJson) whenever a new decision arrives
   useEffect(() => {
@@ -177,7 +187,25 @@ export function SnapshotDiagnosticsPanel({ symbol, timeframe, latest, latestCand
                 candleTime={latestCandleTime}
                 decCol={decCol}
               />
-            : <Empty text="No snapshot yet — waiting for next candle close…" />
+            : ollamaAvailable === false
+              ? <div style={{ padding: "12px 0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ef4444", flexShrink: 0, display: "inline-block" }} />
+                    <span style={{ fontSize: 9, fontWeight: 700, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.08em" }}>Ollama offline</span>
+                  </div>
+                  <div style={{ fontSize: 8.5, color: "#6b7280", lineHeight: 1.6 }}>
+                    AI Snapshot needs Ollama running locally.<br />
+                    Start it on your machine:
+                  </div>
+                  <div style={{ marginTop: 8, padding: "6px 8px", background: "#ffffff06", borderRadius: 4, fontFamily: "monospace", fontSize: 7.5, color: "#9ca3af", lineHeight: 1.7 }}>
+                    ollama serve<br />
+                    ollama pull qwen3:8b
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 8, color: "#4b5563" }}>
+                    Classic BUY/SELL signals on the chart work without Ollama.
+                  </div>
+                </div>
+              : <Empty text="Waiting for next candle close…" />
         ) : tab === "history" ? (
           loading
             ? <Empty text="Loading…" />
