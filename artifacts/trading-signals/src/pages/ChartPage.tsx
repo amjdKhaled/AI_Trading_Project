@@ -711,8 +711,9 @@ export default function ChartPage() {
         try {
           const resp = await fetch(`${base}/api/history?symbol=${encodeURIComponent(sym)}&interval=${tf}`);
           if (!resp.ok) continue;
-          const data = await resp.json() as { bars?: { time: number; open: number; high: number; low: number; close: number; volume: number }[] };
-          const barsArr = data.bars ?? [];
+          // /api/history returns a raw bar array (not { bars: [] })
+          const data = await resp.json() as unknown;
+          const barsArr = Array.isArray(data) ? data as { time: number; open: number; high: number; low: number; close: number; volume: number }[] : [];
           if (barsArr.length < 55) continue;
           const latestPrice = barsArr[barsArr.length - 1].close;
           const opp = computeOpportunityScore(barsArr, latestPrice);
@@ -975,7 +976,7 @@ export default function ChartPage() {
             const sc  = liveOpportunity?.score ?? 0;
             const dir = liveOpportunity?.direction ?? "NONE";
             const isHigh = sc >= 80;
-            const isMid  = sc >= 65 && sc < 80;
+            const isMid  = sc >= 60 && sc < 80;
             const col    = isHigh
               ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
               : isMid
@@ -1125,10 +1126,17 @@ export default function ChartPage() {
                   for (const [sym, opp] of Object.entries(watchlistOpps)) {
                     allOpps.push({ symbol: sym, opp });
                   }
-                  // Sort by score descending, take top 3
+                  // Quality score = confidence × memory-alignment × regime component
+                  // memory-alignment: dampened signals penalised (×0.75)
+                  // regime component: clear direction ×1.0, NONE ×0.4
+                  const quality = (opp: OpportunityScore) =>
+                    opp.score
+                    * (opp.dampened ? 0.75 : 1.0)
+                    * (opp.direction !== "NONE" ? 1.0 : 0.4);
+
                   const ranked = allOpps
                     .filter(e => e.opp.score > 0)
-                    .sort((a, b) => b.opp.score - a.opp.score)
+                    .sort((a, b) => quality(b.opp) - quality(a.opp))
                     .slice(0, 3);
 
                   if (ranked.length === 0) {
