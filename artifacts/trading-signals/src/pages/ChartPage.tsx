@@ -7,6 +7,7 @@ import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 import { useBinanceSocket } from "@/hooks/useBinanceSocket";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 import { subscribeReplayMarkers, getReplayState, clearReplayMarkers, type ReplayMarkerItem } from "@/lib/replayStore";
+import { computeOpportunityScore, type OpportunityScore, type CachedMemoryContext } from "@/lib/live-opportunity";
 
 // ── Timeframe constants ───────────────────────────────────────────────────────
 
@@ -454,6 +455,15 @@ export default function ChartPage() {
   const [resolvedDecisions, setResolvedDecisions] = useState<ResolvedAiDecision[]>([]);
   const [replayMarkers,     setReplayMarkers]     = useState<ReplayMarkerItem[]>(() => getReplayState().markers);
 
+  const [liveModeEnabled, setLiveModeEnabled] = useState(() => {
+    try { return localStorage.getItem("live-mode") === "true"; } catch { return false; }
+  });
+  const [liveOpportunity, setLiveOpportunity] = useState<OpportunityScore | null>(null);
+  const [livePanelOpen, setLivePanelOpen]     = useState(true);
+  const memCtxRef        = useRef<CachedMemoryContext | null>(null);
+  const memFetchedSymRef = useRef<string | null>(null);
+  const liveEvalLastRef  = useRef<number>(0);
+
   // Subscribe to replayStore updates (fired when AiMemoryPage completes a replay job)
   useEffect(() => {
     return subscribeReplayMarkers((_key, markers) => setReplayMarkers(markers));
@@ -601,9 +611,44 @@ export default function ChartPage() {
       .catch(() => {});
   }, [activeSymbol, stockTf, isStocks]);
 
+  // ── Live opportunity: cache memory context per symbol ─────────────────────
+  useEffect(() => {
+    if (!liveModeEnabled || !isStocks || !activeSymbol) return;
+    if (memFetchedSymRef.current === activeSymbol) return;
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    fetch(`${base}/api/ai/memory`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { symbolStats?: Record<string, { wins: number; losses: number; total: number }> } | null) => {
+        if (!data || !activeSymbol) return;
+        const sym = data.symbolStats?.[activeSymbol];
+        memCtxRef.current = {
+          symbol:    activeSymbol,
+          winRate:   sym && sym.total >= 5 ? sym.wins / sym.total : null,
+          fetchedAt: Date.now(),
+        };
+        memFetchedSymRef.current = activeSymbol;
+      })
+      .catch(() => {});
+  }, [liveModeEnabled, isStocks, activeSymbol]);
+
+  // ── Live opportunity: evaluate on price ticks (throttled to 15 s) ─────────
+  useEffect(() => {
+    if (!liveModeEnabled || !isStocks || !isMarketOpen || !activeSymbol || !lastPrice) {
+      if (!liveModeEnabled) setLiveOpportunity(null);
+      return;
+    }
+    const now = Date.now();
+    if (now - liveEvalLastRef.current < 15_000) return;
+    liveEvalLastRef.current = now;
+    if (bars.length < 55) return;
+    const score = computeOpportunityScore(bars, lastPrice.price, memCtxRef.current);
+    setLiveOpportunity(score.direction !== "NONE" ? score : null);
+  }, [lastPrice, liveModeEnabled, isStocks, isMarketOpen, activeSymbol, bars]);
+
   // ── Candle-close AI pipeline ───────────────────────────────────────────────
   const handleCandleClose = useCallback(async (barTime: number) => {
     if (!isStocks || !activeSymbol || aiAnalyzing) return;
+    setLiveOpportunity(null);
     setAiAnalyzing(true);
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
     try {
@@ -823,6 +868,43 @@ export default function ChartPage() {
               ))
           }
 
+          {/* Stock-only: Live Mode toggle + opportunity badge */}
+          {isStocks && (
+            <button
+              onClick={() => {
+                const next = !liveModeEnabled;
+                setLiveModeEnabled(next);
+                try { localStorage.setItem("live-mode", String(next)); } catch {}
+                if (!next) setLiveOpportunity(null);
+              }}
+              title={
+                liveModeEnabled && isMarketOpen ? "Live Mode ON — evaluating pre-signals" :
+                liveModeEnabled ? "Live Mode ON (market closed)" : "Enable Live Mode"
+              }
+              className={`ml-auto px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border transition-colors ${
+                liveModeEnabled && isMarketOpen
+                  ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400"
+                  : liveModeEnabled
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                  : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+              }`}
+            >
+              ◈ Live
+            </button>
+          )}
+          {isStocks && liveModeEnabled && liveOpportunity && (
+            <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded border text-[11px] font-mono ${
+              liveOpportunity.score >= 80
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-400"
+            }`}>
+              <span className="font-bold animate-pulse">{liveOpportunity.direction === "LONG" ? "▲" : "▼"}</span>
+              <span className="font-black">{liveOpportunity.score}</span>
+              <span className="opacity-40 text-[9px]">/100</span>
+              <span className="opacity-75 text-[9px] truncate max-w-[5rem]">{liveOpportunity.setupLabel}</span>
+            </div>
+          )}
+
           {/* Crypto: live badge */}
           {isCrypto && (
             <div className="ml-auto flex items-center gap-1.5 text-[10px] font-mono">
@@ -889,6 +971,7 @@ export default function ChartPage() {
             healthScore={isStocks && tradeHealth ? tradeHealth.score : undefined}
             resolvedAiDecisions={isStocks ? resolvedDecisions : []}
             replayMarkers={isStocks ? replayMarkers : []}
+            liveOpportunity={isStocks && liveModeEnabled ? liveOpportunity : null}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -920,6 +1003,58 @@ export default function ChartPage() {
         </div>
         {isStocks && latestApproved && tradeHealth && (
           <ActiveTradePanel decision={latestApproved} health={tradeHealth} currentPrice={livePrice ?? undefined} />
+        )}
+        {/* ── Live Setup Watchlist ───────────────────────────────────────────
+             Collapsible — only visible when Live Mode is enabled.
+             Shows the developing opportunity score, direction, and setup type. */}
+        {isStocks && liveModeEnabled && (
+          <div className="border-t border-white/5 flex-shrink-0 select-none">
+            <button
+              onClick={() => setLivePanelOpen(v => !v)}
+              className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isMarketOpen ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground/30"}`} />
+              Live Setup
+              <span className="ml-auto opacity-50">{livePanelOpen ? "▾" : "▸"}</span>
+            </button>
+            {livePanelOpen && (
+              <div className="px-2.5 pb-2.5">
+                {!isMarketOpen ? (
+                  <p className="text-[9px] text-muted-foreground/40 font-mono">Market closed</p>
+                ) : !liveOpportunity ? (
+                  <p className="text-[9px] text-muted-foreground/40 font-mono">Monitoring… (score &lt;65)</p>
+                ) : (
+                  <div className={`rounded p-2 border ${
+                    liveOpportunity.score >= 80 ? "border-emerald-500/25 bg-emerald-500/5" : "border-amber-500/25 bg-amber-500/5"
+                  }`}>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className={`text-[11px] font-bold font-mono ${liveOpportunity.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>
+                        {liveOpportunity.direction === "LONG" ? "▲ LONG" : "▼ SHORT"}
+                      </span>
+                      <span className={`ml-auto text-[14px] font-black font-mono ${liveOpportunity.score >= 80 ? "text-emerald-400" : "text-amber-400"}`}>
+                        {liveOpportunity.score}
+                      </span>
+                    </div>
+                    <div className="text-[8.5px] text-muted-foreground/60 font-mono mb-1.5 truncate">{liveOpportunity.setupLabel}</div>
+                    <div className="w-full h-[3px] bg-white/5 rounded-full overflow-hidden mb-1.5">
+                      <div className={`h-full rounded-full ${liveOpportunity.score >= 80 ? "bg-emerald-500" : "bg-amber-500"}`}
+                        style={{ width: `${liveOpportunity.score}%` }} />
+                    </div>
+                    {liveOpportunity.factors.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {liveOpportunity.factors.map((f, idx) => (
+                          <span key={idx} className="text-[7.5px] text-muted-foreground/50 font-mono bg-white/[0.04] px-1 py-0.5 rounded">{f}</span>
+                        ))}
+                      </div>
+                    )}
+                    {liveOpportunity.dampened && (
+                      <div className="text-[7.5px] text-amber-400/60 font-mono mt-1">⚠ Memory dampened</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -112,6 +112,8 @@ interface Props {
   replayMarkers?: ReplayMarkerItem[];
   /** Composite health score 0–100 for the active approved AI trade — drives badge in position SVG */
   healthScore?: number;
+  /** Live pre-signal opportunity from the frontend indicator scorer (Live Mode only) */
+  liveOpportunity?: { direction: "LONG" | "SHORT" | "NONE"; score: number; confidence: number; setupLabel: string } | null;
 }
 
 const PRICE_SCALE_W = 68;
@@ -137,7 +139,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [], healthScore }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [], healthScore, liveOpportunity = null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -197,6 +199,9 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   resolvedAiDecisionsRef.current  = resolvedAiDecisions;
   replayMarkersRef.current        = replayMarkers;
 
+  const liveOpportunityRef = useRef(liveOpportunity);
+  liveOpportunityRef.current = liveOpportunity;
+
   const [barCount, setBarCount]   = useState(0);
   const [dateRange, setDateRange] = useState("");
   const [markers, setMarkers]     = useState<MarkerPos[]>([]);
@@ -211,6 +216,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   const [resolvedDecisionMarkers, setResolvedDecisionMarkers] = useState<ResolvedDecisionPos[]>([]);
   const [hoveredResolvedKey, setHoveredResolvedKey] = useState<string | null>(null);
   const [replayMarkerPositions, setReplayMarkerPositions] = useState<ReplayMarkerPos[]>([]);
+  const [livePreSignalPos, setLivePreSignalPos] = useState<{ x: number; y: number; isLong: boolean; score: number; setupLabel: string } | null>(null);
 
   const removeSLTP = useCallback(() => {
     const cs = candleRef.current;
@@ -632,6 +638,41 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     setReplayMarkerPositions(positions);
   }, []);
 
+  const computeLivePreSignalMarker = useCallback(() => {
+    const chart  = chartRef.current;
+    const series = candleRef.current;
+    const el     = containerRef.current;
+    const opp    = liveOpportunityRef.current;
+
+    if (!chart || !series || !el || !opp || opp.direction === "NONE") {
+      setLivePreSignalPos(null);
+      return;
+    }
+
+    const snap = barsRef.current;
+    if (snap.length === 0) { setLivePreSignalPos(null); return; }
+
+    const W    = el.offsetWidth;
+    const H    = el.offsetHeight;
+    const maxX = W - PRICE_SCALE_W;
+    const maxY = H * (1 - VOLUME_RATIO);
+
+    // Forming candle is 1 interval after the last historical bar
+    const lastBar     = snap[snap.length - 1];
+    const liveBarTime = lastBar.time + intervalSecRef.current;
+
+    let x = chart.timeScale().timeToCoordinate(liveBarTime as Time);
+    if (x === null) x = chart.timeScale().timeToCoordinate(lastBar.time as Time);
+    if (x === null || x < 0 || x > maxX) { setLivePreSignalPos(null); return; }
+
+    const isLong   = opp.direction === "LONG";
+    const refPrice = isLong ? lastBar.low : lastBar.high;
+    const y        = series.priceToCoordinate(refPrice);
+    if (y === null || y < 0 || y > maxY) { setLivePreSignalPos(null); return; }
+
+    setLivePreSignalPos({ x, y: isLong ? y + 8 : y - 8, isLong, score: opp.score, setupLabel: opp.setupLabel });
+  }, []);
+
   // Chart init
   useEffect(() => {
     if (!containerRef.current) return;
@@ -731,6 +772,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeDecisionMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
     chart.timeScale().subscribeVisibleLogicalRangeChange(computeReplayMarkers);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(computeLivePreSignalMarker);
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
       chartRef.current.applyOptions({ width: containerRef.current.offsetWidth, height: containerRef.current.offsetHeight || 500 });
@@ -739,6 +781,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       computeDecisionMarkers();
       computeResolvedDecisionMarkers();
       computeReplayMarkers();
+      computeLivePreSignalMarker();
     });
     ro.observe(containerRef.current);
 
@@ -749,6 +792,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeDecisionMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeResolvedDecisionMarkers);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeReplayMarkers);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(computeLivePreSignalMarker);
       removeSLTP();
       tradeIdRef.current = null;
       csmRef.current?.detach();
@@ -756,7 +800,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
       chart.remove();
       chartRef.current = candleRef.current = volumeRef.current = null;
     };
-  }, [computeMarkers, removeSLTP, computeDecisionMarkers, computeResolvedDecisionMarkers, computeReplayMarkers]);
+  }, [computeMarkers, removeSLTP, computeDecisionMarkers, computeResolvedDecisionMarkers, computeReplayMarkers, computeLivePreSignalMarker]);
 
   // Load bar data — validates every bar before rendering to prevent corrupted OHLC
   // from reaching the chart engine.  Also resets live-bar tracking so stale WebSocket
@@ -811,7 +855,8 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     setTimeout(computeAiMarkers, 80);
     setTimeout(computeDecisionMarkers, 80);
     setTimeout(computeResolvedDecisionMarkers, 80);
-  }, [bars, computeMarkers, computeAiMarkers, computeDecisionMarkers, computeResolvedDecisionMarkers, removeSLTP, removeAiDecisionLines]);
+    setTimeout(computeLivePreSignalMarker, 80);
+  }, [bars, computeMarkers, computeAiMarkers, computeDecisionMarkers, computeResolvedDecisionMarkers, removeSLTP, removeAiDecisionLines, computeLivePreSignalMarker]);
 
   // Active trade → SL/TP lines
   useEffect(() => {
@@ -897,6 +942,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
   useEffect(() => { setTimeout(computeDecisionMarkers, 30); }, [aiDecisions, computeDecisionMarkers]);
   useEffect(() => { setTimeout(computeResolvedDecisionMarkers, 30); }, [resolvedAiDecisions, computeResolvedDecisionMarkers]);
   useEffect(() => { setTimeout(computeReplayMarkers, 30); }, [replayMarkers, computeReplayMarkers]);
+  useEffect(() => { setTimeout(computeLivePreSignalMarker, 30); }, [liveOpportunity, computeLivePreSignalMarker]);
 
   // ── Live tick ingestion ────────────────────────────────────────────────────
   //
@@ -1320,6 +1366,56 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
               </text>
             </g>
           )}
+
+          {/* ── Live Pre-Signal Marker ─────────────────────────────────────
+               Dashed pulsing diamond at the currently-forming candle.
+               Shown only when Live Mode is active and a setup scores ≥65.
+               Semi-transparent + dashed to distinguish from confirmed signals. */}
+          {livePreSignalPos && (() => {
+            const col  = livePreSignalPos.isLong ? "#00ff88" : "#ff3346";
+            const dHW  = 8;
+            const dHH  = 11;
+            const pts  = [
+              `${livePreSignalPos.x},${livePreSignalPos.y - dHH}`,
+              `${livePreSignalPos.x + dHW},${livePreSignalPos.y}`,
+              `${livePreSignalPos.x},${livePreSignalPos.y + dHH}`,
+              `${livePreSignalPos.x - dHW},${livePreSignalPos.y}`,
+            ].join(" ");
+            const scoreY  = livePreSignalPos.isLong ? livePreSignalPos.y + dHH + 11 : livePreSignalPos.y - dHH - 4;
+            const labelY2 = livePreSignalPos.isLong ? scoreY + 10 : scoreY - 10;
+            return (
+              <g style={{ animation: "tradeRingPulse 1.8s ease-in-out infinite" }}>
+                {/* Outer dashed ring */}
+                <circle cx={livePreSignalPos.x} cy={livePreSignalPos.y} r={18}
+                  fill="none" stroke={col} strokeWidth={1} strokeDasharray="4 3" opacity={0.4} />
+                {/* Dashed diamond */}
+                <polygon points={pts}
+                  fill={col} opacity={0.30}
+                  stroke={col} strokeWidth={1.5} strokeDasharray="3 2" />
+                {/* Tilde to indicate "forming" */}
+                <text x={livePreSignalPos.x} y={livePreSignalPos.y + 1}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fill={col} fontSize={7} fontWeight="900"
+                  fontFamily="'JetBrains Mono',Menlo,monospace">
+                  ~
+                </text>
+                {/* Score */}
+                <text x={livePreSignalPos.x} y={scoreY}
+                  textAnchor="middle"
+                  fill={col} fontSize={8.5} fontFamily="'JetBrains Mono',Menlo,monospace"
+                  fontWeight="800" opacity={0.80}>
+                  {livePreSignalPos.score}
+                </text>
+                {/* Setup label */}
+                <text x={livePreSignalPos.x} y={labelY2}
+                  textAnchor="middle"
+                  fill={col} fontSize={7} fontFamily="'JetBrains Mono',Menlo,monospace"
+                  opacity={0.55}>
+                  {livePreSignalPos.setupLabel.length > 12 ? livePreSignalPos.setupLabel.slice(0, 12) + "…" : livePreSignalPos.setupLabel}
+                </text>
+              </g>
+            );
+          })()}
         </svg>
 
         {/* ── Resolved AI decision hover hit areas ──────────────────────────
