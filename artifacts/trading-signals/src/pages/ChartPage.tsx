@@ -6,7 +6,7 @@ import { SignalPanel } from "@/components/SignalPanel";
 import { useMarketSocket, type SignalNew } from "@/hooks/useMarketSocket";
 import { useBinanceSocket } from "@/hooks/useBinanceSocket";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
-import { subscribeReplayMarkers, getReplayState, clearReplayMarkers, type ReplayMarkerItem } from "@/lib/replayStore";
+import { subscribeReplayMarkers, getReplayState, clearReplayMarkers, setReplayMarkers as storeSetReplayMarkers, type ReplayMarkerItem } from "@/lib/replayStore";
 import { computeOpportunityScore, type OpportunityScore, type CachedMemoryContext } from "@/lib/live-opportunity";
 import { useListSymbols } from "@workspace/api-client-react";
 
@@ -455,6 +455,8 @@ export default function ChartPage() {
   const [tradeHealth,       setTradeHealth]       = useState<TradeHealth | null>(null);
   const [resolvedDecisions, setResolvedDecisions] = useState<ResolvedAiDecision[]>([]);
   const [replayMarkers,     setReplayMarkers]     = useState<ReplayMarkerItem[]>(() => getReplayState().markers);
+  const [aiReplayJobId,     setAiReplayJobId]     = useState<string | null>(null);
+  const [aiReplayRunning,   setAiReplayRunning]   = useState(false);
 
   const [liveModeEnabled, setLiveModeEnabled] = useState(() => {
     try { return localStorage.getItem("live-mode") === "true"; } catch { return false; }
@@ -841,6 +843,68 @@ export default function ChartPage() {
       .catch(() => {});
   }, [lastPrice, latestApproved, activeSymbol, stockTf, isStocks]);
 
+  // ── Historical AI Replay ────────────────────────────────────────────────────
+  const handleAiReplay = useCallback(async () => {
+    if (!activeSymbol || aiReplayRunning) return;
+    clearReplayMarkers();
+    setAiReplayRunning(true);
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    try {
+      const res = await fetch(`${base}/api/signals/ai-replay-historical`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: activeSymbol, timeframe: stockTf, limit: 30 }),
+      });
+      if (!res.ok) { setAiReplayRunning(false); return; }
+      const data = await res.json() as { jobId: string; alreadyRunning?: boolean };
+      setAiReplayJobId(data.jobId);
+    } catch {
+      setAiReplayRunning(false);
+    }
+  }, [activeSymbol, stockTf, aiReplayRunning]);
+
+  // Poll for AI Replay job completion
+  useEffect(() => {
+    if (!aiReplayJobId || !aiReplayRunning) return;
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    let cancelled = false;
+    const poll = async () => {
+      while (!cancelled) {
+        await new Promise<void>(r => setTimeout(r, 2000));
+        if (cancelled) break;
+        try {
+          const res = await fetch(
+            `${base}/api/signals/ai-replay-historical/${encodeURIComponent(aiReplayJobId)}`,
+          );
+          if (!res.ok) break;
+          const data = await res.json() as {
+            status: string;
+            markers?: ReplayMarkerItem[];
+            symbol?: string;
+            timeframe?: string;
+          };
+          if (data.status === "done" && data.markers) {
+            storeSetReplayMarkers(`ai-replay-${data.symbol}-${data.timeframe}`, data.markers);
+            setAiReplayRunning(false);
+            setAiReplayJobId(null);
+            break;
+          } else if (data.status === "error") {
+            setAiReplayRunning(false);
+            setAiReplayJobId(null);
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
+      if (!cancelled) {
+        setAiReplayRunning(false);
+      }
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [aiReplayJobId, aiReplayRunning]);
+
   const handleActivateTrade = useCallback((trade: ActiveTrade) => {
     if (activeTrade) return;
     setTradeResult(null);
@@ -947,6 +1011,28 @@ export default function ChartPage() {
                 </button>
               ))
           }
+
+          {/* Stock-only: AI Replay button */}
+          {isStocks && activeSymbol && (
+            <button
+              onClick={handleAiReplay}
+              disabled={aiReplayRunning || !activeSymbol}
+              title={
+                aiReplayRunning
+                  ? "AI Replay in progress — candle-by-candle Ollama calls"
+                  : "Replay last 30 candles with current AI + Memory"
+              }
+              className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border transition-colors ${
+                aiReplayRunning
+                  ? "border-violet-500/30 bg-violet-500/10 text-violet-400/70 animate-pulse cursor-not-allowed"
+                  : replayMarkers.some(m => m.source === "ai_replay")
+                  ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
+                  : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+              }`}
+            >
+              {aiReplayRunning ? "⟳ Replaying…" : "◈ AI Replay"}
+            </button>
+          )}
 
           {/* Stock-only: Live Mode toggle + opportunity badge */}
           {isStocks && (

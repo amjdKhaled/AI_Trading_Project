@@ -415,6 +415,7 @@ export async function filterCandleWithAi(
       ...noTrade(ctx, "Ollama is offline — defaulting to WAIT to protect capital."),
       memoryUsed: false, lessonsLoaded: 0, winnerAnalysisLoaded: false,
       failureStatsLoaded: false, recentLossLoaded: false, memoryImpactScore: 0,
+      lessonsApplied: [],
     };
   }
 
@@ -435,6 +436,7 @@ export async function filterCandleWithAi(
   const mkMemDiag = (diverged = false) => ({
     ...memBase,
     memoryImpactScore: computeMemoryImpactScore(mem, diverged),
+    lessonsApplied:    mem.lessons,
   });
 
   const techCtx: Record<string, unknown> = {

@@ -1,11 +1,14 @@
 export interface ReplayMarkerItem {
-  candleTime: number;
-  decision:   "LONG" | "SHORT";
-  entry:      number | null;
-  stopLoss:   number | null;
-  takeProfit: number | null;
-  rrRatio:    number | null;
-  confidence: number;
+  candleTime:         number;
+  decision:           "LONG" | "SHORT";
+  entry:              number | null;
+  stopLoss:           number | null;
+  takeProfit:         number | null;
+  rrRatio:            number | null;
+  confidence:         number;
+  source?:            "validation" | "ai_replay";
+  memoryUsed?:        boolean;
+  memoryImpactScore?: number;
 }
 
 type Listener = (key: string, markers: ReplayMarkerItem[]) => void;

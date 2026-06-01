@@ -82,6 +82,7 @@ interface ReplayMarkerPos {
   candleTime: number;
   entry:      number | null;
   rrRatio:    number | null;
+  source?:    "validation" | "ai_replay";
 }
 
 interface Props {
@@ -633,6 +634,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
         candleTime: m.candleTime,
         entry:      m.entry,
         rrRatio:    m.rrRatio,
+        source:     m.source,
       });
     }
     setReplayMarkerPositions(positions);
@@ -1319,11 +1321,29 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
             );
           })}
 
-          {/* ── Replay: memory-enhanced APPROVE markers ─────────────────────
-               Hollow violet diamonds at each candle where memory flipped the
-               AI decision to APPROVE (withMem=LONG/SHORT, confidence≥80).
-               Offset below candle for LONG, above for SHORT. */}
+          {/* ── Replay markers ──────────────────────────────────────────────
+               source="validation": hollow violet diamonds (+M) where memory
+               flipped the AI decision to APPROVE in the validation replay.
+               source="ai_replay": filled green/red triangles (BUY/SELL) from
+               the historical AI replay run on the chart page. */}
           {replayMarkerPositions.map((m) => {
+            if (m.source === "ai_replay") {
+              const col  = m.isLong ? "#00ff88" : "#ff3346";
+              const sz   = 9;
+              const pts  = m.isLong
+                ? `${m.x},${m.y - sz} ${m.x - sz},${m.y + sz} ${m.x + sz},${m.y + sz}`
+                : `${m.x},${m.y + sz} ${m.x - sz},${m.y - sz} ${m.x + sz},${m.y - sz}`;
+              const labelY = m.isLong ? m.y + sz + 10 : m.y - sz - 3;
+              return (
+                <g key={m.key}>
+                  <polygon points={pts} fill={col} opacity={0.82} />
+                  <text x={m.x} y={labelY} textAnchor="middle" fill={col}
+                    fontSize={8} fontFamily="'JetBrains Mono',Menlo,monospace" fontWeight="700" opacity={0.9}>
+                    {m.isLong ? "BUY" : "SELL"} {m.confidence}
+                  </text>
+                </g>
+              );
+            }
             const col  = "#8b5cf6";
             const dHW  = 8; const dHH = 11;
             const diamondPts = [

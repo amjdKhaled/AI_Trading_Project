@@ -1,0 +1,271 @@
+IMPLEMENTATION TASK — PHASES 1, 2, 3 ONLY
+
+Before writing any code, perform a code audit and verify every statement below against the actual source code.
+
+=========================================================
+PHASE 1 — HISTORICAL AI REPLAY (HIGHEST PRIORITY)
+=================================================
+
+Current problem:
+
+The chart markers currently displayed on TradingChart are still generated from the historical technical signal engine.
+
+This means the user cannot see how the CURRENT AI (Qwen3 + AI Memory) would have traded the same historical candles.
+
+Goal:
+
+Create a complete Historical AI Replay engine.
+
+Requirements:
+
+1. Add a new backend route:
+
+POST /api/signals/ai-replay-historical
+
+Inputs:
+
+* symbol
+* timeframe
+* candleCount
+
+2. Load historical candles.
+
+3. Replay candles sequentially exactly like live trading.
+
+For every candle:
+
+* Build market context
+* Load AI memory
+* Load lessons
+* Load similar setups
+* Load winner statistics
+* Load loser statistics
+* Load failure categories
+* Load recent loss reasoning
+
+Then call the SAME live AI engine.
+
+IMPORTANT:
+
+Do NOT create a second AI engine.
+
+Must use:
+
+filterCandleWithAi()
+
+or whatever the current live decision path is.
+
+The replay engine and live engine must share identical logic.
+
+4. Generate:
+
+BUY
+SELL
+WAIT
+
+decisions exactly as live AI would.
+
+5. Store replay markers.
+
+6. Return replay markers to frontend.
+
+=========================================================
+CHART INTEGRATION
+=================
+
+Add a new chart mode:
+
+AI Replay
+
+When enabled:
+
+Hide technical markers.
+
+Display AI-generated historical markers only.
+
+Render:
+
+BUY
+SELL
+TP
+SL
+
+generated from replay results.
+
+Goal:
+
+User must visually see:
+
+“How would the current AI have traded this chart?”
+
+=========================================================
+PHASE 2 — REAL TICK TP/SL MANAGEMENT
+====================================
+
+Current problem:
+
+Trades close only on candle close.
+
+This is not acceptable for scalping.
+
+Goal:
+
+Monitor active trades continuously.
+
+Requirements:
+
+When receiving live price updates:
+
+price.update
+
+Check:
+
+if price >= TP
+if price <= SL
+
+for LONG
+
+and
+
+if price <= TP
+if price >= SL
+
+for SHORT
+
+If hit:
+
+Immediately:
+
+* close trade
+* update database
+* generate reflection
+* generate lesson
+* update memory
+* update performance metrics
+* broadcast trade.resolved event
+
+Do NOT wait for candle close.
+
+Must work intrabar.
+
+Must work in real-time.
+
+=========================================================
+PHASE 3 — MEMORY ATTRIBUTION SYSTEM
+===================================
+
+Current problem:
+
+The AI may be using memory internally but the user cannot see it.
+
+Goal:
+
+Prove memory usage.
+
+Requirements:
+
+For every AI decision store:
+
+memoryUsed
+memoryImpactScore
+memoryLessonsApplied
+memoryReason
+
+Add columns if necessary.
+
+=========================================================
+DECISION TRACE
+==============
+
+Every decision should explain:
+
+Why was this trade approved?
+
+Why was this trade rejected?
+
+Which lessons were used?
+
+Which lesson changed the outcome?
+
+How much impact did memory have?
+
+Example:
+
+Memory Used: YES
+
+Lessons Applied:
+
+* Avoid shorting weak volume
+* Avoid ranging market entries
+
+Memory Impact Score:
+78
+
+Decision Change:
+Memory prevented SHORT entry
+
+=========================================================
+FRONTEND DISPLAY
+================
+
+Show on signal cards:
+
+Memory Used
+Memory Impact
+Lessons Applied
+Memory Reason
+
+Show directly inside:
+
+TradingChart
+Signals page
+AI Memory Validation
+
+=========================================================
+VALIDATION EXTENSION
+====================
+
+Extend validation results.
+
+Display:
+
+Total Decisions Changed By Memory
+Total Trades Prevented By Memory
+Total Trades Approved By Memory
+Total Trades Rejected By Memory
+
+Most Influential Lessons
+
+Top Lessons That Changed Outcomes
+
+=========================================================
+MANDATORY RULES
+===============
+
+1. Do NOT create duplicate AI engines.
+2. Do NOT create separate replay logic.
+3. Replay must use the exact same live decision engine.
+4. Memory path must be identical in replay and live mode.
+5. Verify with real execution.
+6. Run typecheck.
+7. Run build.
+8. Run integration tests.
+9. Verify no broken routes.
+10. Verify no duplicate signal generators introduced.
+
+=========================================================
+FINAL REPORT REQUIRED
+=====================
+
+After implementation provide:
+
+1. Execution path diagram.
+2. Proof replay uses live AI engine.
+3. Proof TP/SL closes intrabar.
+4. Proof memory attribution is stored.
+5. Proof frontend displays memory impact.
+6. Typecheck results.
+7. Build results.
+8. Test results.
+
+Do not mark complete until all verification passes.

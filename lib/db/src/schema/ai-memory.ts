@@ -159,11 +159,13 @@ export const aiDecisionsTable = pgTable("ai_decisions", {
   session:           text("session"),
   candidateScore:    integer("candidate_score"),
   patterns:          jsonb("patterns").$type<string[]>().notNull().default([]),
-  outcome:           text("outcome"),
-  outcomePrice:      real("outcome_price"),
-  resolvedAt:        timestamp("resolved_at", { withTimezone: true }),
-  reflected:         boolean("reflected").notNull().default(false),
-  createdAt:         timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  outcome:              text("outcome"),
+  outcomePrice:         real("outcome_price"),
+  resolvedAt:           timestamp("resolved_at", { withTimezone: true }),
+  reflected:            boolean("reflected").notNull().default(false),
+  memoryImpactScore:    integer("memory_impact_score"),
+  memoryLessonsApplied: jsonb("memory_lessons_applied").$type<string[]>(),
+  createdAt:            timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const insertAiDecisionSchema = createInsertSchema(aiDecisionsTable).omit({ id: true, createdAt: true });

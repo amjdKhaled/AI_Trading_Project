@@ -115,6 +115,7 @@ export interface AiCandleDecision {
   failureStatsLoaded?:   boolean;
   recentLossLoaded?:     boolean;
   memoryImpactScore?:    number;
+  lessonsApplied?:       string[];
 }
 
 export interface MemoryStore {

@@ -449,3 +449,88 @@ export async function runReplay(
     decisionDiffs,
   };
 }
+
+// ── Historical AI Replay (single Memory-ON pass) ──────────────────────────────
+// Runs only the memory-enabled pass for each bar and returns approved decisions
+// as chart markers. Half the Ollama calls vs the dual-pass validation replay.
+export interface HistoricalReplayMarker {
+  candleTime:         number;
+  decision:           "LONG" | "SHORT";
+  entry:              number | null;
+  stopLoss:           number | null;
+  takeProfit:         number | null;
+  rrRatio:            number | null;
+  confidence:         number;
+  source:             "ai_replay";
+  memoryUsed:         boolean;
+}
+
+export interface HistoricalAiReplayResult {
+  markers:   HistoricalReplayMarker[];
+  processed: number;
+}
+
+export async function runHistoricalAiReplay(
+  bars:       OhlcvBar[],
+  htfBars:    OhlcvBar[],
+  htfTf:      string,
+  symbol:     string,
+  timeframe:  string,
+  limit:      number,
+  onProgress: OnReplayProgress,
+): Promise<HistoricalAiReplayResult> {
+  const WARMUP   = 100;
+  const endIdx   = bars.length - 1;
+  const startIdx = Math.max(WARMUP, endIdx - limit);
+  const total    = endIdx - startIdx;
+
+  const news = await getNewsSentiment(symbol).catch(() => ({
+    symbol, sentiment: "neutral" as const, score: 0,
+    headlines: [] as string[], summary: "News unavailable",
+    cachedAt: Date.now(), stale: true,
+  }));
+
+  const markers: HistoricalReplayMarker[] = [];
+  let done = 0;
+
+  for (let i = startIdx; i < endIdx; i++) {
+    const candleTime = bars[i].time;
+    const slice      = bars.slice(0, i + 1);
+
+    try {
+      const ctx = buildMarketContext(slice, htfBars, htfTf, symbol, timeframe, candleTime, news);
+      const stats = await findSimilarHistoricalSetups(
+        symbol, ctx.regime, ctx.indicators.rsi14, ctx.candlestickPatterns,
+      ).catch(() => ({
+        samples: 0, winRate: 0, avgRR: 0, avgProfit: 0, avgLoss: 1,
+        regimeApproveRate: 0, summary: "No historical data.",
+      }));
+
+      const result = await runCandlePassForReplay(ctx, stats, true);
+
+      if (
+        (result.decision === "LONG" || result.decision === "SHORT") &&
+        result.confidence >= 80
+      ) {
+        markers.push({
+          candleTime,
+          decision:   result.decision,
+          entry:      result.entry,
+          stopLoss:   result.stopLoss,
+          takeProfit: result.takeProfit,
+          rrRatio:    result.rr,
+          confidence: result.confidence,
+          source:     "ai_replay",
+          memoryUsed: result.memoryUsed,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, symbol, candleTime }, "historical-replay candle failed — skipping");
+    }
+
+    done++;
+    onProgress(done, total);
+  }
+
+  return { markers, processed: done };
+}

@@ -17,8 +17,8 @@ import { isOllamaAvailable } from "../lib/ai/ollama";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection";
 import { rowToTradeEntry } from "./ai";
 import { filterCandleWithAi } from "../lib/ai/filter";
-import { runReplay } from "../lib/ai/replay";
-import type { ReplayResult } from "../lib/ai/replay";
+import { runReplay, runHistoricalAiReplay } from "../lib/ai/replay";
+import type { ReplayResult, HistoricalReplayMarker } from "../lib/ai/replay";
 import { buildMarketContext, findSimilarHistoricalSetups } from "../lib/ai/market-context";
 import { getNewsSentiment } from "../lib/ai/news";
 import { checkOpenDecisions } from "../lib/ai/lifecycle-checker";
@@ -399,15 +399,17 @@ router.post("/signals/candle-decision", async (req, res): Promise<void> => {
           recentLossLoaded:     decision.recentLossLoaded,
           memoryImpactScore:    decision.memoryImpactScore,
         },
-        aiReasoning:       decision.aiReasoning,
-        rejectionReason:   decision.rejectionReason,
-        newsSummary:       decision.newsSummary,
-        newsSentiment:     decision.newsSentiment,
-        regime:            decision.regime,
-        htfBias:           decision.htfBias,
-        session:           decision.session,
-        candidateScore:    decision.confidence,
-        patterns:          decision.patterns,
+        aiReasoning:          decision.aiReasoning,
+        rejectionReason:      decision.rejectionReason,
+        newsSummary:          decision.newsSummary,
+        newsSentiment:        decision.newsSentiment,
+        regime:               decision.regime,
+        htfBias:              decision.htfBias,
+        session:              decision.session,
+        candidateScore:       decision.confidence,
+        patterns:             decision.patterns,
+        memoryImpactScore:    decision.memoryImpactScore ?? null,
+        memoryLessonsApplied: decision.lessonsApplied ?? [],
       });
     } catch (dbErr) {
       // Duplicate candleTime — already processed, just return the decision
@@ -1090,6 +1092,117 @@ router.get("/signals/replay/:jobId", (req, res): void => {
     total:    job.total,
     result:   job.result ?? null,
     error:    job.error ?? null,
+  });
+});
+
+// ── Historical AI Replay job store ────────────────────────────────────────────
+interface HistoricalReplayJob {
+  jobId:     string;
+  symbol:    string;
+  timeframe: string;
+  status:    "running" | "done" | "error";
+  progress:  number;
+  total:     number;
+  markers?:  HistoricalReplayMarker[];
+  error?:    string;
+  startedAt: number;
+}
+
+const historicalReplayJobs  = new Map<string, HistoricalReplayJob>();
+const activeHistoricalByKey = new Map<string, string>();
+
+// ── POST /signals/ai-replay-historical ────────────────────────────────────────
+// Starts an async single-pass (Memory ON) replay job for a symbol+timeframe.
+// Returns immediately with { jobId }. Poll GET /signals/ai-replay-historical/:jobId.
+// Returns only APPROVE decisions (confidence≥80) as chart markers.
+router.post("/signals/ai-replay-historical", async (req, res): Promise<void> => {
+  const { symbol, timeframe = "5m", limit = 30 } = req.body as {
+    symbol?: string; timeframe?: string; limit?: number;
+  };
+  if (!symbol || typeof symbol !== "string") {
+    res.status(400).json({ error: "symbol required" });
+    return;
+  }
+
+  const sym = symbol.toUpperCase().trim();
+  const tf  = String(timeframe);
+  const lim = Math.max(5, Math.min(60, typeof limit === "number" ? Math.round(limit) : 30));
+  const key = `hist-${sym}-${tf}`;
+
+  const existingId = activeHistoricalByKey.get(key);
+  if (existingId) {
+    const existing = historicalReplayJobs.get(existingId);
+    if (existing?.status === "running") {
+      res.json({ jobId: existingId, alreadyRunning: true });
+      return;
+    }
+  }
+
+  const jobId = `hist-${sym}-${tf}-${Date.now()}`;
+  const job: HistoricalReplayJob = {
+    jobId, symbol: sym, timeframe: tf,
+    status: "running", progress: 0, total: lim, startedAt: Date.now(),
+  };
+  historicalReplayJobs.set(jobId, job);
+  activeHistoricalByKey.set(key, jobId);
+
+  if (historicalReplayJobs.size > 20) {
+    const oldest = [...historicalReplayJobs.entries()]
+      .sort((a, b) => a[1].startedAt - b[1].startedAt)[0];
+    if (oldest) historicalReplayJobs.delete(oldest[0]);
+  }
+
+  res.json({ jobId });
+
+  void (async () => {
+    try {
+      const htfTf = HTF_MAP[tf] ?? "15m";
+      const [barsRaw, htfBarsRaw] = await Promise.all([
+        fetchHistory(sym, tf),
+        fetchHistory(sym, htfTf),
+      ]);
+      const bars    = barsRaw    as OhlcvBar[];
+      const htfBars = htfBarsRaw as OhlcvBar[];
+
+      if (bars.length < 110) {
+        job.status = "error";
+        job.error  = `Insufficient bars (${bars.length} < 110)`;
+        return;
+      }
+
+      const result = await runHistoricalAiReplay(
+        bars, htfBars, htfTf, sym, tf, lim,
+        (done, total) => { job.progress = done; job.total = total; },
+      );
+
+      job.markers  = result.markers;
+      job.status   = "done";
+      job.progress = result.processed;
+    } catch (err) {
+      job.status = "error";
+      job.error  = (err instanceof Error) ? err.message : String(err);
+    }
+  })();
+});
+
+// ── GET /signals/ai-replay-historical/:jobId ─────────────────────────────────
+router.get("/signals/ai-replay-historical/:jobId", (req, res): void => {
+  const { jobId } = req.params;
+  const job = historicalReplayJobs.get(jobId);
+  if (!job) {
+    res.status(404).json({ error: "Historical replay job not found" });
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    jobId:     job.jobId,
+    symbol:    job.symbol,
+    timeframe: job.timeframe,
+    status:    job.status,
+    progress:  job.progress,
+    total:     job.total,
+    markers:   job.markers ?? null,
+    error:     job.error ?? null,
   });
 });
 
