@@ -45,6 +45,8 @@ import type {
   ListSignalsParams,
   ListSnapshotDecisionsParams,
   PerformanceSummaryResponse,
+  PipelineComparisonReport,
+  PipelineComparisonRequest,
   ReplayJobStatus,
   ReplayStartRequest,
   ReplayStartResponse,
@@ -1568,6 +1570,82 @@ export function useGetSnapshotDecisionHistory<TData = Awaited<ReturnType<typeof 
 
 
 
+
+export const getPipelineComparisonUrl = () => {
+
+
+
+
+  return `/api/signals/pipeline-comparison`
+}
+
+/**
+ * Runs generateSignals (deterministic, no Ollama) over the last `barCount` historical bars
+and cross-references stored AI snapshot decisions for the same symbol/timeframe window.
+Returns a side-by-side report with signal counts, avg confidence, overlap, and divergence.
+No live Ollama calls — uses decisions already stored from live candle-close events.
+
+ * @summary Compare classic signal engine vs AI snapshot decisions over a historical window
+ */
+export const pipelineComparison = async (pipelineComparisonRequest: PipelineComparisonRequest, options?: RequestInit): Promise<PipelineComparisonReport> => {
+
+  return customFetch<PipelineComparisonReport>(getPipelineComparisonUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      pipelineComparisonRequest,)
+  }
+);}
+
+
+
+
+export const getPipelineComparisonMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pipelineComparison>>, TError,{data: BodyType<PipelineComparisonRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pipelineComparison>>, TError,{data: BodyType<PipelineComparisonRequest>}, TContext> => {
+
+const mutationKey = ['pipelineComparison'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pipelineComparison>>, {data: BodyType<PipelineComparisonRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  pipelineComparison(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PipelineComparisonMutationResult = NonNullable<Awaited<ReturnType<typeof pipelineComparison>>>
+    export type PipelineComparisonMutationBody = BodyType<PipelineComparisonRequest>
+    export type PipelineComparisonMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Compare classic signal engine vs AI snapshot decisions over a historical window
+ */
+export const usePipelineComparison = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pipelineComparison>>, TError,{data: BodyType<PipelineComparisonRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pipelineComparison>>,
+        TError,
+        {data: BodyType<PipelineComparisonRequest>},
+        TContext
+      > => {
+      return useMutation(getPipelineComparisonMutationOptions(options));
+    }
 
 export const getStartReplayUrl = () => {
 

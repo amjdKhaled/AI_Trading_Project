@@ -32,6 +32,19 @@ interface SnapJson {
   htf?:                 SnapHtf | null;
 }
 
+interface CompareReport {
+  symbol:                string;
+  timeframe:             string;
+  windowBars:            number;
+  windowStart:           number;
+  windowEnd:             number;
+  oldPipeline:           { signalCount: number; avgConfidence: number };
+  newPipeline:           { signalCount: number; approveCount: number; buyCount: number; sellCount: number; avgConfidence: number };
+  overlap:               number;
+  divergence:            number;
+  snapshotDataAvailable: boolean;
+}
+
 interface Props {
   symbol:           string;
   timeframe:        string;
@@ -40,10 +53,12 @@ interface Props {
 }
 
 export function SnapshotDiagnosticsPanel({ symbol, timeframe, latest, latestCandleTime }: Props) {
-  const [tab, setTab]             = useState<"latest" | "history">("latest");
-  const [latestRow, setLatestRow] = useState<SnapshotDecisionRow | null>(null);
-  const [history, setHistory]     = useState<SnapshotDecisionRow[]>([]);
-  const [loading, setLoading]     = useState(false);
+  const [tab, setTab]                         = useState<"latest" | "history" | "compare">("latest");
+  const [latestRow, setLatestRow]             = useState<SnapshotDecisionRow | null>(null);
+  const [history, setHistory]                 = useState<SnapshotDecisionRow[]>([]);
+  const [loading, setLoading]                 = useState(false);
+  const [compareData, setCompareData]         = useState<CompareReport | null>(null);
+  const [compareLoading, setCompareLoading]   = useState(false);
 
   const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
   const histUrl = `${base}/api/signals/snapshot-decisions?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&limit=20`;
@@ -57,6 +72,22 @@ export function SnapshotDiagnosticsPanel({ symbol, timeframe, latest, latestCand
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, symbol, timeframe]);
+
+  // Fetch comparison when compare tab is opened or symbol/timeframe changes
+  useEffect(() => {
+    if (tab !== "compare") return;
+    setCompareLoading(true);
+    setCompareData(null);
+    void fetch(`${base}/api/signals/pipeline-comparison`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ symbol, timeframe, barCount: 100 }),
+    })
+      .then((r) => (r.ok ? (r.json() as Promise<CompareReport>) : Promise.resolve(null)))
+      .then((data) => { setCompareData(data); setCompareLoading(false); })
+      .catch(() => setCompareLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, symbol, timeframe]);
 
   // Fetch history when tab switches or new decision arrives while on history tab
   useEffect(() => {
@@ -107,7 +138,7 @@ export function SnapshotDiagnosticsPanel({ symbol, timeframe, latest, latestCand
           </span>
         </div>
         <div style={{ display: "flex" }}>
-          {(["latest", "history"] as const).map((t) => (
+          {(["latest", "history", "compare"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)} style={{
               flex: 1, padding: "5px 0",
               fontSize: 9, fontWeight: tab === t ? 700 : 400,
@@ -116,7 +147,7 @@ export function SnapshotDiagnosticsPanel({ symbol, timeframe, latest, latestCand
               borderBottom: `2px solid ${tab === t ? "#f59e0b" : "transparent"}`,
               cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.1em",
             }}>
-              {t === "latest" ? "Latest" : "History"}
+              {t === "latest" ? "Latest" : t === "history" ? "History" : "Compare"}
             </button>
           ))}
         </div>
@@ -133,11 +164,17 @@ export function SnapshotDiagnosticsPanel({ symbol, timeframe, latest, latestCand
                 decCol={decCol}
               />
             : <Empty text="No snapshot yet — waiting for next candle close…" />
-        ) : loading
-          ? <Empty text="Loading…" />
-          : history.length === 0
-            ? <Empty text="No history for this symbol / timeframe yet." />
-            : <HistoryContent rows={history} decCol={decCol} />
+        ) : tab === "history" ? (
+          loading
+            ? <Empty text="Loading…" />
+            : history.length === 0
+              ? <Empty text="No history for this symbol / timeframe yet." />
+              : <HistoryContent rows={history} decCol={decCol} />
+        ) : compareLoading
+          ? <Empty text="Running comparison…" />
+          : compareData
+            ? <CompareContent data={compareData} />
+            : <Empty text="No data — trigger at least one candle close first." />
         }
       </div>
     </div>
@@ -445,5 +482,66 @@ function KVRow({ label, value, color, sub }: { label: string; value: string; col
 function Empty({ text }: { text: string }) {
   return (
     <div style={{ fontSize: 9, color: "#374151", textAlign: "center", paddingTop: 24 }}>{text}</div>
+  );
+}
+
+// ── Compare tab ─────────────────────────────────────────────────────────────────
+function CompareContent({ data }: { data: CompareReport }) {
+  const fmtDate = (sec: number) =>
+    new Date(sec * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 8, color: "#374151" }}>
+        <span>Last {data.windowBars} bars</span>
+        <span>{fmtDate(data.windowStart)} – {fmtDate(data.windowEnd)}</span>
+      </div>
+
+      {!data.snapshotDataAvailable && (
+        <div style={{
+          marginBottom: 10, padding: "6px 8px",
+          background: "#92400e18", borderRadius: 4,
+          fontSize: 9, color: "#b45309",
+        }}>
+          ⚠ No snapshot decisions stored yet — let at least one candle close while the panel is open.
+        </div>
+      )}
+
+      {/* Header row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 4px", marginBottom: 4 }}>
+        <span style={{ fontSize: 7.5, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em" }}>Metric</span>
+        <span style={{ fontSize: 7.5, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>Classic</span>
+        <span style={{ fontSize: 7.5, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>AI Snap</span>
+      </div>
+
+      {[
+        { label: "Signals fired",    old: data.oldPipeline.signalCount,   neo: data.newPipeline.approveCount },
+        { label: "Total evaluated",  old: data.oldPipeline.signalCount,   neo: data.newPipeline.signalCount  },
+        { label: "Avg confidence",   old: `${data.oldPipeline.avgConfidence}%`, neo: `${data.newPipeline.avgConfidence}%` },
+        { label: "BUY signals",      old: "—",                            neo: data.newPipeline.buyCount     },
+        { label: "SELL signals",     old: "—",                            neo: data.newPipeline.sellCount    },
+      ].map(({ label, old, neo }) => (
+        <div key={label} style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 4px",
+          padding: "3px 0", borderBottom: "1px solid #ffffff06",
+        }}>
+          <span style={{ fontSize: 8.5, color: "#4b5563" }}>{label}</span>
+          <span style={{ fontSize: 8.5, color: "#9ca3af", textAlign: "right" }}>{String(old)}</span>
+          <span style={{ fontSize: 8.5, color: "#f59e0b", textAlign: "right" }}>{String(neo)}</span>
+        </div>
+      ))}
+
+      {/* Overlap / divergence tiles */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 12 }}>
+        <div style={{ padding: "10px 8px", background: "#ffffff06", borderRadius: 4, textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#34d399" }}>{data.overlap}</div>
+          <div style={{ fontSize: 8, color: "#4b5563", marginTop: 2 }}>bars agreed</div>
+        </div>
+        <div style={{ padding: "10px 8px", background: "#ffffff06", borderRadius: 4, textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#f87171" }}>{data.divergence}</div>
+          <div style={{ fontSize: 8, color: "#4b5563", marginTop: 2 }}>bars diverged</div>
+        </div>
+      </div>
+    </div>
   );
 }

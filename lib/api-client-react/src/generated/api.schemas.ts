@@ -891,6 +891,46 @@ export interface HistoricalReplayJobStatus {
   error?: string | null;
 }
 
+export interface PipelineComparisonRequest {
+  symbol: string;
+  timeframe?: string;
+  /**
+     * @minimum 10
+     * @maximum 200
+     */
+  barCount?: number;
+}
+
+export type PipelineComparisonReportOldPipeline = {
+  signalCount: number;
+  avgConfidence: number;
+};
+
+export type PipelineComparisonReportNewPipeline = {
+  signalCount: number;
+  approveCount: number;
+  buyCount: number;
+  sellCount: number;
+  avgConfidence: number;
+};
+
+export interface PipelineComparisonReport {
+  symbol: string;
+  timeframe: string;
+  windowBars: number;
+  /** Epoch seconds of the first bar in the comparison window */
+  windowStart: number;
+  /** Epoch seconds of the last bar in the comparison window */
+  windowEnd: number;
+  oldPipeline: PipelineComparisonReportOldPipeline;
+  newPipeline: PipelineComparisonReportNewPipeline;
+  /** Bars where both pipelines fired a signal */
+  overlap: number;
+  /** Bars where only one pipeline fired */
+  divergence: number;
+  snapshotDataAvailable: boolean;
+}
+
 export type ListSignalsParams = {
 symbol?: string;
 limit?: number;

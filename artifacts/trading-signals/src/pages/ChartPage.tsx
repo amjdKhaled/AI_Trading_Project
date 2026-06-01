@@ -465,6 +465,9 @@ export default function ChartPage() {
   const [snapshotEntries,    setSnapshotEntries]    = useState<SnapshotEntry[]>([]);
   const [latestSnapshot,     setLatestSnapshot]     = useState<SnapshotEntry | null>(null);
   const [snapshotPanelOpen,  setSnapshotPanelOpen]  = useState(false);
+  const [snapshotMode,       setSnapshotMode]        = useState(() => {
+    try { return localStorage.getItem("ai-snapshot-mode") === "true"; } catch { return false; }
+  });
 
   // Clear snapshot markers/latest when symbol or timeframe changes to prevent
   // cross-symbol contamination (entries carry candleTime but not symbol key).
@@ -1066,6 +1069,28 @@ export default function ChartPage() {
             </button>
           )}
 
+          {/* Stock-only: AI Snapshot Mode toggle — suppresses classic signals, keeps snapshot markers */}
+          {isStocks && (
+            <button
+              onClick={() => {
+                const next = !snapshotMode;
+                setSnapshotMode(next);
+                try { localStorage.setItem("ai-snapshot-mode", String(next)); } catch {}
+              }}
+              title={snapshotMode
+                ? "AI Snapshot Mode ON — classic signals suppressed; click to disable"
+                : "Activate AI Snapshot Mode — hides classic signal triangles, shows only snapshot markers"
+              }
+              className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-medium border transition-colors ${
+                snapshotMode
+                  ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                  : "border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5"
+              }`}
+            >
+              {snapshotMode ? "◉ AI Mode" : "◎ AI Mode"}
+            </button>
+          )}
+
           {/* Stock-only: AI Replay button */}
           {isStocks && activeSymbol && (
             <button
@@ -1184,8 +1209,7 @@ export default function ChartPage() {
           <TradingChart
             key={`${displaySymbol}-${displayTimeframe}`}
             bars={bars}
-            signals={isStocks ? allSignals : []}
-            aiSignals={[]}
+            signals={isStocks && !snapshotMode ? allSignals : []}
             activeTrade={isStocks ? activeTrade : null}
             tradeResult={isStocks ? tradeResult : null}
             lastPrice={isStocks ? lastPrice : null}
@@ -1195,12 +1219,12 @@ export default function ChartPage() {
             isMarketOpen={isMarketOpen}
             realtimeAvailable={realtimeAvailable}
             cryptoLiveBar={cryptoLiveBar}
-            aiDecisions={isStocks ? aiDecisions : []}
+            aiDecisions={isStocks && !snapshotMode ? aiDecisions : []}
             onCandleClose={isStocks ? handleCandleClose : undefined}
             aiAnalyzing={isStocks ? aiAnalyzing : false}
-            activeApprovedDecision={isStocks ? latestApproved : null}
+            activeApprovedDecision={isStocks && !snapshotMode ? latestApproved : null}
             healthScore={isStocks && tradeHealth ? tradeHealth.score : undefined}
-            resolvedAiDecisions={isStocks ? resolvedDecisions : []}
+            resolvedAiDecisions={isStocks && !snapshotMode ? resolvedDecisions : []}
             replayMarkers={isStocks ? replayMarkers : []}
             snapshotDecisions={
               isStocks

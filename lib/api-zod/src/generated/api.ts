@@ -546,6 +546,50 @@ export const GetSnapshotDecisionHistoryResponse = zod.array(GetSnapshotDecisionH
 
 
 /**
+ * Runs generateSignals (deterministic, no Ollama) over the last `barCount` historical bars
+and cross-references stored AI snapshot decisions for the same symbol/timeframe window.
+Returns a side-by-side report with signal counts, avg confidence, overlap, and divergence.
+No live Ollama calls — uses decisions already stored from live candle-close events.
+
+ * @summary Compare classic signal engine vs AI snapshot decisions over a historical window
+ */
+export const pipelineComparisonBodyTimeframeDefault = `5m`;
+export const pipelineComparisonBodyBarCountDefault = 100;
+export const pipelineComparisonBodyBarCountMin = 10;
+export const pipelineComparisonBodyBarCountMax = 200;
+
+
+
+export const PipelineComparisonBody = zod.object({
+  "symbol": zod.string(),
+  "timeframe": zod.string().default(pipelineComparisonBodyTimeframeDefault),
+  "barCount": zod.number().min(pipelineComparisonBodyBarCountMin).max(pipelineComparisonBodyBarCountMax).default(pipelineComparisonBodyBarCountDefault)
+})
+
+export const PipelineComparisonResponse = zod.object({
+  "symbol": zod.string(),
+  "timeframe": zod.string(),
+  "windowBars": zod.number(),
+  "windowStart": zod.number().describe('Epoch seconds of the first bar in the comparison window'),
+  "windowEnd": zod.number().describe('Epoch seconds of the last bar in the comparison window'),
+  "oldPipeline": zod.object({
+  "signalCount": zod.number(),
+  "avgConfidence": zod.number()
+}),
+  "newPipeline": zod.object({
+  "signalCount": zod.number(),
+  "approveCount": zod.number(),
+  "buyCount": zod.number(),
+  "sellCount": zod.number(),
+  "avgConfidence": zod.number()
+}),
+  "overlap": zod.number().describe('Bars where both pipelines fired a signal'),
+  "divergence": zod.number().describe('Bars where only one pipeline fired'),
+  "snapshotDataAvailable": zod.boolean()
+})
+
+
+/**
  * @summary Start a memory-vs-no-memory replay job for a symbol
  */
 export const startReplayBodyTimeframeDefault = `5m`;

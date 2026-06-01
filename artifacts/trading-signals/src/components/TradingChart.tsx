@@ -97,7 +97,6 @@ interface SnapshotMarkerPos {
 interface Props {
   bars: Bar[];
   signals: SignalNew[];
-  aiSignals: SignalNew[];
   activeTrade: ActiveTrade | null;
   tradeResult: TradeResult | null;
   lastPrice: PriceUpdate | null;
@@ -151,7 +150,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [], snapshotDecisions = [], healthScore, liveOpportunity = null }: Props) {
+export function TradingChart({ bars, signals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [], snapshotDecisions = [], healthScore, liveOpportunity = null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -190,11 +189,9 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
 
   // stable refs for computeMarkers closure
   const signalsRef     = useRef<SignalNew[]>([]);
-  const aiSignalsRef   = useRef<SignalNew[]>([]);
   const activeTradeRef = useRef<ActiveTrade | null>(null);
   const tradeResultRef = useRef<TradeResult | null>(null);
   signalsRef.current     = signals;
-  aiSignalsRef.current   = aiSignals;
   activeTradeRef.current = activeTrade;
   tradeResultRef.current = tradeResult;
   barsRef.current        = bars;
@@ -403,45 +400,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
     const clampY = (y: number) => Math.max(0, Math.min(maxY, y));
     const positions: AiMarkerPos[] = [];
 
-    for (const sig of aiSignalsRef.current) {
-      if (!sig.barTime) continue;
-      const b = nearestBar(Math.floor(new Date(sig.barTime).getTime() / 1000));
-      if (!b) continue;
-
-      const x = chart.timeScale().timeToCoordinate(b.time as Time);
-      if (x === null || x < 0 || x > maxX) continue;
-
-      const entryY = series.priceToCoordinate(sig.entryPrice);
-      const slY    = series.priceToCoordinate(sig.slPrice);
-      const tpY    = series.priceToCoordinate(sig.tpPrice);
-      if (entryY === null || slY === null || tpY === null) continue;
-
-      const barPriceY = sig.side === "long"
-        ? series.priceToCoordinate(b.low)
-        : series.priceToCoordinate(b.high);
-      const labelY = barPriceY === null
-        ? (sig.side === "long" ? entryY + 30 : entryY - 30)
-        : (sig.side === "long" ? barPriceY + 16 : barPriceY - 16);
-
-      positions.push({
-        key:        sig.signalId,
-        x,
-        y:          clampY(labelY),
-        entryY:     clampY(entryY),
-        slY:        clampY(slY),
-        tpY:        clampY(tpY),
-        rightX:     maxX,
-        isLong:     sig.side === "long",
-        confidence: sig.confidence,
-        reasoning:  sig.aiReasoning,
-        marketBias: sig.aiMarketBias,
-        entryPrice: sig.entryPrice,
-        slPrice:    sig.slPrice,
-        tpPrice:    sig.tpPrice,
-        isActive:   !!activeTradeRef.current && sig.signalId === activeTradeRef.current.signalId,
-      });
-    }
-    // Also render the latest APPROVED candle-close decision fetched from DB
+    // Render the latest APPROVED candle-close decision fetched from DB
     const approved = activeApprovedRef.current;
     if (approved && approved.verdict === "APPROVE" &&
         approved.entryPrice != null && approved.slPrice != null && approved.tpPrice != null) {
@@ -1010,7 +969,7 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
 
   // Recompute on signal/result changes
   useEffect(() => { setTimeout(computeMarkers, 30); }, [signals, tradeResult, computeMarkers]);
-  useEffect(() => { setTimeout(computeAiMarkers, 30); }, [aiSignals, activeApprovedDecision, computeAiMarkers]);
+  useEffect(() => { setTimeout(computeAiMarkers, 30); }, [activeApprovedDecision, computeAiMarkers]);
   useEffect(() => { setTimeout(computeDecisionMarkers, 30); }, [aiDecisions, computeDecisionMarkers]);
   useEffect(() => { setTimeout(computeResolvedDecisionMarkers, 30); }, [resolvedAiDecisions, computeResolvedDecisionMarkers]);
   useEffect(() => { setTimeout(computeReplayMarkers, 30); }, [replayMarkers, computeReplayMarkers]);

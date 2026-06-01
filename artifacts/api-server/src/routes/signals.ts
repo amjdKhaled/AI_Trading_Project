@@ -1331,6 +1331,124 @@ router.get("/signals/snapshot-decision/:symbol/:timeframe", async (req, res): Pr
   res.json(rows);
 });
 
+// ── POST /signals/pipeline-comparison ─────────────────────────────────────────
+// Runs the classic signal engine (generateSignals) over historical bars and
+// cross-references stored AI snapshot decisions for the same window.
+// Returns a side-by-side stat report — no live Ollama calls needed.
+router.post("/signals/pipeline-comparison", async (req, res): Promise<void> => {
+  const { symbol, timeframe = "5m", barCount = 100 } = req.body as {
+    symbol?: unknown; timeframe?: unknown; barCount?: unknown;
+  };
+
+  if (!symbol || typeof symbol !== "string" || symbol.length > 12) {
+    res.status(400).json({ error: "symbol is required (≤12 chars)" }); return;
+  }
+  if (typeof timeframe !== "string") {
+    res.status(400).json({ error: "timeframe must be a string" }); return;
+  }
+
+  const sym           = symbol.toUpperCase().trim();
+  const effectiveBars = Math.min(200, Math.max(10, Number(barCount) || 100));
+
+  const toSec = (t: unknown): number => {
+    if (typeof t === "number") return t;
+    if (typeof t === "string") return Math.floor(new Date(t).getTime() / 1000);
+    if (t instanceof Date)     return Math.floor(t.getTime() / 1000);
+    return 0;
+  };
+
+  try {
+    const htfTf = HTF_MAP[timeframe] ?? "15m";
+    const [barsRaw, htfBarsRaw] = await Promise.all([
+      fetchHistory(sym, timeframe),
+      fetchHistory(sym, htfTf),
+    ]);
+    const allBars = barsRaw as OhlcvBar[];
+    const htfBars = htfBarsRaw as OhlcvBar[];
+
+    if (allBars.length < 60) {
+      res.status(422).json({ error: `Insufficient bars (${allBars.length} < 60) for comparison` }); return;
+    }
+
+    // Comparison window: last effectiveBars bars
+    const windowBars  = allBars.slice(-effectiveBars);
+    const windowStart = windowBars[0]?.time ?? 0;
+    const windowEnd   = windowBars[windowBars.length - 1]?.time ?? 0;
+
+    // Old pipeline: classic engine — fast, deterministic
+    const { signals } = generateSignals(allBars, sym, timeframe, htfBars);
+    const oldSignals  = signals.filter((s) => {
+      const t = toSec((s as unknown as Record<string, unknown>).barTime ?? 0);
+      return t >= windowStart && t <= windowEnd;
+    });
+    const oldConfs = oldSignals.map((s) => {
+      const conf = (s as unknown as Record<string, unknown>).confidence;
+      return typeof conf === "number" ? conf : 0;
+    });
+    const oldPipeline = {
+      signalCount:   oldSignals.length,
+      avgConfidence: oldConfs.length > 0
+        ? Math.round(oldConfs.reduce((a, b) => a + b, 0) / oldConfs.length)
+        : 0,
+    };
+
+    // New pipeline: stored snapshot decisions (already evaluated by Ollama at candle close)
+    const snapRows = await db
+      .select({
+        candleTime: aiSnapshotDecisionsTable.candleTime,
+        decision:   aiSnapshotDecisionsTable.decision,
+        confidence: aiSnapshotDecisionsTable.confidence,
+      })
+      .from(aiSnapshotDecisionsTable)
+      .where(and(
+        eq(aiSnapshotDecisionsTable.symbol,    sym),
+        eq(aiSnapshotDecisionsTable.timeframe, timeframe),
+        gte(aiSnapshotDecisionsTable.candleTime, new Date(windowStart * 1000)),
+      ))
+      .orderBy(desc(aiSnapshotDecisionsTable.candleTime));
+
+    const snapActive = snapRows.filter((r) => r.decision === "BUY" || r.decision === "SELL");
+    const snapConfs  = snapRows.map((r) => typeof r.confidence === "number" ? r.confidence : 0);
+    const newPipeline = {
+      signalCount:   snapRows.length,
+      approveCount:  snapActive.length,
+      buyCount:      snapRows.filter((r) => r.decision === "BUY").length,
+      sellCount:     snapRows.filter((r) => r.decision === "SELL").length,
+      avgConfidence: snapConfs.length > 0
+        ? Math.round(snapConfs.reduce((a, b) => a + b, 0) / snapConfs.length)
+        : 0,
+    };
+
+    // Overlap / divergence: match by candle time
+    const oldTimeSet  = new Set(oldSignals.map((s) =>
+      toSec((s as unknown as Record<string, unknown>).barTime ?? 0)));
+    const snapTimeSecs = snapActive.map((r) =>
+      Math.floor(new Date(r.candleTime).getTime() / 1000));
+    const snapTimeSet = new Set(snapTimeSecs);
+
+    const overlap    = snapTimeSecs.filter((t) => oldTimeSet.has(t)).length;
+    const divergence = [...oldTimeSet].filter((t) => !snapTimeSet.has(t)).length
+                     + snapTimeSecs.filter((t) => !oldTimeSet.has(t)).length;
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      symbol:                sym,
+      timeframe,
+      windowBars:            effectiveBars,
+      windowStart,
+      windowEnd,
+      oldPipeline,
+      newPipeline,
+      overlap,
+      divergence,
+      snapshotDataAvailable: snapRows.length > 0,
+    });
+  } catch (err) {
+    req.log?.error({ err, symbol: sym, timeframe }, "pipeline-comparison failed");
+    throw err;
+  }
+});
+
 // ── GET /signals/ai-replay-historical/:jobId ─────────────────────────────────
 router.get("/signals/ai-replay-historical/:jobId", (req, res): void => {
   const { jobId } = req.params;

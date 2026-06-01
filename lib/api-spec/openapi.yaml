@@ -437,6 +437,30 @@ paths:
                 items:
                   $ref: "#/components/schemas/SnapshotDecisionRow"
 
+  /signals/pipeline-comparison:
+    post:
+      operationId: pipelineComparison
+      tags: [signals]
+      summary: Compare classic signal engine vs AI snapshot decisions over a historical window
+      description: |
+        Runs generateSignals (deterministic, no Ollama) over the last `barCount` historical bars
+        and cross-references stored AI snapshot decisions for the same symbol/timeframe window.
+        Returns a side-by-side report with signal counts, avg confidence, overlap, and divergence.
+        No live Ollama calls — uses decisions already stored from live candle-close events.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineComparisonRequest"
+      responses:
+        "200":
+          description: Pipeline comparison report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineComparisonReport"
+
   /signals/replay:
     post:
       operationId: startReplay
@@ -1715,3 +1739,65 @@ components:
             - type: "null"
         error:
           type: ["string", "null"]
+
+    PipelineComparisonRequest:
+      type: object
+      required: [symbol]
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+          default: "5m"
+        barCount:
+          type: integer
+          default: 100
+          minimum: 10
+          maximum: 200
+
+    PipelineComparisonReport:
+      type: object
+      required: [symbol, timeframe, windowBars, windowStart, windowEnd, oldPipeline, newPipeline, overlap, divergence, snapshotDataAvailable]
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        windowBars:
+          type: integer
+        windowStart:
+          type: integer
+          description: Epoch seconds of the first bar in the comparison window
+        windowEnd:
+          type: integer
+          description: Epoch seconds of the last bar in the comparison window
+        oldPipeline:
+          type: object
+          required: [signalCount, avgConfidence]
+          properties:
+            signalCount:
+              type: integer
+            avgConfidence:
+              type: integer
+        newPipeline:
+          type: object
+          required: [signalCount, approveCount, buyCount, sellCount, avgConfidence]
+          properties:
+            signalCount:
+              type: integer
+            approveCount:
+              type: integer
+            buyCount:
+              type: integer
+            sellCount:
+              type: integer
+            avgConfidence:
+              type: integer
+        overlap:
+          type: integer
+          description: Bars where both pipelines fired a signal
+        divergence:
+          type: integer
+          description: Bars where only one pipeline fired
+        snapshotDataAvailable:
+          type: boolean
