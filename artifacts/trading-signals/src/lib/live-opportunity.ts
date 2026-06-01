@@ -8,13 +8,19 @@
 import type { OhlcvBar } from "@/pages/ChartPage";
 
 export interface CachedMemoryContext {
-  symbol:   string;
-  winRate:  number | null;
+  symbol:    string;
+  winRate:   number | null;
   fetchedAt: number;
+  /** Per-direction win rates (LONG / SHORT) computed from trade history.
+   *  More precise than the overall symbol win rate for dampening. */
+  directionWinRate?: {
+    LONG:  number | null;
+    SHORT: number | null;
+  };
 }
 
 export interface OpportunityScore {
-  score:      number;       // 0–100
+  score:      number;       // 0–100 (always returned, even below pre-signal threshold)
   direction:  "LONG" | "SHORT" | "NONE";
   confidence: number;       // mirrors score for API consistency
   setupLabel: string;
@@ -87,8 +93,12 @@ const NONE: OpportunityScore = {
  * Compute a 0–100 opportunity score for the currently-forming candle.
  * Runs entirely on the frontend using already-loaded historical bars.
  *
- * @param bars      Full bar history already loaded on the chart page
- * @param lastPrice Live tick price (replaces the forming candle's close)
+ * Always returns the real computed score — even below the 65-point
+ * pre-signal threshold — so the badge can show green/amber/red bands.
+ * The chart marker is gated in the caller (score >= 65 && direction !== NONE).
+ *
+ * @param bars         Full bar history already loaded on the chart page
+ * @param lastPrice    Live tick price (replaces the forming candle's close)
  * @param cachedMemory Optional cached symbol win-rate for memory dampening
  */
 export function computeOpportunityScore(
@@ -125,7 +135,8 @@ export function computeOpportunityScore(
   const strongUp   = lastPrice > e20 && e20 > e50;
   const strongDown = lastPrice < e20 && e20 < e50;
 
-  // Require trend alignment; skip exhausted or purely choppy markets
+  // Require trend alignment; skip exhausted or purely choppy markets.
+  // These return score 0 / direction NONE — badge shows red "0".
   if (!strongUp && !strongDown)  return NONE;
   if (rsiV > 80 && strongUp)    return NONE;
   if (rsiV < 20 && strongDown)  return NONE;
@@ -166,21 +177,7 @@ export function computeOpportunityScore(
 
   score = Math.min(100, Math.round(score));
 
-  // Memory dampening: max 20pt penalty when symbol win-rate < 40%
-  let dampened = false;
-  if (cachedMemory?.winRate != null && cachedMemory.winRate < 0.40 && cachedMemory.winRate >= 0) {
-    const penalty = Math.round(((0.40 - cachedMemory.winRate) / 0.40) * 20);
-    if (penalty > 0) {
-      score    = Math.max(0, score - penalty);
-      dampened = true;
-      factors.push(`Mem⚠ ${Math.round(cachedMemory.winRate * 100)}% WR`);
-    }
-  }
-
-  // Threshold: only emit when setup probability is meaningful
-  if (score < 65) return NONE;
-
-  // Setup label
+  // Setup label (computed before dampening so it's always accurate)
   let setupLabel = "Developing";
   if (nearEma20) {
     setupLabel = direction === "LONG" ? "EMA20 Pullback" : "EMA20 Rejection";
@@ -190,5 +187,25 @@ export function computeOpportunityScore(
     setupLabel = "Trend Continuation";
   }
 
+  // ── Memory dampening (direction-aware) ──────────────────────────────────
+  // Prefer direction-specific win rate; fall back to overall symbol win rate.
+  // Max 20pt penalty when direction win-rate < 40% (repeated failures for
+  // the current setup type tells us memory has learned this direction loses).
+  let dampened = false;
+  const dirWR = cachedMemory?.directionWinRate?.[direction] ?? null;
+  const wr    = dirWR ?? cachedMemory?.winRate ?? null;
+
+  if (wr !== null && wr < 0.40 && wr >= 0) {
+    const penalty = Math.round(((0.40 - wr) / 0.40) * 20);
+    if (penalty > 0) {
+      score    = Math.max(0, score - penalty);
+      dampened = true;
+      const label = dirWR !== null ? `${direction} ` : "";
+      factors.push(`Mem⚠ ${label}${Math.round(wr * 100)}% WR`);
+    }
+  }
+
+  // NOTE: No threshold gate here — always return the real score.
+  // The pre-signal chart marker is gated in ChartPage (score >= 65 && direction !== NONE).
   return { score, direction, confidence: score, setupLabel, factors, dampened };
 }

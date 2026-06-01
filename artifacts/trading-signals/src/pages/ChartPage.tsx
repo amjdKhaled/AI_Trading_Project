@@ -8,6 +8,7 @@ import { useBinanceSocket } from "@/hooks/useBinanceSocket";
 import { useActiveSymbol } from "@/lib/ActiveSymbolContext";
 import { subscribeReplayMarkers, getReplayState, clearReplayMarkers, type ReplayMarkerItem } from "@/lib/replayStore";
 import { computeOpportunityScore, type OpportunityScore, type CachedMemoryContext } from "@/lib/live-opportunity";
+import { useListSymbols } from "@workspace/api-client-react";
 
 // ── Timeframe constants ───────────────────────────────────────────────────────
 
@@ -460,9 +461,16 @@ export default function ChartPage() {
   });
   const [liveOpportunity, setLiveOpportunity] = useState<OpportunityScore | null>(null);
   const [livePanelOpen, setLivePanelOpen]     = useState(true);
+  const [watchlistOpps, setWatchlistOpps]     = useState<Record<string, OpportunityScore>>({});
   const memCtxRef        = useRef<CachedMemoryContext | null>(null);
   const memFetchedSymRef = useRef<string | null>(null);
   const liveEvalLastRef  = useRef<number>(0);
+  const wlFetchingRef    = useRef(false);
+
+  const { data: rawSymbolList } = useListSymbols();
+  const watchlistSymbols: string[] = Array.isArray(rawSymbolList)
+    ? (rawSymbolList as { symbol?: string; name?: string }[]).map(s => s.symbol ?? "").filter(Boolean)
+    : [];
 
   // Subscribe to replayStore updates (fired when AiMemoryPage completes a replay job)
   useEffect(() => {
@@ -611,30 +619,66 @@ export default function ChartPage() {
       .catch(() => {});
   }, [activeSymbol, stockTf, isStocks]);
 
-  // ── Live opportunity: cache memory context per symbol ─────────────────────
+  // ── Live opportunity: clear immediately on context changes ────────────────
+  // Prevents stale pre-signal overlays when the user switches symbol/tf/market-type.
+  const prevLiveCtxRef = useRef({ symbol: "", tf: "", isStocks: true });
+  useEffect(() => {
+    const prev = prevLiveCtxRef.current;
+    if (prev.symbol !== (activeSymbol ?? "") || prev.tf !== stockTf || prev.isStocks !== isStocks) {
+      setLiveOpportunity(null);
+      setWatchlistOpps({});
+      memFetchedSymRef.current = null;
+      liveEvalLastRef.current  = 0;
+      prevLiveCtxRef.current = { symbol: activeSymbol ?? "", tf: stockTf, isStocks };
+    }
+  }, [activeSymbol, stockTf, isStocks]);
+
+  // ── Live opportunity: cache memory context per symbol (direction-aware) ───
   useEffect(() => {
     if (!liveModeEnabled || !isStocks || !activeSymbol) return;
     if (memFetchedSymRef.current === activeSymbol) return;
     const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-    fetch(`${base}/api/ai/memory`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { symbolStats?: Record<string, { wins: number; losses: number; total: number }> } | null) => {
-        if (!data || !activeSymbol) return;
-        const sym = data.symbolStats?.[activeSymbol];
-        memCtxRef.current = {
-          symbol:    activeSymbol,
-          winRate:   sym && sym.total >= 5 ? sym.wins / sym.total : null,
-          fetchedAt: Date.now(),
-        };
-        memFetchedSymRef.current = activeSymbol;
-      })
-      .catch(() => {});
+    // Fetch overall symbol stats + trade-level data for per-direction win rates
+    Promise.all([
+      fetch(`${base}/api/ai/memory`).then(r => r.ok ? r.json() : null),
+      fetch(`${base}/api/ai/memory/trades?symbol=${encodeURIComponent(activeSymbol)}&limit=100`).then(r => r.ok ? r.json() : null),
+    ]).then(([memData, tradesData]: [
+      { symbolStats?: Record<string, { wins: number; losses: number; total: number }> } | null,
+      { trades?: { direction?: string; outcome?: string }[] } | null,
+    ]) => {
+      if (!activeSymbol) return;
+      const sym    = memData?.symbolStats?.[activeSymbol];
+      const trades = tradesData?.trades ?? [];
+
+      // Compute per-direction win rates from trade history
+      const dirStats: Record<string, { wins: number; total: number }> = {};
+      for (const t of trades) {
+        const dir = t.direction?.toUpperCase();
+        if (dir !== "LONG" && dir !== "SHORT") continue;
+        if (!dirStats[dir]) dirStats[dir] = { wins: 0, total: 0 };
+        dirStats[dir].total++;
+        if (t.outcome === "win" || t.outcome === "tp_hit") dirStats[dir].wins++;
+      }
+      const calcWR = (d: string) => {
+        const s = dirStats[d];
+        return s && s.total >= 5 ? s.wins / s.total : null;
+      };
+
+      memCtxRef.current = {
+        symbol:    activeSymbol,
+        winRate:   sym && sym.total >= 5 ? sym.wins / sym.total : null,
+        fetchedAt: Date.now(),
+        directionWinRate: { LONG: calcWR("LONG"), SHORT: calcWR("SHORT") },
+      };
+      memFetchedSymRef.current = activeSymbol;
+    }).catch(() => {});
   }, [liveModeEnabled, isStocks, activeSymbol]);
 
   // ── Live opportunity: evaluate on price ticks (throttled to 15 s) ─────────
   useEffect(() => {
     if (!liveModeEnabled || !isStocks || !isMarketOpen || !activeSymbol || !lastPrice) {
-      if (!liveModeEnabled) setLiveOpportunity(null);
+      // Clear stale opportunity whenever any precondition fails
+      setLiveOpportunity(null);
       return;
     }
     const now = Date.now();
@@ -642,8 +686,43 @@ export default function ChartPage() {
     liveEvalLastRef.current = now;
     if (bars.length < 55) return;
     const score = computeOpportunityScore(bars, lastPrice.price, memCtxRef.current);
-    setLiveOpportunity(score.direction !== "NONE" ? score : null);
+    // Always set the full score (including below-threshold) for the always-on badge display.
+    // The pre-signal chart marker checks score >= 65 independently.
+    setLiveOpportunity(score);
   }, [lastPrice, liveModeEnabled, isStocks, isMarketOpen, activeSymbol, bars]);
+
+  // ── Live opportunity: score all watchlist symbols (background, staggered) ─
+  // Fetches the last 62 bars from server cache and computes indicator scores
+  // for each non-active symbol. Results are ranked in the Live Setup panel.
+  useEffect(() => {
+    if (!liveModeEnabled || !isStocks || !isMarketOpen) return;
+    if (watchlistSymbols.length <= 1 || wlFetchingRef.current) return;
+    const otherSymbols = watchlistSymbols.filter(s => s !== activeSymbol);
+    if (otherSymbols.length === 0) return;
+
+    wlFetchingRef.current = true;
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    const tf   = stockTf;
+
+    (async () => {
+      for (let idx = 0; idx < otherSymbols.length; idx++) {
+        const sym = otherSymbols[idx];
+        if (idx > 0) await new Promise(r => setTimeout(r, 4000)); // stagger to avoid 429
+        try {
+          const resp = await fetch(`${base}/api/history?symbol=${encodeURIComponent(sym)}&interval=${tf}`);
+          if (!resp.ok) continue;
+          const data = await resp.json() as { bars?: { time: number; open: number; high: number; low: number; close: number; volume: number }[] };
+          const barsArr = data.bars ?? [];
+          if (barsArr.length < 55) continue;
+          const latestPrice = barsArr[barsArr.length - 1].close;
+          const opp = computeOpportunityScore(barsArr, latestPrice);
+          setWatchlistOpps(prev => ({ ...prev, [sym]: opp }));
+        } catch { /* skip */ }
+      }
+      wlFetchingRef.current = false;
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveModeEnabled, isStocks, isMarketOpen, watchlistSymbols.join(","), activeSymbol, stockTf]);
 
   // ── Candle-close AI pipeline ───────────────────────────────────────────────
   const handleCandleClose = useCallback(async (barTime: number) => {
@@ -892,18 +971,29 @@ export default function ChartPage() {
               ◈ Live
             </button>
           )}
-          {isStocks && liveModeEnabled && liveOpportunity && (
-            <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded border text-[11px] font-mono ${
-              liveOpportunity.score >= 80
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : "border-amber-500/40 bg-amber-500/10 text-amber-400"
-            }`}>
-              <span className="font-bold animate-pulse">{liveOpportunity.direction === "LONG" ? "▲" : "▼"}</span>
-              <span className="font-black">{liveOpportunity.score}</span>
-              <span className="opacity-40 text-[9px]">/100</span>
-              <span className="opacity-75 text-[9px] truncate max-w-[5rem]">{liveOpportunity.setupLabel}</span>
-            </div>
-          )}
+          {isStocks && liveModeEnabled && isMarketOpen && (() => {
+            const sc  = liveOpportunity?.score ?? 0;
+            const dir = liveOpportunity?.direction ?? "NONE";
+            const isHigh = sc >= 80;
+            const isMid  = sc >= 65 && sc < 80;
+            const col    = isHigh
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+              : isMid
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+              : "border-red-500/25 bg-red-500/8 text-red-400/70";
+            return (
+              <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded border text-[11px] font-mono ${col}`}>
+                <span className={`font-bold ${sc >= 65 && dir !== "NONE" ? "animate-pulse" : "opacity-50"}`}>
+                  {dir === "LONG" ? "▲" : dir === "SHORT" ? "▼" : "◆"}
+                </span>
+                <span className="font-black">{sc}</span>
+                <span className="opacity-40 text-[9px]">/100</span>
+                {liveOpportunity && dir !== "NONE" && (
+                  <span className="opacity-75 text-[9px] truncate max-w-[5rem]">{liveOpportunity.setupLabel}</span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Crypto: live badge */}
           {isCrypto && (
@@ -971,7 +1061,12 @@ export default function ChartPage() {
             healthScore={isStocks && tradeHealth ? tradeHealth.score : undefined}
             resolvedAiDecisions={isStocks ? resolvedDecisions : []}
             replayMarkers={isStocks ? replayMarkers : []}
-            liveOpportunity={isStocks && liveModeEnabled ? liveOpportunity : null}
+            liveOpportunity={
+              isStocks && liveModeEnabled &&
+              liveOpportunity && liveOpportunity.score >= 65 && liveOpportunity.direction !== "NONE"
+                ? liveOpportunity
+                : null
+            }
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -1006,7 +1101,7 @@ export default function ChartPage() {
         )}
         {/* ── Live Setup Watchlist ───────────────────────────────────────────
              Collapsible — only visible when Live Mode is enabled.
-             Shows the developing opportunity score, direction, and setup type. */}
+             Shows ranked opportunities for all watchlist symbols (top 3). */}
         {isStocks && liveModeEnabled && (
           <div className="border-t border-white/5 flex-shrink-0 select-none">
             <button
@@ -1018,40 +1113,64 @@ export default function ChartPage() {
               <span className="ml-auto opacity-50">{livePanelOpen ? "▾" : "▸"}</span>
             </button>
             {livePanelOpen && (
-              <div className="px-2.5 pb-2.5">
+              <div className="px-2.5 pb-2.5 space-y-1.5">
                 {!isMarketOpen ? (
                   <p className="text-[9px] text-muted-foreground/40 font-mono">Market closed</p>
-                ) : !liveOpportunity ? (
-                  <p className="text-[9px] text-muted-foreground/40 font-mono">Monitoring… (score &lt;65)</p>
-                ) : (
-                  <div className={`rounded p-2 border ${
-                    liveOpportunity.score >= 80 ? "border-emerald-500/25 bg-emerald-500/5" : "border-amber-500/25 bg-amber-500/5"
-                  }`}>
-                    <div className="flex items-center gap-1 mb-1">
-                      <span className={`text-[11px] font-bold font-mono ${liveOpportunity.direction === "LONG" ? "text-emerald-400" : "text-red-400"}`}>
-                        {liveOpportunity.direction === "LONG" ? "▲ LONG" : "▼ SHORT"}
-                      </span>
-                      <span className={`ml-auto text-[14px] font-black font-mono ${liveOpportunity.score >= 80 ? "text-emerald-400" : "text-amber-400"}`}>
-                        {liveOpportunity.score}
-                      </span>
-                    </div>
-                    <div className="text-[8.5px] text-muted-foreground/60 font-mono mb-1.5 truncate">{liveOpportunity.setupLabel}</div>
-                    <div className="w-full h-[3px] bg-white/5 rounded-full overflow-hidden mb-1.5">
-                      <div className={`h-full rounded-full ${liveOpportunity.score >= 80 ? "bg-emerald-500" : "bg-amber-500"}`}
-                        style={{ width: `${liveOpportunity.score}%` }} />
-                    </div>
-                    {liveOpportunity.factors.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {liveOpportunity.factors.map((f, idx) => (
-                          <span key={idx} className="text-[7.5px] text-muted-foreground/50 font-mono bg-white/[0.04] px-1 py-0.5 rounded">{f}</span>
-                        ))}
+                ) : (() => {
+                  // Merge active-symbol opportunity with other watchlist scores, rank by score desc
+                  const allOpps: { symbol: string; opp: OpportunityScore }[] = [];
+                  if (activeSymbol && liveOpportunity) {
+                    allOpps.push({ symbol: activeSymbol, opp: liveOpportunity });
+                  }
+                  for (const [sym, opp] of Object.entries(watchlistOpps)) {
+                    allOpps.push({ symbol: sym, opp });
+                  }
+                  // Sort by score descending, take top 3
+                  const ranked = allOpps
+                    .filter(e => e.opp.score > 0)
+                    .sort((a, b) => b.opp.score - a.opp.score)
+                    .slice(0, 3);
+
+                  if (ranked.length === 0) {
+                    return <p className="text-[9px] text-muted-foreground/40 font-mono">Monitoring… no setups detected</p>;
+                  }
+
+                  return ranked.map(({ symbol, opp }) => {
+                    const isHigh = opp.score >= 80;
+                    const isMid  = opp.score >= 65;
+                    const borderCls = isHigh
+                      ? "border-emerald-500/25 bg-emerald-500/5"
+                      : isMid
+                      ? "border-amber-500/25 bg-amber-500/5"
+                      : "border-white/5 bg-white/[0.02]";
+                    const scoreCls = isHigh ? "text-emerald-400" : isMid ? "text-amber-400" : "text-muted-foreground/60";
+                    const barCls   = isHigh ? "bg-emerald-500" : isMid ? "bg-amber-500" : "bg-white/20";
+                    const dirCls   = opp.direction === "LONG" ? "text-emerald-400" : opp.direction === "SHORT" ? "text-red-400" : "text-muted-foreground/50";
+
+                    return (
+                      <div key={symbol} className={`rounded p-1.5 border ${borderCls}`}>
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <span className="text-[10px] font-bold font-mono text-foreground/70">{symbol}</span>
+                          {opp.direction !== "NONE" && (
+                            <span className={`text-[9px] font-bold font-mono ${dirCls}`}>
+                              {opp.direction === "LONG" ? "▲" : "▼"}
+                            </span>
+                          )}
+                          <span className={`ml-auto text-[12px] font-black font-mono ${scoreCls}`}>{opp.score}</span>
+                        </div>
+                        {opp.direction !== "NONE" && (
+                          <div className="text-[7.5px] text-muted-foreground/50 font-mono truncate mb-1">{opp.setupLabel}</div>
+                        )}
+                        <div className="w-full h-[2px] bg-white/5 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${barCls}`} style={{ width: `${opp.score}%` }} />
+                        </div>
+                        {opp.dampened && (
+                          <div className="text-[7px] text-amber-400/60 font-mono mt-0.5">⚠ Mem dampened</div>
+                        )}
                       </div>
-                    )}
-                    {liveOpportunity.dampened && (
-                      <div className="text-[7.5px] text-amber-400/60 font-mono mt-1">⚠ Memory dampened</div>
-                    )}
-                  </div>
-                )}
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
