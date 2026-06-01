@@ -188,19 +188,36 @@ export interface AiMemorySummary {
   updatedAt: string;
 }
 
+/**
+ * Letter grade derived from score: A≥80, B≥60, C≥40, D<40
+ */
+export type AiTradeHealthGrade = typeof AiTradeHealthGrade[keyof typeof AiTradeHealthGrade];
+
+
+export const AiTradeHealthGrade = {
+  A: 'A',
+  B: 'B',
+  C: 'C',
+  D: 'D',
+} as const;
+
 export type AiTradeHealthBreakdown = {
-  /** EMA trend alignment (0–25) */
+  /** Market structure + trend quality (0–20) */
   emaTrend: number;
-  /** RSI momentum score (0–20) */
+  /** RSI momentum score (0–15) */
   momentum: number;
-  /** Volume confirmation (0–15) */
+  /** Volume strength (0–10) */
   volume: number;
-  /** Price progress toward TP (0–25) */
+  /** Price progress / risk profile (0–20) */
   priceProgress: number;
   /** Pattern/setup integrity (0–10) */
   patternIntegrity: number;
-  /** Memory impact alignment (0–5) */
+  /** Memory impact alignment (0–10) */
   memoryAlignment: number;
+  /** Historical setup similarity (0–10) */
+  historicalSimilarity: number;
+  /** Regime success alignment (0–5) */
+  regimeAlignment: number;
 };
 
 /**
@@ -218,6 +235,10 @@ export const AiTradeHealthDirection = {
 export interface AiTradeHealth {
   /** Composite health score 0–100 */
   score: number;
+  /** Letter grade derived from score: A≥80, B≥60, C≥40, D<40 */
+  grade: AiTradeHealthGrade;
+  /** Memory influence on this trade 0–100 (higher = memory strongly agrees) */
+  memoryImpactScore: number;
   breakdown: AiTradeHealthBreakdown;
   /** Price movement direction relative to trade thesis over last 5 bars */
   direction: AiTradeHealthDirection;

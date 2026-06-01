@@ -7,16 +7,20 @@
  */
 
 export type AiTradeHealthBreakdown = {
-  /** EMA trend alignment (0–25) */
+  /** Market structure + trend quality (0–20) */
   emaTrend: number;
-  /** RSI momentum score (0–20) */
+  /** RSI momentum score (0–15) */
   momentum: number;
-  /** Volume confirmation (0–15) */
+  /** Volume strength (0–10) */
   volume: number;
-  /** Price progress toward TP (0–25) */
+  /** Price progress / risk profile (0–20) */
   priceProgress: number;
   /** Pattern/setup integrity (0–10) */
   patternIntegrity: number;
-  /** Memory impact alignment (0–5) */
+  /** Memory impact alignment (0–10) */
   memoryAlignment: number;
+  /** Historical setup similarity (0–10) */
+  historicalSimilarity: number;
+  /** Regime success alignment (0–5) */
+  regimeAlignment: number;
 };

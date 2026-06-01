@@ -553,20 +553,24 @@ router.get("/signals/ai-active/health", async (req, res): Promise<void> => {
 
     const row = rows[0];
     const tc  = (row.technicalContext ?? {}) as Record<string, unknown>;
-    const memoryImpactScore = typeof tc.memoryImpactScore === "number" ? tc.memoryImpactScore : undefined;
+    const memoryImpactScore   = typeof tc.memoryImpactScore   === "number" ? tc.memoryImpactScore   : undefined;
+    const regimeSuccessRate   = typeof tc.regimeSuccessRate   === "number" ? tc.regimeSuccessRate   : undefined;
+    const historicalSimilarity = typeof tc.historicalSimilarity === "number" ? tc.historicalSimilarity : undefined;
 
     const barsRaw = await fetchHistory(symbol.toUpperCase().trim(), timeframe);
     const bars    = barsRaw as OhlcvBar[];
 
     const health = computeTradeHealth(bars, {
-      side:              (row.candidateSide ?? "long") as "long" | "short",
-      entryPrice:        row.entryPrice ?? 0,
-      slPrice:           row.slPrice   ?? 0,
-      tpPrice:           row.tpPrice   ?? 0,
-      confidence:        row.confidence,
-      regime:            row.regime    ?? "ranging",
-      patterns:          row.patterns,
+      side:               (row.candidateSide ?? "long") as "long" | "short",
+      entryPrice:         row.entryPrice ?? 0,
+      slPrice:            row.slPrice   ?? 0,
+      tpPrice:            row.tpPrice   ?? 0,
+      confidence:         row.confidence,
+      regime:             row.regime    ?? "ranging",
+      patterns:           row.patterns,
       memoryImpactScore,
+      regimeSuccessRate,
+      historicalSimilarity,
     });
 
     res.setHeader("Cache-Control", "no-store");

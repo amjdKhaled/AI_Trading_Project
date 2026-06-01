@@ -221,13 +221,17 @@ export const GetAiActiveHealthResponse = zod.object({
   "ok": zod.boolean(),
   "health": zod.union([zod.object({
   "score": zod.number().describe('Composite health score 0–100'),
+  "grade": zod.enum(['A', 'B', 'C', 'D']).describe('Letter grade derived from score: A≥80, B≥60, C≥40, D<40'),
+  "memoryImpactScore": zod.number().describe('Memory influence on this trade 0–100 (higher = memory strongly agrees)'),
   "breakdown": zod.object({
-  "emaTrend": zod.number().describe('EMA trend alignment (0–25)'),
-  "momentum": zod.number().describe('RSI momentum score (0–20)'),
-  "volume": zod.number().describe('Volume confirmation (0–15)'),
-  "priceProgress": zod.number().describe('Price progress toward TP (0–25)'),
+  "emaTrend": zod.number().describe('Market structure + trend quality (0–20)'),
+  "momentum": zod.number().describe('RSI momentum score (0–15)'),
+  "volume": zod.number().describe('Volume strength (0–10)'),
+  "priceProgress": zod.number().describe('Price progress \/ risk profile (0–20)'),
   "patternIntegrity": zod.number().describe('Pattern\/setup integrity (0–10)'),
-  "memoryAlignment": zod.number().describe('Memory impact alignment (0–5)')
+  "memoryAlignment": zod.number().describe('Memory impact alignment (0–10)'),
+  "historicalSimilarity": zod.number().describe('Historical setup similarity (0–10)'),
+  "regimeAlignment": zod.number().describe('Regime success alignment (0–5)')
 }),
   "direction": zod.enum(['improving', 'deteriorating', 'neutral']).describe('Price movement direction relative to trade thesis over last 5 bars'),
   "summary": zod.string().describe('One-sentence plain-English health summary')

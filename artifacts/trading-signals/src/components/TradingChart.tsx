@@ -1108,13 +1108,13 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
                 {/* Health score badge — only for the active approved trade */}
                 {m.isActive && healthScore != null && (
                   <g>
-                    <rect x={m.x + 16} y={m.y - 9} width={54} height={18} rx={3}
+                    <rect x={m.x + 14} y={m.y - 9} width={68} height={18} rx={3}
                       fill="#0c0f16e8" stroke={col} strokeWidth={0.8} opacity={0.95} />
-                    <text x={m.x + 43} y={m.y + 1}
+                    <text x={m.x + 48} y={m.y + 1}
                       textAnchor="middle" dominantBaseline="middle"
-                      fill={col} fontSize={8.5} fontWeight="800"
+                      fill={col} fontSize={8} fontWeight="800"
                       fontFamily="'JetBrains Mono',Menlo,monospace">
-                      {m.isLong ? "LONG" : "SHORT"} {healthScore}
+                      {m.isLong ? "AI LONG" : "AI SHORT"} {healthScore}%
                     </text>
                   </g>
                 )}

@@ -7,10 +7,15 @@
  */
 import type { AiTradeHealthBreakdown } from './aiTradeHealthBreakdown';
 import type { AiTradeHealthDirection } from './aiTradeHealthDirection';
+import type { AiTradeHealthGrade } from './aiTradeHealthGrade';
 
 export interface AiTradeHealth {
   /** Composite health score 0–100 */
   score: number;
+  /** Letter grade derived from score: A≥80, B≥60, C≥40, D<40 */
+  grade: AiTradeHealthGrade;
+  /** Memory influence on this trade 0–100 (higher = memory strongly agrees) */
+  memoryImpactScore: number;
   breakdown: AiTradeHealthBreakdown;
   /** Price movement direction relative to trade thesis over last 5 bars */
   direction: AiTradeHealthDirection;

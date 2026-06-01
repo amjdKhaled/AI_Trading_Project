@@ -28,6 +28,7 @@ export * from './aiStatusExtended';
 export * from './aiTradeHealth';
 export * from './aiTradeHealthBreakdown';
 export * from './aiTradeHealthDirection';
+export * from './aiTradeHealthGrade';
 export * from './bar';
 export * from './candleDecisionRequest';
 export * from './chartAnalysis';

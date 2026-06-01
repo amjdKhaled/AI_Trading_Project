@@ -687,21 +687,30 @@ components:
 
     AiTradeHealth:
       type: object
-      required: [score, breakdown, direction, summary]
+      required: [score, breakdown, direction, summary, grade, memoryImpactScore]
       properties:
         score:
           type: integer
           description: Composite health score 0–100
+        grade:
+          type: string
+          enum: [A, B, C, D]
+          description: "Letter grade derived from score: A≥80, B≥60, C≥40, D<40"
+        memoryImpactScore:
+          type: number
+          description: Memory influence on this trade 0–100 (higher = memory strongly agrees)
         breakdown:
           type: object
-          required: [emaTrend, momentum, volume, priceProgress, patternIntegrity, memoryAlignment]
+          required: [emaTrend, momentum, volume, priceProgress, patternIntegrity, memoryAlignment, historicalSimilarity, regimeAlignment]
           properties:
-            emaTrend:         { type: integer, description: "EMA trend alignment (0–25)" }
-            momentum:         { type: integer, description: "RSI momentum score (0–20)" }
-            volume:           { type: integer, description: "Volume confirmation (0–15)" }
-            priceProgress:    { type: integer, description: "Price progress toward TP (0–25)" }
-            patternIntegrity: { type: integer, description: "Pattern/setup integrity (0–10)" }
-            memoryAlignment:  { type: integer, description: "Memory impact alignment (0–5)" }
+            emaTrend:             { type: integer, description: "Market structure + trend quality (0–20)" }
+            momentum:             { type: integer, description: "RSI momentum score (0–15)" }
+            volume:               { type: integer, description: "Volume strength (0–10)" }
+            priceProgress:        { type: integer, description: "Price progress / risk profile (0–20)" }
+            patternIntegrity:     { type: integer, description: "Pattern/setup integrity (0–10)" }
+            memoryAlignment:      { type: integer, description: "Memory impact alignment (0–10)" }
+            historicalSimilarity: { type: integer, description: "Historical setup similarity (0–10)" }
+            regimeAlignment:      { type: integer, description: "Regime success alignment (0–5)" }
         direction:
           type: string
           enum: [improving, deteriorating, neutral]

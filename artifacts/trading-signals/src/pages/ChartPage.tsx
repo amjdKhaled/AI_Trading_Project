@@ -107,12 +107,15 @@ export interface AiCandleDecision {
 export interface TradeHealthBreakdown {
   emaTrend: number; momentum: number; volume: number;
   priceProgress: number; patternIntegrity: number; memoryAlignment: number;
+  historicalSimilarity: number; regimeAlignment: number;
 }
 export interface TradeHealth {
-  score:     number;
-  breakdown: TradeHealthBreakdown;
-  direction: "improving" | "deteriorating" | "neutral";
-  summary:   string;
+  score:             number;
+  breakdown:         TradeHealthBreakdown;
+  direction:         "improving" | "deteriorating" | "neutral";
+  summary:           string;
+  grade:             "A" | "B" | "C" | "D";
+  memoryImpactScore: number;
 }
 
 // ── History hook ─────────────────────────────────────────────────────────────
@@ -265,30 +268,61 @@ function CryptoLivePanel({
 
 // ── ActiveTradePanel ──────────────────────────────────────────────────────────
 
-function ActiveTradePanel({ decision, health }: { decision: AiCandleDecision; health: TradeHealth }) {
-  const isLong = decision.candidateSide === "long";
-  const col = isLong ? "#00ff88" : "#ff3346";
+function ActiveTradePanel({
+  decision, health, currentPrice,
+}: { decision: AiCandleDecision; health: TradeHealth; currentPrice?: number }) {
+  const isLong     = decision.candidateSide === "long";
+  const col        = isLong ? "#00ff88" : "#ff3346";
   const scoreColor = health.score >= 70 ? "#00ff88" : health.score >= 45 ? "#f59e0b" : "#ef5350";
+  const gradeColor = health.grade === "A" ? "#00ff88" : health.grade === "B" ? "#22d3ee" :
+                     health.grade === "C" ? "#f59e0b" : "#ef5350";
   const dirIcon  = health.direction === "improving" ? "↑" : health.direction === "deteriorating" ? "↓" : "→";
   const dirColor = health.direction === "improving" ? "#00ff88" : health.direction === "deteriorating" ? "#ef5350" : "#6b7280";
 
+  const entry = decision.entryPrice ?? 0;
+  const sl    = decision.slPrice    ?? 0;
+  const tp    = decision.tpPrice    ?? 0;
+  const risk  = Math.abs(entry - sl);
+
+  const liveRR = currentPrice != null && risk > 0
+    ? (isLong ? (currentPrice - entry) / risk : (entry - currentPrice) / risk)
+    : null;
+  const pnlPct = currentPrice != null && entry > 0
+    ? (isLong ? (currentPrice - entry) / entry : (entry - currentPrice) / entry) * 100
+    : null;
+  const liveRRColor = liveRR == null ? "#6b7280" : liveRR >= 1 ? "#00ff88" : liveRR >= 0 ? "#f59e0b" : "#ef5350";
+  const pnlColor    = pnlPct == null ? "#6b7280" : pnlPct >= 0 ? "#00ff88" : "#ef5350";
+
+  const fmt = (v: number) => v.toFixed(2);
+
   const dims = [
-    { label: "EMA",      val: health.breakdown.emaTrend,         max: 25 },
-    { label: "RSI",      val: health.breakdown.momentum,         max: 20 },
-    { label: "Vol",      val: health.breakdown.volume,           max: 15 },
-    { label: "Progress", val: health.breakdown.priceProgress,    max: 25 },
-    { label: "Pattern",  val: health.breakdown.patternIntegrity, max: 10 },
-    { label: "Memory",   val: health.breakdown.memoryAlignment,  max: 5  },
+    { label: "EMA",    val: health.breakdown.emaTrend,             max: 20 },
+    { label: "RSI",    val: health.breakdown.momentum,             max: 15 },
+    { label: "Vol",    val: health.breakdown.volume,               max: 10 },
+    { label: "Prog",   val: health.breakdown.priceProgress,        max: 20 },
+    { label: "Setup",  val: health.breakdown.patternIntegrity,     max: 10 },
+    { label: "Mem",    val: health.breakdown.memoryAlignment,      max: 10 },
+    { label: "Hist",   val: health.breakdown.historicalSimilarity, max: 10 },
+    { label: "Regime", val: health.breakdown.regimeAlignment,      max: 5  },
   ];
+
+  const reasoning = decision.aiReasoning?.trim() ?? "";
+  const reasoningSnip = reasoning.length > 90 ? reasoning.slice(0, 87) + "…" : reasoning;
 
   return (
     <div className="border-t border-white/5 p-2.5 flex flex-col gap-1.5 bg-[#0b0e14] select-none flex-shrink-0">
+      {/* ── Header: score + grade + direction ── */}
       <div className="flex items-center justify-between">
         <span className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/60 font-mono">
           Trade Health
         </span>
         <div className="flex items-center gap-1.5">
-          <span style={{ color: dirColor }} className="text-[11px] font-bold">{dirIcon}</span>
+          <span style={{ color: dirColor }} className="text-[10px] font-bold">{dirIcon}</span>
+          <span style={{ color: gradeColor }}
+            className="text-[9px] font-black font-mono border px-1 rounded"
+            title="Grade">
+            {health.grade}
+          </span>
           <span style={{ color: scoreColor }} className="text-[17px] font-black font-mono leading-none">
             {health.score}
           </span>
@@ -296,31 +330,79 @@ function ActiveTradePanel({ decision, health }: { decision: AiCandleDecision; he
         </div>
       </div>
 
+      {/* ── Score bar ── */}
       <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all duration-500"
           style={{ width: `${health.score}%`, background: scoreColor }} />
       </div>
 
+      {/* ── Entry / SL / TP ── */}
+      <div className="grid grid-cols-3 gap-x-1 text-[8px] font-mono">
+        <div className="flex flex-col"><span className="text-muted-foreground/40">Entry</span><span className="text-white/70">${fmt(entry)}</span></div>
+        <div className="flex flex-col"><span className="text-muted-foreground/40">SL</span><span className="text-[#ef5350]">${fmt(sl)}</span></div>
+        <div className="flex flex-col"><span className="text-muted-foreground/40">TP</span><span className="text-[#00ff88]">${fmt(tp)}</span></div>
+      </div>
+
+      {/* ── Current Price / Live R:R / P&L ── */}
+      <div className="grid grid-cols-3 gap-x-1 text-[8px] font-mono border-t border-white/5 pt-1">
+        <div className="flex flex-col">
+          <span className="text-muted-foreground/40">Current</span>
+          <span className="text-white/70">{currentPrice != null ? `$${fmt(currentPrice)}` : "—"}</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-muted-foreground/40">Live R:R</span>
+          <span style={{ color: liveRRColor }}>{liveRR != null ? `${liveRR.toFixed(2)}x` : "—"}</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-muted-foreground/40">P&amp;L</span>
+          <span style={{ color: pnlColor }}>{pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%` : "—"}</span>
+        </div>
+      </div>
+
+      {/* ── Memory impact score ── */}
+      <div className="flex items-center gap-1.5 text-[8px] font-mono border-t border-white/5 pt-1">
+        <span className="text-muted-foreground/40">Mem Impact</span>
+        <div className="flex-1 h-[2px] bg-white/5 rounded-full overflow-hidden">
+          <div className="h-full rounded-full"
+            style={{ width: `${health.memoryImpactScore}%`,
+              background: health.memoryImpactScore >= 70 ? "#00ff88" : health.memoryImpactScore >= 40 ? "#f59e0b" : "#ef5350" }} />
+        </div>
+        <span style={{ color: health.memoryImpactScore >= 70 ? "#00ff88" : health.memoryImpactScore >= 40 ? "#f59e0b" : "#ef5350" }}>
+          {Math.round(health.memoryImpactScore)}%
+        </span>
+      </div>
+
+      {/* ── 8 dimension mini-bars ── */}
       <div className="flex flex-col gap-[3px]">
         {dims.map(({ label, val, max }) => {
-          const pct = max > 0 ? val / max : 0;
+          const pct    = max > 0 ? val / max : 0;
           const dimCol = pct >= 0.7 ? "#00ff88" : pct >= 0.4 ? "#f59e0b" : "#ef5350";
           return (
             <div key={label} className="flex items-center gap-1.5">
-              <span className="text-[8px] font-mono text-muted-foreground/45 w-12 flex-shrink-0">{label}</span>
+              <span className="text-[7px] font-mono text-muted-foreground/40 w-9 flex-shrink-0">{label}</span>
               <div className="flex-1 h-[2px] bg-white/5 rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${pct * 100}%`, background: dimCol }} />
               </div>
-              <span className="text-[8px] font-mono text-muted-foreground/45 w-4 text-right">{val}</span>
+              <span className="text-[7px] font-mono text-muted-foreground/40 w-4 text-right">{val}</span>
             </div>
           );
         })}
       </div>
 
-      <div className="text-[8px] text-muted-foreground/45 leading-relaxed line-clamp-2 font-mono">
+      {/* ── Health summary ── */}
+      <div className="text-[7.5px] text-muted-foreground/50 leading-relaxed font-mono border-t border-white/5 pt-1">
         {health.summary}
       </div>
 
+      {/* ── AI reasoning snippet ── */}
+      {reasoningSnip && (
+        <div className="text-[7.5px] text-muted-foreground/40 leading-relaxed font-mono italic line-clamp-2"
+          title={reasoning}>
+          "{reasoningSnip}"
+        </div>
+      )}
+
+      {/* ── Footer: direction + entry R:R + confidence ── */}
       <div className="flex items-center gap-1.5 text-[8px] font-mono border-t border-white/5 pt-1">
         <span style={{ color: col }} className="font-bold">{isLong ? "▲ LONG" : "▼ SHORT"}</span>
         <span className="text-muted-foreground/30">·</span>
@@ -550,6 +632,13 @@ export default function ChartPage() {
         .then(r => r.ok ? r.json() : null)
         .then((data: { ok: boolean; decisions: ResolvedAiDecision[] } | null) => {
           setResolvedDecisions(data?.decisions ?? []);
+        })
+        .catch(() => {});
+      // Refresh health score on every candle close while a trade is active
+      fetch(`${base}/api/signals/ai-active/health?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(stockTf)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then((data: { ok: boolean; health: TradeHealth | null } | null) => {
+          setTradeHealth(data?.health ?? null);
         })
         .catch(() => {});
     } catch {
@@ -830,7 +919,7 @@ export default function ChartPage() {
           }
         </div>
         {isStocks && latestApproved && tradeHealth && (
-          <ActiveTradePanel decision={latestApproved} health={tradeHealth} />
+          <ActiveTradePanel decision={latestApproved} health={tradeHealth} currentPrice={livePrice ?? undefined} />
         )}
       </div>
     </div>
