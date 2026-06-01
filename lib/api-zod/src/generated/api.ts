@@ -730,3 +730,61 @@ export const GetReplayStatusResponse = zod.object({
 })
 
 
+/**
+ * Runs the Trade Intelligence Engine (memory enabled) over the last N candles for a symbol and returns APPROVE decisions as chart markers. Returns immediately with a jobId — poll GET /signals/ai-replay-historical/{jobId} for results.
+
+ * @summary Start a single-pass Memory-ON historical AI replay job
+ */
+export const startHistoricalReplayBodyTimeframeDefault = `5m`;
+export const startHistoricalReplayBodyLimitDefault = 30;
+export const startHistoricalReplayBodyLimitMin = 5;
+export const startHistoricalReplayBodyLimitMax = 60;
+
+
+
+export const StartHistoricalReplayBody = zod.object({
+  "symbol": zod.string(),
+  "timeframe": zod.string().default(startHistoricalReplayBodyTimeframeDefault),
+  "limit": zod.number().min(startHistoricalReplayBodyLimitMin).max(startHistoricalReplayBodyLimitMax).default(startHistoricalReplayBodyLimitDefault)
+})
+
+export const StartHistoricalReplayResponse = zod.object({
+  "jobId": zod.string(),
+  "alreadyRunning": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Poll a historical AI replay job for status and markers
+ */
+export const GetHistoricalReplayStatusParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const getHistoricalReplayStatusResponseMarkersOneItemConfidenceMin = 0;
+export const getHistoricalReplayStatusResponseMarkersOneItemConfidenceMax = 100;
+
+
+
+export const GetHistoricalReplayStatusResponse = zod.object({
+  "jobId": zod.string(),
+  "symbol": zod.string(),
+  "timeframe": zod.string(),
+  "status": zod.enum(['running', 'done', 'error']),
+  "progress": zod.number(),
+  "total": zod.number(),
+  "markers": zod.union([zod.array(zod.object({
+  "candleTime": zod.number().describe('Unix epoch seconds of the candle close'),
+  "decision": zod.enum(['LONG', 'SHORT']),
+  "entry": zod.number().nullish(),
+  "stopLoss": zod.number().nullish(),
+  "takeProfit": zod.number().nullish(),
+  "rrRatio": zod.number().nullish(),
+  "confidence": zod.number().min(getHistoricalReplayStatusResponseMarkersOneItemConfidenceMin).max(getHistoricalReplayStatusResponseMarkersOneItemConfidenceMax),
+  "source": zod.enum(['ai_replay']),
+  "memoryUsed": zod.boolean()
+})),zod.null()]).optional(),
+  "error": zod.string().nullish()
+})
+
+

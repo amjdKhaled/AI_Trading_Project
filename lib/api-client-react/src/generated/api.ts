@@ -32,10 +32,14 @@ import type {
   ChartAnalysisResponse,
   GetAiActiveHealthParams,
   GetAiDecisionStatsParams,
+  GetHistoricalReplayStatus404,
   GetReplayStatus404,
   GetSignalAlertsParams,
   GetSignalStatsParams,
   HealthStatus,
+  HistoricalReplayJobStatus,
+  HistoricalReplayStartRequest,
+  HistoricalReplayStartResponse,
   ListBarsParams,
   ListChartAnalysesParams,
   ListSignalsParams,
@@ -1778,6 +1782,156 @@ export function useGetReplayStatus<TData = Awaited<ReturnType<typeof getReplaySt
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetReplayStatusQueryOptions(jobId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getStartHistoricalReplayUrl = () => {
+
+
+
+
+  return `/api/signals/ai-replay-historical`
+}
+
+/**
+ * Runs the Trade Intelligence Engine (memory enabled) over the last N candles for a symbol and returns APPROVE decisions as chart markers. Returns immediately with a jobId — poll GET /signals/ai-replay-historical/{jobId} for results.
+
+ * @summary Start a single-pass Memory-ON historical AI replay job
+ */
+export const startHistoricalReplay = async (historicalReplayStartRequest: HistoricalReplayStartRequest, options?: RequestInit): Promise<HistoricalReplayStartResponse> => {
+
+  return customFetch<HistoricalReplayStartResponse>(getStartHistoricalReplayUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      historicalReplayStartRequest,)
+  }
+);}
+
+
+
+
+export const getStartHistoricalReplayMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startHistoricalReplay>>, TError,{data: BodyType<HistoricalReplayStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startHistoricalReplay>>, TError,{data: BodyType<HistoricalReplayStartRequest>}, TContext> => {
+
+const mutationKey = ['startHistoricalReplay'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startHistoricalReplay>>, {data: BodyType<HistoricalReplayStartRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  startHistoricalReplay(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartHistoricalReplayMutationResult = NonNullable<Awaited<ReturnType<typeof startHistoricalReplay>>>
+    export type StartHistoricalReplayMutationBody = BodyType<HistoricalReplayStartRequest>
+    export type StartHistoricalReplayMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Start a single-pass Memory-ON historical AI replay job
+ */
+export const useStartHistoricalReplay = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startHistoricalReplay>>, TError,{data: BodyType<HistoricalReplayStartRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startHistoricalReplay>>,
+        TError,
+        {data: BodyType<HistoricalReplayStartRequest>},
+        TContext
+      > => {
+      return useMutation(getStartHistoricalReplayMutationOptions(options));
+    }
+
+export const getGetHistoricalReplayStatusUrl = (jobId: string,) => {
+
+
+
+
+  return `/api/signals/ai-replay-historical/${jobId}`
+}
+
+/**
+ * @summary Poll a historical AI replay job for status and markers
+ */
+export const getHistoricalReplayStatus = async (jobId: string, options?: RequestInit): Promise<HistoricalReplayJobStatus> => {
+
+  return customFetch<HistoricalReplayJobStatus>(getGetHistoricalReplayStatusUrl(jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHistoricalReplayStatusQueryKey = (jobId: string,) => {
+    return [
+    `/api/signals/ai-replay-historical/${jobId}`
+    ] as const;
+    }
+
+
+export const getGetHistoricalReplayStatusQueryOptions = <TData = Awaited<ReturnType<typeof getHistoricalReplayStatus>>, TError = ErrorType<GetHistoricalReplayStatus404>>(jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHistoricalReplayStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHistoricalReplayStatusQueryKey(jobId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHistoricalReplayStatus>>> = ({ signal }) => getHistoricalReplayStatus(jobId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(jobId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHistoricalReplayStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetHistoricalReplayStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getHistoricalReplayStatus>>>
+export type GetHistoricalReplayStatusQueryError = ErrorType<GetHistoricalReplayStatus404>
+
+
+/**
+ * @summary Poll a historical AI replay job for status and markers
+ */
+
+export function useGetHistoricalReplayStatus<TData = Awaited<ReturnType<typeof getHistoricalReplayStatus>>, TError = ErrorType<GetHistoricalReplayStatus404>>(
+ jobId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHistoricalReplayStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetHistoricalReplayStatusQueryOptions(jobId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -497,6 +497,58 @@ paths:
                   error:
                     type: string
 
+  /signals/ai-replay-historical:
+    post:
+      operationId: startHistoricalReplay
+      tags: [signals]
+      summary: Start a single-pass Memory-ON historical AI replay job
+      description: >
+        Runs the Trade Intelligence Engine (memory enabled) over the last N
+        candles for a symbol and returns APPROVE decisions as chart markers.
+        Returns immediately with a jobId — poll
+        GET /signals/ai-replay-historical/{jobId} for results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HistoricalReplayStartRequest"
+      responses:
+        "200":
+          description: Job started (or already running — returns existing jobId)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoricalReplayStartResponse"
+
+  /signals/ai-replay-historical/{jobId}:
+    get:
+      operationId: getHistoricalReplayStatus
+      tags: [signals]
+      summary: Poll a historical AI replay job for status and markers
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status, progress, and optional marker array
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoricalReplayJobStatus"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
 components:
   schemas:
     HealthStatus:
@@ -1578,6 +1630,84 @@ components:
         result:
           oneOf:
             - $ref: "#/components/schemas/ReplayResult"
+            - type: "null"
+        error:
+          type: ["string", "null"]
+
+    HistoricalReplayStartRequest:
+      type: object
+      required: [symbol]
+      properties:
+        symbol:
+          type: string
+        timeframe:
+          type: string
+          default: "5m"
+        limit:
+          type: integer
+          minimum: 5
+          maximum: 60
+          default: 30
+
+    HistoricalReplayStartResponse:
+      type: object
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+        alreadyRunning:
+          type: boolean
+
+    HistoricalReplayMarker:
+      type: object
+      required: [candleTime, decision, confidence, source, memoryUsed]
+      properties:
+        candleTime:
+          type: number
+          description: Unix epoch seconds of the candle close
+        decision:
+          type: string
+          enum: [LONG, SHORT]
+        entry:
+          type: ["number", "null"]
+        stopLoss:
+          type: ["number", "null"]
+        takeProfit:
+          type: ["number", "null"]
+        rrRatio:
+          type: ["number", "null"]
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+        source:
+          type: string
+          enum: [ai_replay]
+        memoryUsed:
+          type: boolean
+
+    HistoricalReplayJobStatus:
+      type: object
+      required: [jobId, symbol, timeframe, status, progress, total]
+      properties:
+        jobId:
+          type: string
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        status:
+          type: string
+          enum: [running, done, error]
+        progress:
+          type: integer
+        total:
+          type: integer
+        markers:
+          oneOf:
+            - type: array
+              items:
+                $ref: "#/components/schemas/HistoricalReplayMarker"
             - type: "null"
         error:
           type: ["string", "null"]

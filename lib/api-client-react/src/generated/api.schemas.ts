@@ -812,6 +812,78 @@ export interface ReplayJobStatus {
   error?: string | null;
 }
 
+export interface HistoricalReplayStartRequest {
+  symbol: string;
+  timeframe?: string;
+  /**
+     * @minimum 5
+     * @maximum 60
+     */
+  limit?: number;
+}
+
+export interface HistoricalReplayStartResponse {
+  jobId: string;
+  alreadyRunning?: boolean;
+}
+
+export type HistoricalReplayMarkerDecision = typeof HistoricalReplayMarkerDecision[keyof typeof HistoricalReplayMarkerDecision];
+
+
+export const HistoricalReplayMarkerDecision = {
+  LONG: 'LONG',
+  SHORT: 'SHORT',
+} as const;
+
+export type HistoricalReplayMarkerSource = typeof HistoricalReplayMarkerSource[keyof typeof HistoricalReplayMarkerSource];
+
+
+export const HistoricalReplayMarkerSource = {
+  ai_replay: 'ai_replay',
+} as const;
+
+export interface HistoricalReplayMarker {
+  /** Unix epoch seconds of the candle close */
+  candleTime: number;
+  decision: HistoricalReplayMarkerDecision;
+  /** @nullable */
+  entry?: number | null;
+  /** @nullable */
+  stopLoss?: number | null;
+  /** @nullable */
+  takeProfit?: number | null;
+  /** @nullable */
+  rrRatio?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  confidence: number;
+  source: HistoricalReplayMarkerSource;
+  memoryUsed: boolean;
+}
+
+export type HistoricalReplayJobStatusStatus = typeof HistoricalReplayJobStatusStatus[keyof typeof HistoricalReplayJobStatusStatus];
+
+
+export const HistoricalReplayJobStatusStatus = {
+  running: 'running',
+  done: 'done',
+  error: 'error',
+} as const;
+
+export interface HistoricalReplayJobStatus {
+  jobId: string;
+  symbol: string;
+  timeframe: string;
+  status: HistoricalReplayJobStatusStatus;
+  progress: number;
+  total: number;
+  markers?: HistoricalReplayMarker[] | null;
+  /** @nullable */
+  error?: string | null;
+}
+
 export type ListSignalsParams = {
 symbol?: string;
 limit?: number;
@@ -863,6 +935,10 @@ limit?: number;
 };
 
 export type GetReplayStatus404 = {
+  error?: string;
+};
+
+export type GetHistoricalReplayStatus404 = {
   error?: string;
 };
 
