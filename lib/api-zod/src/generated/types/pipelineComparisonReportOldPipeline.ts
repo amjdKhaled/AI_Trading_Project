@@ -8,5 +8,6 @@
 
 export type PipelineComparisonReportOldPipeline = {
   signalCount: number;
+  approveCount: number;
   avgConfidence: number;
 };

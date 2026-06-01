@@ -903,15 +903,24 @@ export interface PipelineComparisonRequest {
 
 export type PipelineComparisonReportOldPipeline = {
   signalCount: number;
+  approveCount: number;
   avgConfidence: number;
 };
 
 export type PipelineComparisonReportNewPipeline = {
   signalCount: number;
   approveCount: number;
-  buyCount: number;
-  sellCount: number;
   avgConfidence: number;
+};
+
+export type PipelineComparisonReportDisagreementsItem = {
+  /** Epoch seconds */
+  barTime: number;
+  oldFired: boolean;
+  newFired: boolean;
+  oldConf?: number | null;
+  newConf?: number | null;
+  newDecision?: string | null;
 };
 
 export interface PipelineComparisonReport {
@@ -924,10 +933,12 @@ export interface PipelineComparisonReport {
   windowEnd: number;
   oldPipeline: PipelineComparisonReportOldPipeline;
   newPipeline: PipelineComparisonReportNewPipeline;
-  /** Bars where both pipelines fired a signal */
+  /** Bars where both pipelines approved a signal */
   overlap: number;
   /** Bars where only one pipeline fired */
   divergence: number;
+  /** Per-bar divergence rows, newest first, max 20 */
+  disagreements?: PipelineComparisonReportDisagreementsItem[];
   snapshotDataAvailable: boolean;
 }
 

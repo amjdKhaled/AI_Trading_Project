@@ -111,6 +111,18 @@ setupWebSocket(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
+  // ── Pipeline cutover audit ─────────────────────────────────────────────────
+  // Enumerates chart-path dead code removed as part of the AI Snapshot cutover.
+  // Kept here so the removal is traceable in startup logs rather than in comments.
+  logger.info({
+    removed: [
+      "TradingChart.Props.aiSignals (prop deleted)",
+      "TradingChart.aiSignalsRef (ref deleted)",
+      "TradingChart.computeAiMarkers legacy loop (aiSignals for-loop removed)",
+      "ChartPage JSX aiSignals={[]} prop removed",
+    ],
+    reason: "AI Snapshot pipeline (filterCandleWithSnapshot) is now the sole candle-close decision path",
+  }, "[pipeline-cutover] dead chart-path code removed");
 });
 
 server.on("error", (err) => {

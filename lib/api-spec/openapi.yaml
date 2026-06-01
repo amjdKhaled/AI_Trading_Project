@@ -1773,31 +1773,52 @@ components:
           description: Epoch seconds of the last bar in the comparison window
         oldPipeline:
           type: object
-          required: [signalCount, avgConfidence]
-          properties:
-            signalCount:
-              type: integer
-            avgConfidence:
-              type: integer
-        newPipeline:
-          type: object
-          required: [signalCount, approveCount, buyCount, sellCount, avgConfidence]
+          required: [signalCount, approveCount, avgConfidence]
           properties:
             signalCount:
               type: integer
             approveCount:
               type: integer
-            buyCount:
+            avgConfidence:
               type: integer
-            sellCount:
+        newPipeline:
+          type: object
+          required: [signalCount, approveCount, avgConfidence]
+          properties:
+            signalCount:
+              type: integer
+            approveCount:
               type: integer
             avgConfidence:
               type: integer
         overlap:
           type: integer
-          description: Bars where both pipelines fired a signal
+          description: Bars where both pipelines approved a signal
         divergence:
           type: integer
           description: Bars where only one pipeline fired
+        disagreements:
+          type: array
+          description: Per-bar divergence rows, newest first, max 20
+          items:
+            type: object
+            required: [barTime, oldFired, newFired]
+            properties:
+              barTime:
+                type: integer
+                description: Epoch seconds
+              oldFired:
+                type: boolean
+              newFired:
+                type: boolean
+              oldConf:
+                type: integer
+                nullable: true
+              newConf:
+                type: integer
+                nullable: true
+              newDecision:
+                type: string
+                nullable: true
         snapshotDataAvailable:
           type: boolean

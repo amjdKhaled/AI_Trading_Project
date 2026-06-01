@@ -9,7 +9,5 @@
 export type PipelineComparisonReportNewPipeline = {
   signalCount: number;
   approveCount: number;
-  buyCount: number;
-  sellCount: number;
   avgConfidence: number;
 };

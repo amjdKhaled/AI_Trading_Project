@@ -32,16 +32,30 @@ interface SnapJson {
   htf?:                 SnapHtf | null;
 }
 
+interface CompareDisagreement {
+  barTime:     number;
+  oldFired:    boolean;
+  newFired:    boolean;
+  oldConf:     number | null;
+  newConf:     number | null;
+  newDecision: string | null;
+}
+interface ComparePipelineStats {
+  signalCount:   number;
+  approveCount:  number;
+  avgConfidence: number;
+}
 interface CompareReport {
   symbol:                string;
   timeframe:             string;
   windowBars:            number;
   windowStart:           number;
   windowEnd:             number;
-  oldPipeline:           { signalCount: number; avgConfidence: number };
-  newPipeline:           { signalCount: number; approveCount: number; buyCount: number; sellCount: number; avgConfidence: number };
+  oldPipeline:           ComparePipelineStats;
+  newPipeline:           ComparePipelineStats;
   overlap:               number;
   divergence:            number;
+  disagreements:         CompareDisagreement[];
   snapshotDataAvailable: boolean;
 }
 
@@ -489,6 +503,8 @@ function Empty({ text }: { text: string }) {
 function CompareContent({ data }: { data: CompareReport }) {
   const fmtDate = (sec: number) =>
     new Date(sec * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const fmtTime = (sec: number) =>
+    new Date(sec * 1000).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
   return (
     <div>
@@ -507,7 +523,7 @@ function CompareContent({ data }: { data: CompareReport }) {
         </div>
       )}
 
-      {/* Header row */}
+      {/* Aggregate stats — both pipelines side by side */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 4px", marginBottom: 4 }}>
         <span style={{ fontSize: 7.5, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em" }}>Metric</span>
         <span style={{ fontSize: 7.5, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "right" }}>Classic</span>
@@ -515,11 +531,9 @@ function CompareContent({ data }: { data: CompareReport }) {
       </div>
 
       {[
-        { label: "Signals fired",    old: data.oldPipeline.signalCount,   neo: data.newPipeline.approveCount },
-        { label: "Total evaluated",  old: data.oldPipeline.signalCount,   neo: data.newPipeline.signalCount  },
-        { label: "Avg confidence",   old: `${data.oldPipeline.avgConfidence}%`, neo: `${data.newPipeline.avgConfidence}%` },
-        { label: "BUY signals",      old: "—",                            neo: data.newPipeline.buyCount     },
-        { label: "SELL signals",     old: "—",                            neo: data.newPipeline.sellCount    },
+        { label: "Approved",       old: data.oldPipeline.approveCount,              neo: data.newPipeline.approveCount },
+        { label: "Evaluated",      old: data.oldPipeline.signalCount,               neo: data.newPipeline.signalCount  },
+        { label: "Avg confidence", old: `${data.oldPipeline.avgConfidence}%`,       neo: `${data.newPipeline.avgConfidence}%` },
       ].map(({ label, old, neo }) => (
         <div key={label} style={{
           display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 4px",
@@ -531,17 +545,59 @@ function CompareContent({ data }: { data: CompareReport }) {
         </div>
       ))}
 
-      {/* Overlap / divergence tiles */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 12 }}>
-        <div style={{ padding: "10px 8px", background: "#ffffff06", borderRadius: 4, textAlign: "center" }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#34d399" }}>{data.overlap}</div>
-          <div style={{ fontSize: 8, color: "#4b5563", marginTop: 2 }}>bars agreed</div>
+      {/* Overlap / divergence summary tiles */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 10, marginBottom: 12 }}>
+        <div style={{ padding: "8px 6px", background: "#ffffff06", borderRadius: 4, textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#34d399" }}>{data.overlap}</div>
+          <div style={{ fontSize: 7.5, color: "#4b5563", marginTop: 2 }}>bars agreed</div>
         </div>
-        <div style={{ padding: "10px 8px", background: "#ffffff06", borderRadius: 4, textAlign: "center" }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#f87171" }}>{data.divergence}</div>
-          <div style={{ fontSize: 8, color: "#4b5563", marginTop: 2 }}>bars diverged</div>
+        <div style={{ padding: "8px 6px", background: "#ffffff06", borderRadius: 4, textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#f87171" }}>{data.divergence}</div>
+          <div style={{ fontSize: 7.5, color: "#4b5563", marginTop: 2 }}>bars diverged</div>
         </div>
       </div>
+
+      {/* Per-bar disagreement rows */}
+      {data.disagreements.length > 0 && (
+        <div>
+          <div style={{ fontSize: 7.5, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+            Disagreements ({data.disagreements.length})
+          </div>
+          {/* Column headers */}
+          <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr 1fr", gap: "0 4px", marginBottom: 3 }}>
+            {["Time", "Classic", "AI Snap", "Conf Δ"].map(h => (
+              <span key={h} style={{ fontSize: 7, color: "#374151", textAlign: h === "Time" ? "left" : "right", textTransform: "uppercase" }}>{h}</span>
+            ))}
+          </div>
+          {data.disagreements.map((d) => {
+            const oldLabel = d.oldFired ? `✓ ${d.oldConf ?? "?"}%` : "—";
+            const newLabel = d.newFired
+              ? `${d.newDecision} ${d.newConf ?? "?"}%`
+              : (d.newDecision ? `${d.newDecision}` : "—");
+            const confDelta = (d.newConf ?? 0) - (d.oldConf ?? 0);
+            const deltaStr  = d.oldConf != null && d.newConf != null
+              ? `${confDelta >= 0 ? "+" : ""}${confDelta}`
+              : "—";
+            const deltaCol  = confDelta > 0 ? "#34d399" : confDelta < 0 ? "#f87171" : "#4b5563";
+            return (
+              <div key={d.barTime} style={{
+                display: "grid", gridTemplateColumns: "60px 1fr 1fr 1fr", gap: "0 4px",
+                padding: "2px 0", borderBottom: "1px solid #ffffff04",
+              }}>
+                <span style={{ fontSize: 8, color: "#4b5563" }}>{fmtTime(d.barTime)}</span>
+                <span style={{ fontSize: 8, color: d.oldFired ? "#9ca3af" : "#374151", textAlign: "right" }}>{oldLabel}</span>
+                <span style={{ fontSize: 8, color: d.newFired ? "#f59e0b" : "#4b5563", textAlign: "right" }}>{newLabel}</span>
+                <span style={{ fontSize: 8, color: deltaCol, textAlign: "right" }}>{deltaStr}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {data.disagreements.length === 0 && data.snapshotDataAvailable && (
+        <div style={{ fontSize: 8, color: "#374151", textAlign: "center", marginTop: 4 }}>
+          No per-bar disagreements in window
+        </div>
+      )}
     </div>
   );
 }

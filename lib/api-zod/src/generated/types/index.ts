@@ -65,6 +65,7 @@ export * from './performanceSummaryResponseByRegime';
 export * from './performanceSummaryResponseBySide';
 export * from './performanceSummaryResponseBySymbol';
 export * from './pipelineComparisonReport';
+export * from './pipelineComparisonReportDisagreementsItem';
 export * from './pipelineComparisonReportNewPipeline';
 export * from './pipelineComparisonReportOldPipeline';
 export * from './pipelineComparisonRequest';

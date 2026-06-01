@@ -574,17 +574,24 @@ export const PipelineComparisonResponse = zod.object({
   "windowEnd": zod.number().describe('Epoch seconds of the last bar in the comparison window'),
   "oldPipeline": zod.object({
   "signalCount": zod.number(),
+  "approveCount": zod.number(),
   "avgConfidence": zod.number()
 }),
   "newPipeline": zod.object({
   "signalCount": zod.number(),
   "approveCount": zod.number(),
-  "buyCount": zod.number(),
-  "sellCount": zod.number(),
   "avgConfidence": zod.number()
 }),
-  "overlap": zod.number().describe('Bars where both pipelines fired a signal'),
+  "overlap": zod.number().describe('Bars where both pipelines approved a signal'),
   "divergence": zod.number().describe('Bars where only one pipeline fired'),
+  "disagreements": zod.array(zod.object({
+  "barTime": zod.number().describe('Epoch seconds'),
+  "oldFired": zod.boolean(),
+  "newFired": zod.boolean(),
+  "oldConf": zod.number().nullish(),
+  "newConf": zod.number().nullish(),
+  "newDecision": zod.string().nullish()
+})).optional().describe('Per-bar divergence rows, newest first, max 20'),
   "snapshotDataAvailable": zod.boolean()
 })
 

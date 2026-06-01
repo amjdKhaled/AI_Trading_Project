@@ -5,6 +5,7 @@
  * Trading Signal Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { PipelineComparisonReportDisagreementsItem } from './pipelineComparisonReportDisagreementsItem';
 import type { PipelineComparisonReportNewPipeline } from './pipelineComparisonReportNewPipeline';
 import type { PipelineComparisonReportOldPipeline } from './pipelineComparisonReportOldPipeline';
 
@@ -18,9 +19,11 @@ export interface PipelineComparisonReport {
   windowEnd: number;
   oldPipeline: PipelineComparisonReportOldPipeline;
   newPipeline: PipelineComparisonReportNewPipeline;
-  /** Bars where both pipelines fired a signal */
+  /** Bars where both pipelines approved a signal */
   overlap: number;
   /** Bars where only one pipeline fired */
   divergence: number;
+  /** Per-bar divergence rows, newest first, max 20 */
+  disagreements?: PipelineComparisonReportDisagreementsItem[];
   snapshotDataAvailable: boolean;
 }

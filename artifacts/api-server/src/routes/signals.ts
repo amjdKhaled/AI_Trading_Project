@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, gte, inArray, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { eq, desc, and, gte, lte, inArray, isNull, isNotNull, type SQL } from "drizzle-orm";
 import { db, signalsTable, aiDecisionsTable, aiLessonsTable, aiSnapshotDecisionsTable } from "@workspace/db";
 import {
   ListSignalsQueryParams,
@@ -1348,7 +1348,7 @@ router.post("/signals/pipeline-comparison", async (req, res): Promise<void> => {
   }
 
   const sym           = symbol.toUpperCase().trim();
-  const effectiveBars = Math.min(200, Math.max(10, Number(barCount) || 100));
+  const effectiveBars = Math.min(100, Math.max(10, Number(barCount) || 100));
 
   const toSec = (t: unknown): number => {
     if (typeof t === "number") return t;
@@ -1385,14 +1385,22 @@ router.post("/signals/pipeline-comparison", async (req, res): Promise<void> => {
       const conf = (s as unknown as Record<string, unknown>).confidence;
       return typeof conf === "number" ? conf : 0;
     });
+    // Map barTime → confidence for disagreement computation
+    const oldByTime = new Map<number, number>();
+    oldSignals.forEach((s) => {
+      const t    = toSec((s as unknown as Record<string, unknown>).barTime ?? 0);
+      const conf = (s as unknown as Record<string, unknown>).confidence;
+      oldByTime.set(t, typeof conf === "number" ? conf : 0);
+    });
     const oldPipeline = {
       signalCount:   oldSignals.length,
+      approveCount:  oldSignals.length, // classic engine: every emitted signal is an approve
       avgConfidence: oldConfs.length > 0
         ? Math.round(oldConfs.reduce((a, b) => a + b, 0) / oldConfs.length)
         : 0,
     };
 
-    // New pipeline: stored snapshot decisions (already evaluated by Ollama at candle close)
+    // New pipeline: stored AI snapshot decisions for the same window (both bounds inclusive)
     const snapRows = await db
       .select({
         candleTime: aiSnapshotDecisionsTable.candleTime,
@@ -1404,31 +1412,64 @@ router.post("/signals/pipeline-comparison", async (req, res): Promise<void> => {
         eq(aiSnapshotDecisionsTable.symbol,    sym),
         eq(aiSnapshotDecisionsTable.timeframe, timeframe),
         gte(aiSnapshotDecisionsTable.candleTime, new Date(windowStart * 1000)),
+        lte(aiSnapshotDecisionsTable.candleTime, new Date(windowEnd   * 1000)),
       ))
       .orderBy(desc(aiSnapshotDecisionsTable.candleTime));
 
     const snapActive = snapRows.filter((r) => r.decision === "BUY" || r.decision === "SELL");
     const snapConfs  = snapRows.map((r) => typeof r.confidence === "number" ? r.confidence : 0);
+    // Map candleTime (epoch s) → { decision, confidence } for disagreement computation
+    const newByTime = new Map<number, { decision: string; confidence: number }>();
+    snapRows.forEach((r) => {
+      const t = Math.floor(new Date(r.candleTime).getTime() / 1000);
+      newByTime.set(t, {
+        decision:   r.decision ?? "WAIT",
+        confidence: typeof r.confidence === "number" ? r.confidence : 0,
+      });
+    });
     const newPipeline = {
       signalCount:   snapRows.length,
       approveCount:  snapActive.length,
-      buyCount:      snapRows.filter((r) => r.decision === "BUY").length,
-      sellCount:     snapRows.filter((r) => r.decision === "SELL").length,
       avgConfidence: snapConfs.length > 0
         ? Math.round(snapConfs.reduce((a, b) => a + b, 0) / snapConfs.length)
         : 0,
     };
 
-    // Overlap / divergence: match by candle time
-    const oldTimeSet  = new Set(oldSignals.map((s) =>
-      toSec((s as unknown as Record<string, unknown>).barTime ?? 0)));
+    // Overlap / divergence: match by candle time (new-pipeline approved vs old-pipeline)
     const snapTimeSecs = snapActive.map((r) =>
       Math.floor(new Date(r.candleTime).getTime() / 1000));
     const snapTimeSet = new Set(snapTimeSecs);
 
-    const overlap    = snapTimeSecs.filter((t) => oldTimeSet.has(t)).length;
-    const divergence = [...oldTimeSet].filter((t) => !snapTimeSet.has(t)).length
-                     + snapTimeSecs.filter((t) => !oldTimeSet.has(t)).length;
+    const overlap    = snapTimeSecs.filter((t) => oldByTime.has(t)).length;
+    const divergence = [...oldByTime.keys()].filter((t) => !snapTimeSet.has(t)).length
+                     + snapTimeSecs.filter((t) => !oldByTime.has(t)).length;
+
+    // Per-bar disagreements: bars where exactly one pipeline fired (max 20, newest first)
+    const allTimes = new Set([...oldByTime.keys(), ...snapTimeSecs]);
+    const disagreements: Array<{
+      barTime:     number;
+      oldFired:    boolean;
+      newFired:    boolean;
+      oldConf:     number | null;
+      newConf:     number | null;
+      newDecision: string | null;
+    }> = [];
+    for (const t of allTimes) {
+      const oldFired = oldByTime.has(t);
+      const newEntry = newByTime.get(t);
+      const newFired = newEntry?.decision === "BUY" || newEntry?.decision === "SELL";
+      if (oldFired !== newFired) {
+        disagreements.push({
+          barTime:     t,
+          oldFired,
+          newFired,
+          oldConf:     oldByTime.get(t) ?? null,
+          newConf:     newEntry?.confidence ?? null,
+          newDecision: newEntry?.decision ?? null,
+        });
+      }
+    }
+    disagreements.sort((a, b) => b.barTime - a.barTime);
 
     res.setHeader("Cache-Control", "no-store");
     res.json({
@@ -1441,6 +1482,7 @@ router.post("/signals/pipeline-comparison", async (req, res): Promise<void> => {
       newPipeline,
       overlap,
       divergence,
+      disagreements:         disagreements.slice(0, 20),
       snapshotDataAvailable: snapRows.length > 0,
     });
   } catch (err) {
