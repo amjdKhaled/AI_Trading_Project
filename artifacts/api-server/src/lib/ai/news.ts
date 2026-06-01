@@ -44,7 +44,7 @@ function scoreArticles(articles: PolygonNewsArticle[]): number {
 }
 
 async function fetchFromPolygon(symbol: string): Promise<NewsSentiment> {
-  const apiKey = process.env.POLYGON_API_KEY ?? "";
+  const apiKey = (process.env.POLYGON_API_KEY ?? "").trim();
   const url    = `https://api.polygon.io/v2/reference/news?ticker=${encodeURIComponent(symbol)}&limit=5&apiKey=${apiKey}`;
 
   const resp = await fetch(url, { signal: AbortSignal.timeout(8_000) });

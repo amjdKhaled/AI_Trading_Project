@@ -74,7 +74,7 @@ function polygonConnect() {
   ws.on("open", () => {
     ws.send(JSON.stringify({
       action: "auth",
-      params: process.env.POLYGON_API_KEY ?? "",
+      params: (process.env.POLYGON_API_KEY ?? "").trim(),
     }));
   });
 

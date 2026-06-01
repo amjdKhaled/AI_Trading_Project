@@ -4,7 +4,7 @@ import { logger } from "../lib/logger";
 const router: IRouter = Router();
 
 const REST_BASE = "https://api.polygon.io";
-const apiKey    = () => process.env.POLYGON_API_KEY ?? "";
+const apiKey    = () => (process.env.POLYGON_API_KEY ?? "").trim();
 
 // 3-minute in-memory cache per symbol — avoids hammering Polygon on rapid
 // symbol switches while keeping headlines reasonably fresh.

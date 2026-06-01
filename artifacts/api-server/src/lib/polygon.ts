@@ -19,7 +19,7 @@ export interface BarProvider {
 
 const REST_BASE = "https://api.polygon.io";
 
-const apiKey = () => process.env.POLYGON_API_KEY ?? "";
+const apiKey = () => (process.env.POLYGON_API_KEY ?? "").trim();
 
 // Polygon uses "multiplier/timespan" pairs. We expose the same string keys
 // our routes already use and translate at the edge.
