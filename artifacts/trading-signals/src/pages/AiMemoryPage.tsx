@@ -877,9 +877,23 @@ function ToolsTab({
           className="w-full h-7 text-xs rounded bg-violet-600 text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
         >
           {replayRunning
-            ? <><RefreshCw size={11} className="animate-spin" /> Replaying… {replayProgress}/{replayTotal}</>
+            ? <><RefreshCw size={11} className="animate-spin" /> Replaying…</>
             : <><Play size={11} /> Run Replay</>}
         </button>
+        {replayRunning && replayTotal > 0 && (
+          <div className="space-y-0.5">
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span>Progress</span>
+              <span>{replayProgress} / {replayTotal} candles</span>
+            </div>
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                style={{ width: `${Math.round((replayProgress / replayTotal) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
         {replayError && (
           <p className="mt-2 text-[11px] text-red-400">{replayError}</p>
         )}

@@ -67,8 +67,11 @@ export async function runReplay(
   limit:       number,
   onProgress:  OnReplayProgress,
 ): Promise<ReplayResult> {
-  const startIdx = Math.min(100, bars.length - 2);
-  const endIdx   = Math.min(startIdx + limit, bars.length - 1);
+  // Replay the last `limit` *closed* candles with sufficient warmup context.
+  // bars[bars.length - 1] may be a live/partial candle — exclude it.
+  const WARMUP   = 100;
+  const endIdx   = bars.length - 1;                       // last closed bar
+  const startIdx = Math.max(WARMUP, endIdx - limit);      // at least 100 bars of warmup
   const total    = endIdx - startIdx;
 
   // Fetch news once and reuse — avoids per-candle API calls

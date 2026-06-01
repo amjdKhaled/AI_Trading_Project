@@ -1,0 +1,465 @@
+TASK #6 – LIVE MARKET INTELLIGENCE SYSTEM (LUXALGO-STYLE REAL-TIME AI)
+
+OBJECTIVE
+
+The project currently analyzes after candle close.
+
+This is good.
+
+But I want the platform to become a true live-market AI assistant.
+
+The user should be able to watch the chart while the market is open and see opportunities forming in real time.
+
+The goal is NOT to replace candle-close decisions.
+
+The goal is to add a second intelligence layer.
+
+====================================================
+CURRENT SYSTEM
+==============
+
+Current:
+
+Candle closes
+
+↓
+
+AI analyzes
+
+↓
+
+Decision generated
+
+↓
+
+Trade appears
+
+This must remain.
+
+Do not remove it.
+
+====================================================
+NEW SYSTEM
+==========
+
+While a candle is still forming:
+
+The AI should continuously monitor the setup.
+
+The AI should estimate probability.
+
+The AI should identify opportunities before candle close.
+
+====================================================
+LIVE MARKET MODE
+================
+
+Create:
+
+LIVE MARKET MODE
+
+When enabled:
+
+The AI continuously watches:
+
+Price
+
+Volume
+
+Momentum
+
+Trend
+
+Market Structure
+
+Pattern Formation
+
+Memory Context
+
+====================================================
+SETUP FORMATION DETECTION
+=========================
+
+The AI should identify:
+
+Potential Long Forming
+
+Potential Short Forming
+
+Potential Breakout
+
+Potential Reversal
+
+Potential Trend Continuation
+
+Potential Liquidity Sweep
+
+Potential Pullback Entry
+
+Before confirmation.
+
+====================================================
+EXAMPLE
+=======
+
+Instead of waiting until:
+
+09:35 candle closes
+
+The AI may display:
+
+09:33
+
+Potential Long Forming
+
+Confidence:
+68%
+
+Setup:
+Trend Pullback
+
+Memory Alignment:
+High
+
+====================================================
+LIVE CONFIDENCE
+===============
+
+While candle forms:
+
+Confidence updates.
+
+Example:
+
+65%
+
+↓
+
+72%
+
+↓
+
+81%
+
+↓
+
+88%
+
+When threshold reached:
+
+Prepare signal.
+
+====================================================
+PRE-SIGNAL SYSTEM
+=================
+
+Create:
+
+PRE-LONG
+
+PRE-SHORT
+
+These are not actual entries.
+
+These are developing opportunities.
+
+====================================================
+VISUALIZATION
+=============
+
+Display:
+
+Potential Long
+
+Potential Short
+
+with a different style from confirmed signals.
+
+Example:
+
+Dashed marker
+
+Transparent marker
+
+Different color
+
+====================================================
+CONFIRMED SIGNAL
+================
+
+When candle closes:
+
+AI performs full analysis.
+
+AI Memory loads.
+
+Decision Engine runs.
+
+Only then:
+
+Generate official:
+
+LONG
+
+SHORT
+
+NO_TRADE
+
+====================================================
+LUXALGO EXPERIENCE
+==================
+
+The user experience should feel similar to:
+
+LuxAlgo
+
+Institutional Flow Systems
+
+Professional Signal Desks
+
+Where opportunities are visible while they are forming.
+
+====================================================
+REAL-TIME MEMORY
+================
+
+While candle forms:
+
+The AI should already consult memory.
+
+Questions:
+
+Have similar setups worked?
+
+Have similar setups failed?
+
+Is confidence increasing?
+
+Is memory aligned?
+
+====================================================
+LIVE MARKET SCORE
+=================
+
+Create:
+
+Market Opportunity Score
+
+Range:
+
+0-100
+
+Display live.
+
+====================================================
+EXAMPLE
+=======
+
+Current Opportunity:
+
+82%
+
+Trend Pullback
+
+Memory Alignment:
+
+88%
+
+Regime Quality:
+
+91%
+
+====================================================
+SETUP WATCHLIST
+===============
+
+Create:
+
+Live Setup Watchlist
+
+Display:
+
+Potential Longs
+
+Potential Shorts
+
+Ranked by quality.
+
+====================================================
+RANKING
+=======
+
+Rank opportunities:
+
+#1 Best Opportunity
+
+#2 Best Opportunity
+
+#3 Best Opportunity
+
+Based on:
+
+Confidence
+
+Memory Alignment
+
+Regime Quality
+
+Volume
+
+Structure
+
+====================================================
+EARLY WARNING SYSTEM
+====================
+
+Examples:
+
+Potential Breakout Forming
+
+Volume Expansion Detected
+
+Liquidity Sweep Detected
+
+Trend Continuation Forming
+
+====================================================
+LIVE MARKET DASHBOARD
+=====================
+
+Display:
+
+Active Opportunities
+
+Potential Longs
+
+Potential Shorts
+
+Best Current Setup
+
+Memory Alignment
+
+Market Opportunity Score
+
+====================================================
+FALSE SIGNAL REDUCTION
+======================
+
+Use memory to suppress weak setups.
+
+Example:
+
+Potential Long detected
+
+↓
+
+Memory indicates repeated failures
+
+↓
+
+Opportunity downgraded
+
+↓
+
+No signal generated
+
+====================================================
+CONFIDENCE EVOLUTION
+====================
+
+Store:
+
+Confidence evolution before entry.
+
+Example:
+
+65%
+
+72%
+
+81%
+
+88%
+
+92%
+
+LONG confirmed
+
+This helps explain why a trade was taken.
+
+====================================================
+MULTI-LAYER AI
+==============
+
+Layer 1
+
+Live Monitoring
+
+Layer 2
+
+Memory Evaluation
+
+Layer 3
+
+Technical Analysis
+
+Layer 4
+
+Decision Engine
+
+Layer 5
+
+Trade Approval
+
+====================================================
+ACTIVE MARKET ASSISTANT
+=======================
+
+The chart should feel like:
+
+An AI trader sitting next to the user.
+
+Constantly monitoring.
+
+Constantly evaluating.
+
+Constantly ranking opportunities.
+
+====================================================
+VALIDATION
+==========
+
+Verify:
+
+Live opportunities appear.
+
+Confidence updates.
+
+Memory influences opportunities.
+
+Official signals remain candle-close based.
+
+No duplicate signals.
+
+No excessive noise.
+
+====================================================
+SUCCESS CRITERIA
+================
+
+Task complete only if:
+
+1. Live Market Mode exists.
+2. Potential Long system exists.
+3. Potential Short system exists.
+4. Opportunity Score exists.
+5. Setup Watchlist exists.
+6. Memory affects live opportunities.
+7. Official candle-close decisions remain intact.
+8. LuxAlgo-style experience achieved.
+9. Typecheck passes.
+10. Smoke tests pass.
+
+Final result:
+
+The user can see opportunities developing in real time before official AI entries are confirmed.

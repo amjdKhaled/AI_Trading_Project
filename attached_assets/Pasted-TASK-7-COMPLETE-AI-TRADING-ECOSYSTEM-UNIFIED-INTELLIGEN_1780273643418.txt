@@ -1,0 +1,629 @@
+TASK #7 – COMPLETE AI TRADING ECOSYSTEM (UNIFIED INTELLIGENCE ARCHITECTURE)
+
+OBJECTIVE
+
+The project currently contains multiple powerful systems:
+
+Live Chart
+
+AI Decision Engine
+
+AI Memory
+
+AI Chart Analyzer
+
+Pattern Engine
+
+Trade Manager
+
+Historical Analytics
+
+Replay Engine
+
+Diagnostics
+
+Performance Dashboard
+
+These systems currently exist as separate modules.
+
+I want them transformed into ONE unified AI ecosystem.
+
+The final system should behave like a professional AI trader.
+
+====================================================
+FINAL VISION
+============
+
+The user should not feel like they are using:
+
+A chart
+
+A signal engine
+
+A memory page
+
+An analyzer
+
+Instead:
+
+The user should feel like they are interacting with a single intelligent trading entity.
+
+====================================================
+MASTER ARCHITECTURE
+===================
+
+LIVE MARKET
+
+↓
+
+LIVE CHART
+
+↓
+
+TECHNICAL ANALYSIS
+
+↓
+
+PATTERN ENGINE
+
+↓
+
+MARKET STRUCTURE ENGINE
+
+↓
+
+AI MEMORY
+
+↓
+
+AI DECISION ENGINE
+
+↓
+
+TRADE MANAGER
+
+↓
+
+ACTIVE TRADE ENGINE
+
+↓
+
+TRADE OUTCOME
+
+↓
+
+LESSON GENERATION
+
+↓
+
+MEMORY UPDATE
+
+↓
+
+FUTURE DECISIONS IMPROVE
+
+====================================================
+SYSTEM 1
+LIVE CHART
+==========
+
+The Live Chart becomes the visual execution layer.
+
+Responsibilities:
+
+Market Data
+
+Candles
+
+Volume
+
+Indicators
+
+Patterns
+
+Trade Rendering
+
+Trade Lifecycle Rendering
+
+Active Trade Visualization
+
+Historical Trade Visualization
+
+The chart must always reflect:
+
+Current AI thinking
+
+Current AI confidence
+
+Current AI trade state
+
+====================================================
+SYSTEM 2
+AI DECISION ENGINE
+==================
+
+The AI Decision Engine becomes the brain.
+
+Responsibilities:
+
+Analyze market
+
+Analyze memory
+
+Analyze patterns
+
+Analyze structure
+
+Approve trades
+
+Reject trades
+
+Adjust confidence
+
+Adjust trade grade
+
+Adjust risk assessment
+
+Generate:
+
+LONG
+
+SHORT
+
+NO_TRADE
+
+====================================================
+SYSTEM 3
+AI MEMORY
+=========
+
+The AI Memory becomes experience.
+
+Responsibilities:
+
+Store lessons
+
+Store failures
+
+Store winners
+
+Store losers
+
+Store setups
+
+Store regimes
+
+Store symbol statistics
+
+Store reasoning
+
+The AI Memory must influence:
+
+Every future decision.
+
+====================================================
+SYSTEM 4
+AI CHART
+========
+
+AI Chart must not become a separate intelligence.
+
+AI Chart and AI Decision Engine must share:
+
+Same memory
+
+Same lessons
+
+Same rankings
+
+Same statistics
+
+Same confidence logic
+
+Same failure logic
+
+Same winner logic
+
+Same reasoning framework
+
+====================================================
+UNIFIED KNOWLEDGE
+=================
+
+If AI Chart learns something:
+
+AI Memory should know it.
+
+If AI Memory learns something:
+
+AI Decision Engine should know it.
+
+If AI Decision Engine learns something:
+
+AI Chart should know it.
+
+One shared intelligence layer.
+
+====================================================
+CENTRAL KNOWLEDGE GRAPH
+=======================
+
+Create a shared knowledge layer.
+
+Everything writes to it.
+
+Everything reads from it.
+
+Sources:
+
+Lessons
+
+Patterns
+
+Failures
+
+Winners
+
+Losers
+
+Regimes
+
+Setups
+
+Symbols
+
+Trade Outcomes
+
+====================================================
+AI LEARNING LOOP
+================
+
+Market
+
+↓
+
+Trade
+
+↓
+
+Outcome
+
+↓
+
+Lesson
+
+↓
+
+Memory Update
+
+↓
+
+Knowledge Graph Update
+
+↓
+
+Future Decisions Improve
+
+Repeat forever.
+
+====================================================
+REAL-TIME LEARNING
+==================
+
+The AI should continuously improve.
+
+Not daily.
+
+Not manually.
+
+Immediately after trade closes.
+
+The next decision should already benefit from the newest lesson.
+
+====================================================
+TRADE INTELLIGENCE
+==================
+
+Every trade should contain:
+
+Technical Context
+
+Pattern Context
+
+Structure Context
+
+Memory Context
+
+Reasoning Context
+
+Outcome Context
+
+All stored.
+
+All reusable.
+
+====================================================
+GLOBAL SETUP RANKING
+====================
+
+Create:
+
+Setup Intelligence Layer
+
+Examples:
+
+Trend Pullback
+
+Breakout
+
+Breakout Retest
+
+VWAP Reclaim
+
+EMA Continuation
+
+Liquidity Sweep
+
+Every setup should have:
+
+Win Rate
+
+RR
+
+Memory Impact
+
+Historical Performance
+
+AI Confidence Profile
+
+====================================================
+GLOBAL SYMBOL RANKING
+=====================
+
+Create:
+
+Symbol Intelligence Layer
+
+Examples:
+
+TSLA
+
+NVDA
+
+META
+
+AMD
+
+AAPL
+
+MSFT
+
+QQQ
+
+Track:
+
+Win Rate
+
+RR
+
+Memory Effectiveness
+
+Setup Performance
+
+====================================================
+GLOBAL REGIME RANKING
+=====================
+
+Create:
+
+Regime Intelligence Layer
+
+Trending Up
+
+Trending Down
+
+Range
+
+Volatile
+
+Low Volatility
+
+Track:
+
+Win Rate
+
+RR
+
+Confidence
+
+Memory Effectiveness
+
+====================================================
+AI SELF-AWARENESS
+=================
+
+The AI should understand itself.
+
+Questions it should answer:
+
+What am I best at?
+
+What am I worst at?
+
+Which setup performs best?
+
+Which setup performs worst?
+
+Which regime is strongest?
+
+Which regime is weakest?
+
+Which symbol is strongest?
+
+Which symbol is weakest?
+
+====================================================
+DECISION EXPLAINABILITY
+=======================
+
+Every decision must be explainable.
+
+The AI should be able to tell the user:
+
+Why entered.
+
+Why rejected.
+
+Why confidence changed.
+
+Why memory agreed.
+
+Why memory disagreed.
+
+Why risk changed.
+
+====================================================
+LIVE MARKET EXPERIENCE
+======================
+
+The platform should feel alive.
+
+While market is open:
+
+Opportunities forming
+
+Potential Longs
+
+Potential Shorts
+
+Memory influence
+
+Trade health
+
+Confidence evolution
+
+Everything updates continuously.
+
+====================================================
+PROFESSIONAL TRADING EXPERIENCE
+===============================
+
+The final user experience should feel like:
+
+LuxAlgo
+
+Institutional Research
+
+Professional Trading Desk
+
+AI Hedge Fund Assistant
+
+But enhanced by:
+
+AI Memory
+
+Self Learning
+
+Replay Validation
+
+Diagnostics
+
+Performance Analytics
+
+====================================================
+MASTER COMMAND CENTER
+=====================
+
+Create a unified command center showing:
+
+AI Status
+
+Memory Status
+
+Current Model
+
+Fallback Model
+
+Learning Status
+
+Performance Status
+
+Trade Status
+
+Best Setup
+
+Best Symbol
+
+Best Regime
+
+Learning Effectiveness
+
+AI Quality Score
+
+====================================================
+FINAL SYSTEM TEST
+=================
+
+Before marking complete:
+
+Trace a full path:
+
+Market Data
+
+↓
+
+AI Decision
+
+↓
+
+Trade Creation
+
+↓
+
+Active Trade
+
+↓
+
+TP/SL Hit
+
+↓
+
+Lesson Creation
+
+↓
+
+Memory Update
+
+↓
+
+Future Decision
+
+Verify every connection works.
+
+====================================================
+SUCCESS CRITERIA
+================
+
+Task complete only if:
+
+1. Live Chart connected.
+2. AI Decision connected.
+3. AI Memory connected.
+4. AI Chart connected.
+5. Trade Manager connected.
+6. Replay Engine connected.
+7. Diagnostics connected.
+8. Dashboard connected.
+9. Lessons influence future trades.
+10. New trade outcomes update memory.
+11. Future decisions use updated memory.
+12. Shared intelligence layer exists.
+13. Typecheck passes.
+14. Smoke tests pass.
+15. Full architecture report generated.
+
+FINAL RESULT:
+
+The project is no longer a collection of features.
+
+It becomes a complete self-learning AI trading ecosystem.
