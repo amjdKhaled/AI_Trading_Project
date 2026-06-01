@@ -10,8 +10,7 @@
  *   https://www.tradingview.com/charting-library-docs/latest/connecting_data/UDF/
  *
  * Data sources:
- *   - 5m / 15m intraday  → Polygon SIP via fetchPolygonBars (RTH-filtered)
- *   - 60m / D / W / M     → yfinance via fetchHistory
+ *   - All timeframes (5m, 15m, 1h, 1d, 1w, 1M) → Polygon SIP via fetchPolygonBars (RTH-filtered for intraday)
  *
  * UDF endpoints implemented:
  *   GET /api/udf/config             – datafeed feature list
@@ -105,7 +104,7 @@ router.get("/udf/symbols", (req, res) => {
     intraday_multipliers: ["5", "15", "60"],
     supported_resolutions: SUPPORTED_RESOLUTIONS,
     volume_precision:     0,
-    data_status:          "delayed_streaming",
+    data_status:          "streaming",
   });
 });
 

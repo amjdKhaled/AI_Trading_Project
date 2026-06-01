@@ -583,6 +583,31 @@ paths:
                   error:
                     type: string
 
+  /diagnostics:
+    get:
+      operationId: getMarketDiagnostics
+      tags: [health]
+      summary: Polygon market-data diagnostics for a symbol
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: interval
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "5m"
+      responses:
+        "200":
+          description: Live Polygon snapshot, latest bars, and WebSocket status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketDiagnostics"
+
   /news:
     get:
       operationId: getNews
@@ -615,6 +640,62 @@ paths:
 
 components:
   schemas:
+    MarketDiagnostics:
+      type: object
+      required: [symbol, interval, fetchedAt, latestBars, websocket]
+      properties:
+        symbol:
+          type: string
+        interval:
+          type: string
+        fetchedAt:
+          type: string
+          format: date-time
+        snapshot:
+          $ref: "#/components/schemas/DiagnosticsSnapshot"
+          nullable: true
+        latestBars:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiagnosticsBar"
+        websocket:
+          $ref: "#/components/schemas/DiagnosticsWsStatus"
+
+    DiagnosticsSnapshot:
+      type: object
+      required: [price, open, high, low, volume, prevClose]
+      properties:
+        price:     { type: number }
+        open:      { type: number }
+        high:      { type: number }
+        low:       { type: number }
+        volume:    { type: number }
+        prevClose: { type: number }
+
+    DiagnosticsBar:
+      type: object
+      required: [time, open, high, low, close, volume]
+      properties:
+        time:   { type: integer }
+        open:   { type: number }
+        high:   { type: number }
+        low:    { type: number }
+        close:  { type: number }
+        volume: { type: number }
+
+    DiagnosticsWsStatus:
+      type: object
+      required: [status, authenticated]
+      properties:
+        status:
+          type: string
+          enum: [realtime, delayed, connecting, offline]
+        url:
+          type: string
+          nullable: true
+        authenticated:
+          type: boolean
+
     NewsItem:
       type: object
       required: [title, publishedUtc, articleUrl, source, tickers]

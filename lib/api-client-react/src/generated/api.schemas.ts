@@ -5,6 +5,49 @@
  * Trading Signal Platform API
  * OpenAPI spec version: 0.1.0
  */
+export interface DiagnosticsSnapshot {
+  price: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  prevClose: number;
+}
+
+export interface DiagnosticsBar {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export type DiagnosticsWsStatusStatus = typeof DiagnosticsWsStatusStatus[keyof typeof DiagnosticsWsStatusStatus];
+
+
+export const DiagnosticsWsStatusStatus = {
+  realtime: 'realtime',
+  delayed: 'delayed',
+  connecting: 'connecting',
+  offline: 'offline',
+} as const;
+
+export interface DiagnosticsWsStatus {
+  status: DiagnosticsWsStatusStatus;
+  url?: string | null;
+  authenticated: boolean;
+}
+
+export interface MarketDiagnostics {
+  symbol: string;
+  interval: string;
+  fetchedAt: string;
+  snapshot?: DiagnosticsSnapshot | null;
+  latestBars: DiagnosticsBar[];
+  websocket: DiagnosticsWsStatus;
+}
+
 export interface NewsItem {
   title: string;
   publishedUtc: string;
@@ -1006,6 +1049,11 @@ export type GetReplayStatus404 = {
 
 export type GetHistoricalReplayStatus404 = {
   error?: string;
+};
+
+export type GetMarketDiagnosticsParams = {
+symbol: string;
+interval?: string;
 };
 
 export type GetNewsParams = {

@@ -231,6 +231,18 @@ function startMarketStatusHeartbeat() {
   marketStatusTimer = setInterval(broadcastMarketStatus, 60_000);
 }
 
+// ── WS status export ──────────────────────────────────────────────────────────
+// Returns the current Polygon WebSocket connection state for diagnostics.
+export function getWsStatus(): {
+  status:        "realtime" | "delayed" | "connecting" | "offline";
+  url:           string | null;
+  authenticated: boolean;
+} {
+  if (wsPermanentlyDisabled) return { status: "offline",    url: null,       authenticated: false };
+  if (polygonAuthed)         return { status: realtimeAuthFailed ? "delayed" : "realtime", url: polygonUrl, authenticated: true };
+  return                              { status: "connecting", url: polygonUrl, authenticated: false };
+}
+
 // ── Public API: attach to HTTP server ─────────────────────────────────────────
 
 export function setupWebSocket(server: Server) {

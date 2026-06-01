@@ -1,0 +1,206 @@
+POLYGON REAL-TIME API MIGRATION
+
+I now have a Polygon.io real-time subscription and I want the project migrated completely away from the current market data provider and onto Polygon as the primary market data source.
+
+Goal:
+Create a single clean Polygon-based data architecture for historical data, live data, volume data, and market status.
+
+====================================================
+PHASE 1 — AUDIT CURRENT DATA SOURCES
+====================================
+
+First perform a complete audit.
+
+Identify:
+
+* all existing market data providers
+* all websocket providers
+* all historical data providers
+* all quote providers
+* all trade providers
+* all candle providers
+
+Generate a report showing:
+
+File
+Current Provider
+Purpose
+Can Remove? (Yes/No)
+
+Do NOT migrate blindly.
+
+====================================================
+PHASE 2 — POLYGON BECOMES PRIMARY PROVIDER
+==========================================
+
+Replace the current provider with Polygon.
+
+Polygon must become the source of:
+
+* historical candles
+* live candles
+* live trades
+* live quotes
+* volume
+* market status
+
+All market data should come from Polygon.
+
+No mixed providers.
+
+====================================================
+PHASE 3 — HISTORICAL DATA
+=========================
+
+Use Polygon aggregates endpoint.
+
+Requirements:
+
+* 5 minute candles
+* 15 minute candles
+* full available history
+* OHLCV
+* proper pagination
+* proper caching
+
+Verify:
+
+Open
+High
+Low
+Close
+Volume
+
+match Polygon values exactly.
+
+====================================================
+PHASE 4 — REAL-TIME DATA
+========================
+
+Use Polygon WebSocket streams.
+
+Requirements:
+
+* live stock data
+* real-time updates
+* automatic reconnect
+* heartbeat monitoring
+* subscription management
+
+The chart must continue updating if connection drops and reconnects.
+
+====================================================
+PHASE 5 — AI INTEGRATION
+========================
+
+The AI system must receive Polygon data directly.
+
+Pipeline:
+
+Polygon Candle Close
+↓
+Market Snapshot
+↓
+AI Analysis
+↓
+BUY / SELL / WAIT
+
+No stale data.
+
+No delayed provider.
+
+No simulated candles.
+
+====================================================
+PHASE 6 — CANDLE CLOSE LOGIC
+============================
+
+AI decisions must happen ONLY after a 5-minute candle closes.
+
+Workflow:
+
+Polygon confirms candle close
+↓
+Build market snapshot
+↓
+Send to AI
+↓
+AI Decision
+↓
+Draw trade
+
+Do NOT analyze incomplete candles.
+
+Do NOT create entries from partially formed candles.
+
+====================================================
+PHASE 7 — CHART VERIFICATION
+============================
+
+Verify:
+
+* chart prices match Polygon
+* volume matches Polygon
+* candle timestamps match Polygon
+* 5m candles match Polygon
+* 15m candles match Polygon
+
+Create diagnostics page showing:
+
+Polygon Value
+Chart Value
+
+for validation.
+
+====================================================
+PHASE 8 — PERFORMANCE OPTIMIZATION
+==================================
+
+Avoid unnecessary API calls.
+
+Requirements:
+
+* websocket preferred for live
+* cache historical data
+* avoid duplicate requests
+* avoid rebuilding candles incorrectly
+
+Target:
+
+Smooth live chart
+Low latency
+Fast AI decisions
+
+====================================================
+PHASE 9 — REMOVE LEGACY PROVIDERS
+=================================
+
+After Polygon migration succeeds:
+
+Remove:
+
+* old websocket implementations
+* old candle sources
+* unused provider code
+* dead market-data paths
+
+Keep only Polygon.
+
+====================================================
+PHASE 10 — FINAL REPORT
+=======================
+
+Provide a migration report:
+
+1. Files changed
+2. Old providers removed
+3. Polygon endpoints used
+4. WebSocket channels used
+5. Historical data architecture
+6. Live data architecture
+7. AI integration path
+8. Validation results
+
+Most important:
+
+The chart, indicators, signal engine, and AI must all consume the exact same Polygon market data source so there is no mismatch between what the chart shows and what the AI analyzes.

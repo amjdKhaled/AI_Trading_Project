@@ -9,9 +9,10 @@ import WatchlistPage from "@/pages/WatchlistPage";
 import AiMemoryPage from "@/pages/AiMemoryPage";
 import AiChartPage from "@/pages/AiChartPage";
 import PerformancePage from "@/pages/PerformancePage";
+import DiagnosticsPage from "@/pages/DiagnosticsPage";
 import { ActiveSymbolProvider } from "@/lib/ActiveSymbolContext";
 import { useSignalAlerts } from "@/hooks/useSignalAlerts";
-import { BarChart2, LineChart, ListOrdered, Activity, Database, Eye, TrendingUp } from "lucide-react";
+import { BarChart2, LineChart, ListOrdered, Activity, Database, Eye, TrendingUp, FlaskConical } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,7 +28,8 @@ function TopNav() {
     { href: "/watchlist", label: "Watchlist", icon: <ListOrdered size={13} /> },
     { href: "/ai-memory", label: "AI Memory", icon: <Database size={13} /> },
     { href: "/ai-chart", label: "AI Chart", icon: <Eye size={13} /> },
-    { href: "/performance", label: "Performance", icon: <TrendingUp size={13} /> },
+    { href: "/performance",  label: "Performance",  icon: <TrendingUp    size={13} /> },
+    { href: "/diagnostics", label: "Diagnostics",  icon: <FlaskConical  size={13} /> },
   ];
 
   return (
@@ -72,7 +74,8 @@ function AppLayout() {
           <Route path="/watchlist" component={WatchlistPage} />
           <Route path="/ai-memory" component={AiMemoryPage} />
           <Route path="/ai-chart" component={AiChartPage} />
-          <Route path="/performance" component={PerformancePage} />
+          <Route path="/performance"  component={PerformancePage}  />
+          <Route path="/diagnostics" component={DiagnosticsPage}  />
           <Route component={NotFound} />
         </Switch>
       </div>

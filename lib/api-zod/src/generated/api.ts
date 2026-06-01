@@ -850,6 +850,44 @@ export const GetHistoricalReplayStatusResponse = zod.object({
 
 
 /**
+ * @summary Polygon market-data diagnostics for a symbol
+ */
+export const getMarketDiagnosticsQueryIntervalDefault = `5m`;
+
+export const GetMarketDiagnosticsQueryParams = zod.object({
+  "symbol": zod.coerce.string(),
+  "interval": zod.coerce.string().default(getMarketDiagnosticsQueryIntervalDefault)
+})
+
+export const GetMarketDiagnosticsResponse = zod.object({
+  "symbol": zod.string(),
+  "interval": zod.string(),
+  "fetchedAt": zod.coerce.date(),
+  "snapshot": zod.object({
+  "price": zod.number(),
+  "open": zod.number(),
+  "high": zod.number(),
+  "low": zod.number(),
+  "volume": zod.number(),
+  "prevClose": zod.number()
+}).nullish(),
+  "latestBars": zod.array(zod.object({
+  "time": zod.number(),
+  "open": zod.number(),
+  "high": zod.number(),
+  "low": zod.number(),
+  "close": zod.number(),
+  "volume": zod.number()
+})),
+  "websocket": zod.object({
+  "status": zod.enum(['realtime', 'delayed', 'connecting', 'offline']),
+  "url": zod.string().nullish(),
+  "authenticated": zod.boolean()
+})
+})
+
+
+/**
  * @summary Get recent news headlines for a symbol
  */
 export const getNewsQueryLimitDefault = 10;
