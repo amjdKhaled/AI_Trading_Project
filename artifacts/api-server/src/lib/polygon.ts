@@ -1,8 +1,8 @@
 /**
  * Polygon.io market-data client.
  *
- * Used for all intraday (5m, 15m) historical bars and live price snapshots.
- * Daily / weekly / monthly data is still served by yfinance.
+ * Used for ALL historical bars (5m, 15m, 1h, 1d, 1w, 1M) and live price snapshots.
+ * Requires Stocks Starter+ (SLP) plan for real-time WebSocket and higher REST rate limits.
  *
  * Polygon's bars come from the consolidated SIP tape (all US exchanges),
  * so OHLCV values match TradingView, ThinkOrSwim, and institutional terminals.
@@ -22,10 +22,14 @@ const REST_BASE = "https://api.polygon.io";
 const apiKey = () => process.env.POLYGON_API_KEY ?? "";
 
 // Polygon uses "multiplier/timespan" pairs. We expose the same string keys
-// our routes already use ("5m", "15m") and translate at the edge.
+// our routes already use and translate at the edge.
 const TIMEFRAME_MAP: Record<string, { multiplier: number; timespan: string }> = {
   "5m":  { multiplier: 5,  timespan: "minute" },
   "15m": { multiplier: 15, timespan: "minute" },
+  "1h":  { multiplier: 1,  timespan: "hour"   },
+  "1d":  { multiplier: 1,  timespan: "day"    },
+  "1w":  { multiplier: 1,  timespan: "week"   },
+  "1M":  { multiplier: 1,  timespan: "month"  },
 };
 
 export interface Bar {
@@ -82,10 +86,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
  * Fetch a Polygon URL with automatic 429 backoff.
- * Polygon's free tier allows only 5 requests/minute, so on rate-limit we wait
- * a fixed 13 s (just over the 12 s "smooth" window of 5/min) and retry up to
- * `maxRetries` times. This keeps cold-cache pagination from failing without
- * needing per-request user intervention.
+ * SLP plan has generous rate limits so 429s should be rare, but we keep a short
+ * 2 s retry as a defensive fallback for unexpected bursts.
  */
 async function polygonFetch(url: string, maxRetries = 3): Promise<unknown> {
   const u = new URL(url);
@@ -101,8 +103,8 @@ async function polygonFetch(url: string, maxRetries = 3): Promise<unknown> {
     });
 
     if (res.status === 429 && attempt < maxRetries) {
-      // Rate-limited. Wait for the per-minute bucket to refill, then retry.
-      await sleep(13_000);
+      // Rate-limited — wait briefly then retry.
+      await sleep(2_000);
       continue;
     }
     if (!res.ok) {
@@ -181,10 +183,14 @@ export async function fetchPolygonBars(symbol: string, interval: string, days = 
   // Polygon returns ascending order already; sort as a defensive measure.
   bars.sort((a, b) => a.time - b.time);
 
-  // Filter to Regular Trading Hours so OHLCV, volume profile, and bar boundaries
-  // match TradingView's default US-equities session. Drops pre-market (04:00–09:30
-  // ET) and after-hours (16:00–20:00 ET), and excludes the 16:00 closing-cross bar.
-  return bars.filter((b) => isRegularTradingHours(b.time));
+  // For minute-based intervals only: filter to Regular Trading Hours so OHLCV,
+  // volume profile, and bar boundaries match TradingView's default US-equities
+  // session. Drops pre-market (04:00–09:30 ET) and after-hours (16:00–20:00 ET).
+  // Daily / weekly / monthly bars are whole-session aggregates — no RTH filter needed.
+  if (tf.timespan === "minute") {
+    return bars.filter((b) => isRegularTradingHours(b.time));
+  }
+  return bars;
 }
 
 // ── Live snapshot ────────────────────────────────────────────────────────────
