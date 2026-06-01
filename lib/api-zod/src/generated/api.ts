@@ -208,6 +208,34 @@ export const PostCandleDecisionResponse = zod.object({
 
 
 /**
+ * @summary Compute real-time health score for the current active approved AI trade
+ */
+export const getAiActiveHealthQueryTimeframeDefault = `5m`;
+
+export const GetAiActiveHealthQueryParams = zod.object({
+  "symbol": zod.coerce.string(),
+  "timeframe": zod.coerce.string().default(getAiActiveHealthQueryTimeframeDefault)
+})
+
+export const GetAiActiveHealthResponse = zod.object({
+  "ok": zod.boolean(),
+  "health": zod.union([zod.object({
+  "score": zod.number().describe('Composite health score 0–100'),
+  "breakdown": zod.object({
+  "emaTrend": zod.number().describe('EMA trend alignment (0–25)'),
+  "momentum": zod.number().describe('RSI momentum score (0–20)'),
+  "volume": zod.number().describe('Volume confirmation (0–15)'),
+  "priceProgress": zod.number().describe('Price progress toward TP (0–25)'),
+  "patternIntegrity": zod.number().describe('Pattern\/setup integrity (0–10)'),
+  "memoryAlignment": zod.number().describe('Memory impact alignment (0–5)')
+}),
+  "direction": zod.enum(['improving', 'deteriorating', 'neutral']).describe('Price movement direction relative to trade thesis over last 5 bars'),
+  "summary": zod.string().describe('One-sentence plain-English health summary')
+}),zod.null()]).optional().describe('null when no active approved trade exists')
+})
+
+
+/**
  * @summary Get OHLCV bars for a symbol
  */
 export const listBarsQueryTimeframeDefault = `5m`;

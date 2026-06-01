@@ -206,6 +206,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/AiCandleDecision"
 
+  /signals/ai-active/health:
+    get:
+      operationId: getAiActiveHealth
+      tags: [signals]
+      summary: Compute real-time health score for the current active approved AI trade
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: timeframe
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "5m"
+      responses:
+        "200":
+          description: Trade health score and dimensional breakdown (null when no active trade)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiActiveHealthResponse"
+
   /bars:
     get:
       operationId: listBars
@@ -659,6 +684,43 @@ components:
           type: integer
         total:
           type: integer
+
+    AiTradeHealth:
+      type: object
+      required: [score, breakdown, direction, summary]
+      properties:
+        score:
+          type: integer
+          description: Composite health score 0–100
+        breakdown:
+          type: object
+          required: [emaTrend, momentum, volume, priceProgress, patternIntegrity, memoryAlignment]
+          properties:
+            emaTrend:         { type: integer, description: "EMA trend alignment (0–25)" }
+            momentum:         { type: integer, description: "RSI momentum score (0–20)" }
+            volume:           { type: integer, description: "Volume confirmation (0–15)" }
+            priceProgress:    { type: integer, description: "Price progress toward TP (0–25)" }
+            patternIntegrity: { type: integer, description: "Pattern/setup integrity (0–10)" }
+            memoryAlignment:  { type: integer, description: "Memory impact alignment (0–5)" }
+        direction:
+          type: string
+          enum: [improving, deteriorating, neutral]
+          description: Price movement direction relative to trade thesis over last 5 bars
+        summary:
+          type: string
+          description: One-sentence plain-English health summary
+
+    AiActiveHealthResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        health:
+          description: null when no active approved trade exists
+          oneOf:
+            - $ref: "#/components/schemas/AiTradeHealth"
+            - type: "null"
 
     ChartAnalysisRequest:
       type: object

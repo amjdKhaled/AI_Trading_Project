@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './aiActiveHealthResponse';
 export * from './aiCandleDecision';
 export * from './aiCandleDecisionCandidateSide';
 export * from './aiCandleDecisionNewsSentiment';
@@ -24,6 +25,9 @@ export * from './aiMemorySummaryStrategyStats';
 export * from './aiMemorySummarySymbolStats';
 export * from './aiPattern';
 export * from './aiStatusExtended';
+export * from './aiTradeHealth';
+export * from './aiTradeHealthBreakdown';
+export * from './aiTradeHealthDirection';
 export * from './bar';
 export * from './candleDecisionRequest';
 export * from './chartAnalysis';
@@ -33,6 +37,7 @@ export * from './chartAnalysisRequest';
 export * from './chartAnalysisResponse';
 export * from './chartAnalysisTrend';
 export * from './chartAnalysisVolumeBehavior';
+export * from './getAiActiveHealthParams';
 export * from './getAiDecisionStatsParams';
 export * from './getReplayStatus404';
 export * from './getSignalAlertsParams';

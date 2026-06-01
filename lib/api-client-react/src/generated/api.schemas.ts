@@ -188,6 +188,49 @@ export interface AiMemorySummary {
   updatedAt: string;
 }
 
+export type AiTradeHealthBreakdown = {
+  /** EMA trend alignment (0–25) */
+  emaTrend: number;
+  /** RSI momentum score (0–20) */
+  momentum: number;
+  /** Volume confirmation (0–15) */
+  volume: number;
+  /** Price progress toward TP (0–25) */
+  priceProgress: number;
+  /** Pattern/setup integrity (0–10) */
+  patternIntegrity: number;
+  /** Memory impact alignment (0–5) */
+  memoryAlignment: number;
+};
+
+/**
+ * Price movement direction relative to trade thesis over last 5 bars
+ */
+export type AiTradeHealthDirection = typeof AiTradeHealthDirection[keyof typeof AiTradeHealthDirection];
+
+
+export const AiTradeHealthDirection = {
+  improving: 'improving',
+  deteriorating: 'deteriorating',
+  neutral: 'neutral',
+} as const;
+
+export interface AiTradeHealth {
+  /** Composite health score 0–100 */
+  score: number;
+  breakdown: AiTradeHealthBreakdown;
+  /** Price movement direction relative to trade thesis over last 5 bars */
+  direction: AiTradeHealthDirection;
+  /** One-sentence plain-English health summary */
+  summary: string;
+}
+
+export interface AiActiveHealthResponse {
+  ok: boolean;
+  /** null when no active approved trade exists */
+  health?: AiTradeHealth | null;
+}
+
 export interface ChartAnalysisRequest {
   /** Base64-encoded chart image (PNG or JPEG) */
   imageBase64: string;
@@ -582,6 +625,11 @@ symbol?: string;
 
 export type GetAiDecisionStatsParams = {
 symbol?: string;
+timeframe?: string;
+};
+
+export type GetAiActiveHealthParams = {
+symbol: string;
 timeframe?: string;
 };
 

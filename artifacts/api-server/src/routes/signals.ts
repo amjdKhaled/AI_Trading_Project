@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-zod";
 import { generateSignals } from "../lib/analyzer/signals";
 import { simulateLifecycle } from "../lib/analyzer/lifecycle";
+import { computeTradeHealth } from "../lib/analyzer/trade-health";
 import { fetchHistory } from "./history";
 import { isOllamaAvailable } from "../lib/ai/ollama";
 import { reflectOnTrade, reflectWithoutAi } from "../lib/ai/reflection";
@@ -519,6 +520,60 @@ router.get("/signals/ai-active", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err, symbol, timeframe }, "ai-active lookup failed");
     res.status(500).json({ error: "Failed to fetch active AI decision" });
+  }
+});
+
+// ── GET /signals/ai-active/health ─────────────────────────────
+// Computes a 0-100 health score for the current open approved AI trade
+// across 6 dimensions: EMA trend, RSI momentum, volume, price progress,
+// pattern integrity, and memory alignment.
+// Returns { ok, health: null } when no active trade exists.
+router.get("/signals/ai-active/health", async (req, res): Promise<void> => {
+  const symbol    = typeof req.query.symbol    === "string" ? req.query.symbol    : null;
+  const timeframe = typeof req.query.timeframe === "string" ? req.query.timeframe : "5m";
+  if (!symbol) { res.status(400).json({ error: "symbol query param required" }); return; }
+
+  try {
+    const rows = await db
+      .select()
+      .from(aiDecisionsTable)
+      .where(and(
+        eq(aiDecisionsTable.symbol,    symbol.toUpperCase().trim()),
+        eq(aiDecisionsTable.timeframe, timeframe),
+        eq(aiDecisionsTable.verdict,   "APPROVE"),
+        isNull(aiDecisionsTable.outcome),
+      ))
+      .orderBy(desc(aiDecisionsTable.createdAt))
+      .limit(1);
+
+    if (rows.length === 0) {
+      res.json({ ok: true, health: null });
+      return;
+    }
+
+    const row = rows[0];
+    const tc  = (row.technicalContext ?? {}) as Record<string, unknown>;
+    const memoryImpactScore = typeof tc.memoryImpactScore === "number" ? tc.memoryImpactScore : undefined;
+
+    const barsRaw = await fetchHistory(symbol.toUpperCase().trim(), timeframe);
+    const bars    = barsRaw as OhlcvBar[];
+
+    const health = computeTradeHealth(bars, {
+      side:              (row.candidateSide ?? "long") as "long" | "short",
+      entryPrice:        row.entryPrice ?? 0,
+      slPrice:           row.slPrice   ?? 0,
+      tpPrice:           row.tpPrice   ?? 0,
+      confidence:        row.confidence,
+      regime:            row.regime    ?? "ranging",
+      patterns:          row.patterns,
+      memoryImpactScore,
+    });
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ok: true, health });
+  } catch (err) {
+    req.log?.error({ err, symbol, timeframe }, "ai-active/health failed");
+    res.status(500).json({ error: "Failed to compute trade health" });
   }
 });
 

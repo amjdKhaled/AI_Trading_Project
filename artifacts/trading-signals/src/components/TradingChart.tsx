@@ -110,6 +110,8 @@ interface Props {
   resolvedAiDecisions?: ResolvedAiDecision[];
   /** Memory-enhanced APPROVE markers from a completed replay job */
   replayMarkers?: ReplayMarkerItem[];
+  /** Composite health score 0–100 for the active approved AI trade — drives badge in position SVG */
+  healthScore?: number;
 }
 
 const PRICE_SCALE_W = 68;
@@ -135,7 +137,7 @@ function avgBarRange(bars: Bar[], n = 50): number {
   return slice.reduce((sum, b) => sum + (b.high - b.low), 0) / slice.length;
 }
 
-export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [] }: Props) {
+export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResult, lastPrice, symbol, timeframe, intervalSec, isMarketOpen, realtimeAvailable, cryptoLiveBar, aiDecisions = [], onCandleClose, aiAnalyzing = false, activeApprovedDecision = null, resolvedAiDecisions = [], replayMarkers = [], healthScore }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef     = useRef<IChartApi | null>(null);
   const candleRef    = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -1103,6 +1105,19 @@ export function TradingChart({ bars, signals, aiSignals, activeTrade, tradeResul
                   fontFamily="'JetBrains Mono',Menlo,monospace">
                   AI
                 </text>
+                {/* Health score badge — only for the active approved trade */}
+                {m.isActive && healthScore != null && (
+                  <g>
+                    <rect x={m.x + 16} y={m.y - 9} width={54} height={18} rx={3}
+                      fill="#0c0f16e8" stroke={col} strokeWidth={0.8} opacity={0.95} />
+                    <text x={m.x + 43} y={m.y + 1}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fill={col} fontSize={8.5} fontWeight="800"
+                      fontFamily="'JetBrains Mono',Menlo,monospace">
+                      {m.isLong ? "LONG" : "SHORT"} {healthScore}
+                    </text>
+                  </g>
+                )}
               </g>
             );
           })}

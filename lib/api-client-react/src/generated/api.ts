@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AiActiveHealthResponse,
   AiCandleDecision,
   AiDecisionStats,
   AiMemorySummary,
@@ -29,6 +30,7 @@ import type {
   ChartAnalysisRecord,
   ChartAnalysisRequest,
   ChartAnalysisResponse,
+  GetAiActiveHealthParams,
   GetAiDecisionStatsParams,
   GetReplayStatus404,
   GetSignalAlertsParams,
@@ -767,6 +769,90 @@ export const usePostCandleDecision = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getPostCandleDecisionMutationOptions(options));
     }
+
+export const getGetAiActiveHealthUrl = (params: GetAiActiveHealthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/signals/ai-active/health?${stringifiedParams}` : `/api/signals/ai-active/health`
+}
+
+/**
+ * @summary Compute real-time health score for the current active approved AI trade
+ */
+export const getAiActiveHealth = async (params: GetAiActiveHealthParams, options?: RequestInit): Promise<AiActiveHealthResponse> => {
+
+  return customFetch<AiActiveHealthResponse>(getGetAiActiveHealthUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAiActiveHealthQueryKey = (params?: GetAiActiveHealthParams,) => {
+    return [
+    `/api/signals/ai-active/health`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAiActiveHealthQueryOptions = <TData = Awaited<ReturnType<typeof getAiActiveHealth>>, TError = ErrorType<unknown>>(params: GetAiActiveHealthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiActiveHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiActiveHealthQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiActiveHealth>>> = ({ signal }) => getAiActiveHealth(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiActiveHealth>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiActiveHealthQueryResult = NonNullable<Awaited<ReturnType<typeof getAiActiveHealth>>>
+export type GetAiActiveHealthQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Compute real-time health score for the current active approved AI trade
+ */
+
+export function useGetAiActiveHealth<TData = Awaited<ReturnType<typeof getAiActiveHealth>>, TError = ErrorType<unknown>>(
+ params: GetAiActiveHealthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiActiveHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiActiveHealthQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getListBarsUrl = (params: ListBarsParams,) => {
   const normalizedParams = new URLSearchParams();
