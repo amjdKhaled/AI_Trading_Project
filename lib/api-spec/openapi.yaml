@@ -352,6 +352,65 @@ paths:
               schema:
                 $ref: "#/components/schemas/SimilarityResponse"
 
+  /signals/snapshot-decision:
+    post:
+      operationId: postSnapshotDecision
+      tags: [signals]
+      summary: Build a pure-technical market snapshot and get an AI BUY/SELL/WAIT decision (no memory)
+      description: |
+        Fetches bars, runs the full Market Snapshot Engine (indicators, structure,
+        S/R, pivots, fibonacci, OBs, FVGs), then calls Ollama for a BUY/SELL/WAIT
+        decision without loading any AI memory context.
+        Hard rules: confidence ≥ 75, R:R ≥ 1.8, no BUY within 0.5 % of resistance,
+        no SELL within 0.5 % of support.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandleDecisionRequest"
+      responses:
+        "200":
+          description: Snapshot-based AI decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotDecision"
+
+  /signals/snapshot-decisions:
+    get:
+      operationId: listSnapshotDecisions
+      tags: [signals]
+      summary: List recent snapshot decisions for a symbol and timeframe
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: timeframe
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "5m"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        "200":
+          description: Array of snapshot decisions, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SnapshotDecisionRow"
+
   /signals/replay:
     post:
       operationId: startReplay
@@ -1400,6 +1459,82 @@ components:
           description: Win rate per week (most recent 12 weeks), oldest first
         updatedAt:
           type: string
+
+    SnapshotDecision:
+      type: object
+      required: [decision, confidence, reason, grade, strengths, weaknesses]
+      properties:
+        decision:
+          type: string
+          enum: [BUY, SELL, WAIT]
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+        reason:
+          type: string
+        entry:
+          type: ["number", "null"]
+        sl:
+          type: ["number", "null"]
+        tp:
+          type: ["number", "null"]
+        rr:
+          type: ["number", "null"]
+        grade:
+          type: string
+          enum: ["A+", A, B, C, WAIT]
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+
+    SnapshotDecisionRow:
+      type: object
+      required: [id, symbol, timeframe, candleTime, decision, confidence, reason, grade, createdAt]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        timeframe:
+          type: string
+        candleTime:
+          type: string
+          format: date-time
+        decision:
+          type: string
+          enum: [BUY, SELL, WAIT]
+        confidence:
+          type: integer
+        reason:
+          type: string
+        entry:
+          type: ["number", "null"]
+        sl:
+          type: ["number", "null"]
+        tp:
+          type: ["number", "null"]
+        rr:
+          type: ["number", "null"]
+        grade:
+          type: string
+          enum: ["A+", A, B, C, WAIT]
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
 
     ReplayJobStatus:
       type: object

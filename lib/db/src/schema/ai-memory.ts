@@ -171,3 +171,29 @@ export const aiDecisionsTable = pgTable("ai_decisions", {
 export const insertAiDecisionSchema = createInsertSchema(aiDecisionsTable).omit({ id: true, createdAt: true });
 export type InsertAiDecision = z.infer<typeof insertAiDecisionSchema>;
 export type AiDecisionRow = typeof aiDecisionsTable.$inferSelect;
+
+// ── ai_snapshot_decisions ─────────────────────────────────────────────────────
+// One row per snapshot-based AI decision — parallel to ai_decisions but runs
+// the pure-technical snapshot engine (no memory context).
+export const aiSnapshotDecisionsTable = pgTable("ai_snapshot_decisions", {
+  id:           serial("id").primaryKey(),
+  symbol:       text("symbol").notNull(),
+  timeframe:    text("timeframe").notNull().default("5m"),
+  candleTime:   timestamp("candle_time", { withTimezone: true }).notNull(),
+  decision:     text("decision").notNull(),
+  confidence:   integer("confidence").notNull().default(0),
+  reason:       text("reason").notNull().default(""),
+  entry:        real("entry"),
+  sl:           real("sl"),
+  tp:           real("tp"),
+  rr:           real("rr"),
+  grade:        text("grade").notNull().default("WAIT"),
+  strengths:    jsonb("strengths").$type<string[]>().notNull().default([]),
+  weaknesses:   jsonb("weaknesses").$type<string[]>().notNull().default([]),
+  snapshotJson: jsonb("snapshot_json").$type<Record<string, unknown>>(),
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const insertAiSnapshotDecisionSchema = createInsertSchema(aiSnapshotDecisionsTable).omit({ id: true, createdAt: true });
+export type InsertAiSnapshotDecision = z.infer<typeof insertAiSnapshotDecisionSchema>;
+export type AiSnapshotDecisionRow = typeof aiSnapshotDecisionsTable.$inferSelect;

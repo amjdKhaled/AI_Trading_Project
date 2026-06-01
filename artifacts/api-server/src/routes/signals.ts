@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and, gte, inArray, isNull, isNotNull, type SQL } from "drizzle-orm";
-import { db, signalsTable, aiDecisionsTable, aiLessonsTable } from "@workspace/db";
+import { db, signalsTable, aiDecisionsTable, aiLessonsTable, aiSnapshotDecisionsTable } from "@workspace/db";
 import {
   ListSignalsQueryParams,
   ListSignalsResponse,
@@ -20,6 +20,8 @@ import { filterCandleWithAi } from "../lib/ai/filter";
 import { runReplay, runHistoricalAiReplay } from "../lib/ai/replay";
 import type { ReplayResult, HistoricalReplayMarker } from "../lib/ai/replay";
 import { buildMarketContext, findSimilarHistoricalSetups } from "../lib/ai/market-context";
+import { buildMarketSnapshot } from "../lib/analyzer/marketSnapshot.js";
+import { filterCandleWithSnapshot } from "../lib/ai/snapshotFilter.js";
 import { getNewsSentiment } from "../lib/ai/news";
 import { checkOpenDecisions } from "../lib/ai/lifecycle-checker";
 import { autoReflectResolved } from "../lib/ai/auto-reflect";
@@ -1183,6 +1185,103 @@ router.post("/signals/ai-replay-historical", async (req, res): Promise<void> => 
       job.error  = (err instanceof Error) ? err.message : String(err);
     }
   })();
+});
+
+// ── POST /signals/snapshot-decision ──────────────────────────────────────────
+// Pure-technical snapshot: no AI memory loaded.
+// Fetches bars → buildMarketSnapshot → filterCandleWithSnapshot → persist → return.
+router.post("/signals/snapshot-decision", async (req, res): Promise<void> => {
+  const { symbol, timeframe, candleTime } = req.body as {
+    symbol?: unknown; timeframe?: unknown; candleTime?: unknown;
+  };
+
+  if (!symbol || typeof symbol !== "string" || symbol.length > 12) {
+    res.status(400).json({ error: "symbol is required (≤12 chars)" }); return;
+  }
+  if (!timeframe || typeof timeframe !== "string") {
+    res.status(400).json({ error: "timeframe is required" }); return;
+  }
+  if (!candleTime || typeof candleTime !== "number" || !isFinite(candleTime)) {
+    res.status(400).json({ error: "candleTime (epoch seconds) is required" }); return;
+  }
+
+  const intervalSec = TF_INTERVAL_SEC[timeframe] ?? 300;
+  const nowSec      = Math.floor(Date.now() / 1000);
+  if (candleTime + intervalSec > nowSec) {
+    res.status(400).json({ error: "Candle has not closed yet." }); return;
+  }
+
+  const sym = symbol.toUpperCase().trim();
+
+  try {
+    const htfTf = HTF_MAP[timeframe] ?? "15m";
+    const [barsRaw, htfBarsRaw] = await Promise.all([
+      fetchHistory(sym, timeframe),
+      fetchHistory(sym, htfTf),
+    ]);
+
+    if (!Array.isArray(barsRaw) || barsRaw.length < 50) {
+      res.status(422).json({ error: "Insufficient bars for snapshot analysis" }); return;
+    }
+
+    const bars    = barsRaw    as OhlcvBar[];
+    const htfBars = htfBarsRaw as OhlcvBar[];
+
+    const snapshot = buildMarketSnapshot(bars, htfBars, htfTf, sym, timeframe, candleTime);
+    const decision = await filterCandleWithSnapshot(snapshot);
+
+    // Persist (skip on duplicate candleTime for same symbol+timeframe)
+    try {
+      await db.insert(aiSnapshotDecisionsTable).values({
+        symbol:       sym,
+        timeframe,
+        candleTime:   new Date(candleTime * 1000),
+        decision:     decision.decision,
+        confidence:   decision.confidence,
+        reason:       decision.reason,
+        entry:        decision.entry ?? undefined,
+        sl:           decision.sl    ?? undefined,
+        tp:           decision.tp    ?? undefined,
+        rr:           decision.rr    ?? undefined,
+        grade:        decision.grade,
+        strengths:    decision.strengths,
+        weaknesses:   decision.weaknesses,
+        snapshotJson: snapshot as unknown as Record<string, unknown>,
+      });
+    } catch (dbErr) {
+      req.log?.warn({ sym, timeframe, candleTime, dbErr }, "snapshot-decision: duplicate — skipping insert");
+    }
+
+    res.json(decision);
+  } catch (err) {
+    req.log?.error({ err }, "snapshot-decision route error");
+    throw err;
+  }
+});
+
+// ── GET /signals/snapshot-decisions ───────────────────────────────────────────
+router.get("/signals/snapshot-decisions", async (req, res): Promise<void> => {
+  const sym = (String(req.query.symbol ?? "")).toUpperCase().trim();
+  const tf  = String(req.query.timeframe ?? "5m");
+  const lim = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+
+  if (!sym) {
+    res.status(400).json({ error: "symbol query param is required" }); return;
+  }
+
+  const rows = await db
+    .select()
+    .from(aiSnapshotDecisionsTable)
+    .where(
+      and(
+        eq(aiSnapshotDecisionsTable.symbol, sym),
+        eq(aiSnapshotDecisionsTable.timeframe, tf),
+      ),
+    )
+    .orderBy(desc(aiSnapshotDecisionsTable.createdAt))
+    .limit(lim);
+
+  res.json(rows);
 });
 
 // ── GET /signals/ai-replay-historical/:jobId ─────────────────────────────────

@@ -25,6 +25,16 @@ export interface ReplayResult {
      * @maximum 100
      */
   learningScore: number;
+  /**
+     * 0–100 memory value score (loss avoidance, WR improvement, PF improvement, trade filtration)
+     * @minimum 0
+     * @maximum 100
+     */
+  memoryValueScore?: number;
+  /** Count of noMem sl_hit outcomes that memory prevented by not approving the trade */
+  lossesAvoided?: number;
+  /** Top 20 lessons most frequently associated with memory-driven decision divergences */
+  decisionChangingLessons?: string[];
   /** Candles where noMem and withMem verdicts diverged */
   decisionDiffs: ReplayDecisionDiff[];
 }

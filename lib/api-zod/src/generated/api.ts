@@ -447,6 +447,75 @@ export const QuerySimilarityResponse = zod.object({
 
 
 /**
+ * Fetches bars, runs the full Market Snapshot Engine (indicators, structure,
+S/R, pivots, fibonacci, OBs, FVGs), then calls Ollama for a BUY/SELL/WAIT
+decision without loading any AI memory context.
+Hard rules: confidence ≥ 75, R:R ≥ 1.8, no BUY within 0.5 % of resistance,
+no SELL within 0.5 % of support.
+
+ * @summary Build a pure-technical market snapshot and get an AI BUY/SELL/WAIT decision (no memory)
+ */
+export const PostSnapshotDecisionBody = zod.object({
+  "symbol": zod.string().describe('Ticker symbol (e.g. TSLA)'),
+  "timeframe": zod.string().describe('Bar timeframe (5m, 15m, 1h)'),
+  "candleTime": zod.number().describe('Epoch seconds of the CLOSED candle\'s open time')
+})
+
+export const postSnapshotDecisionResponseConfidenceMin = 0;
+export const postSnapshotDecisionResponseConfidenceMax = 100;
+
+
+
+export const PostSnapshotDecisionResponse = zod.object({
+  "decision": zod.enum(['BUY', 'SELL', 'WAIT']),
+  "confidence": zod.number().min(postSnapshotDecisionResponseConfidenceMin).max(postSnapshotDecisionResponseConfidenceMax),
+  "reason": zod.string(),
+  "entry": zod.number().nullish(),
+  "sl": zod.number().nullish(),
+  "tp": zod.number().nullish(),
+  "rr": zod.number().nullish(),
+  "grade": zod.enum(['A+', 'A', 'B', 'C', 'WAIT']),
+  "strengths": zod.array(zod.string()),
+  "weaknesses": zod.array(zod.string())
+})
+
+
+/**
+ * @summary List recent snapshot decisions for a symbol and timeframe
+ */
+export const listSnapshotDecisionsQueryTimeframeDefault = `5m`;
+export const listSnapshotDecisionsQueryLimitDefault = 50;
+export const listSnapshotDecisionsQueryLimitMax = 200;
+
+
+
+export const ListSnapshotDecisionsQueryParams = zod.object({
+  "symbol": zod.coerce.string(),
+  "timeframe": zod.coerce.string().default(listSnapshotDecisionsQueryTimeframeDefault),
+  "limit": zod.coerce.number().max(listSnapshotDecisionsQueryLimitMax).default(listSnapshotDecisionsQueryLimitDefault)
+})
+
+export const ListSnapshotDecisionsResponseItem = zod.object({
+  "id": zod.number(),
+  "symbol": zod.string(),
+  "timeframe": zod.string(),
+  "candleTime": zod.coerce.date(),
+  "decision": zod.enum(['BUY', 'SELL', 'WAIT']),
+  "confidence": zod.number(),
+  "reason": zod.string(),
+  "entry": zod.number().nullish(),
+  "sl": zod.number().nullish(),
+  "tp": zod.number().nullish(),
+  "rr": zod.number().nullish(),
+  "grade": zod.enum(['A+', 'A', 'B', 'C', 'WAIT']),
+  "strengths": zod.array(zod.string()).optional(),
+  "weaknesses": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date()
+})
+export const ListSnapshotDecisionsResponse = zod.array(ListSnapshotDecisionsResponseItem)
+
+
+/**
  * @summary Start a memory-vs-no-memory replay job for a symbol
  */
 export const startReplayBodyTimeframeDefault = `5m`;
@@ -561,6 +630,9 @@ export const GetReplayStatusParams = zod.object({
 export const getReplayStatusResponseResultOneLearningScoreMin = 0;
 export const getReplayStatusResponseResultOneLearningScoreMax = 100;
 
+export const getReplayStatusResponseResultOneMemoryValueScoreMin = 0;
+export const getReplayStatusResponseResultOneMemoryValueScoreMax = 100;
+
 
 
 export const GetReplayStatusResponse = zod.object({
@@ -613,6 +685,9 @@ export const GetReplayStatusResponse = zod.object({
   "approveRateDelta": zod.number().describe('withMem.approveRate − noMem.approveRate; positive = memory increased signal rate')
 }),
   "learningScore": zod.number().min(getReplayStatusResponseResultOneLearningScoreMin).max(getReplayStatusResponseResultOneLearningScoreMax).describe('0–100 composite learning effectiveness score'),
+  "memoryValueScore": zod.number().min(getReplayStatusResponseResultOneMemoryValueScoreMin).max(getReplayStatusResponseResultOneMemoryValueScoreMax).optional().describe('0–100 memory value score (loss avoidance, WR improvement, PF improvement, trade filtration)'),
+  "lossesAvoided": zod.number().optional().describe('Count of noMem sl_hit outcomes that memory prevented by not approving the trade'),
+  "decisionChangingLessons": zod.array(zod.string()).optional().describe('Top 20 lessons most frequently associated with memory-driven decision divergences'),
   "decisionDiffs": zod.array(zod.object({
   "candleTime": zod.number(),
   "direction": zod.enum(['memory_added', 'memory_removed', 'direction_flipped', 'conf_boost', 'conf_drop']),

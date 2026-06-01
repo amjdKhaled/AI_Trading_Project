@@ -39,6 +39,7 @@ import type {
   ListBarsParams,
   ListChartAnalysesParams,
   ListSignalsParams,
+  ListSnapshotDecisionsParams,
   PerformanceSummaryResponse,
   ReplayJobStatus,
   ReplayStartRequest,
@@ -48,6 +49,8 @@ import type {
   SignalStats,
   SimilarityRequest,
   SimilarityResponse,
+  SnapshotDecision,
+  SnapshotDecisionRow,
   Symbol,
   SymbolInput
 } from './api.schemas';
@@ -1318,6 +1321,167 @@ export const useQuerySimilarity = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getQuerySimilarityMutationOptions(options));
     }
+
+export const getPostSnapshotDecisionUrl = () => {
+
+
+
+
+  return `/api/signals/snapshot-decision`
+}
+
+/**
+ * Fetches bars, runs the full Market Snapshot Engine (indicators, structure,
+S/R, pivots, fibonacci, OBs, FVGs), then calls Ollama for a BUY/SELL/WAIT
+decision without loading any AI memory context.
+Hard rules: confidence ≥ 75, R:R ≥ 1.8, no BUY within 0.5 % of resistance,
+no SELL within 0.5 % of support.
+
+ * @summary Build a pure-technical market snapshot and get an AI BUY/SELL/WAIT decision (no memory)
+ */
+export const postSnapshotDecision = async (candleDecisionRequest: CandleDecisionRequest, options?: RequestInit): Promise<SnapshotDecision> => {
+
+  return customFetch<SnapshotDecision>(getPostSnapshotDecisionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      candleDecisionRequest,)
+  }
+);}
+
+
+
+
+export const getPostSnapshotDecisionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postSnapshotDecision>>, TError,{data: BodyType<CandleDecisionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postSnapshotDecision>>, TError,{data: BodyType<CandleDecisionRequest>}, TContext> => {
+
+const mutationKey = ['postSnapshotDecision'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postSnapshotDecision>>, {data: BodyType<CandleDecisionRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  postSnapshotDecision(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostSnapshotDecisionMutationResult = NonNullable<Awaited<ReturnType<typeof postSnapshotDecision>>>
+    export type PostSnapshotDecisionMutationBody = BodyType<CandleDecisionRequest>
+    export type PostSnapshotDecisionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Build a pure-technical market snapshot and get an AI BUY/SELL/WAIT decision (no memory)
+ */
+export const usePostSnapshotDecision = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postSnapshotDecision>>, TError,{data: BodyType<CandleDecisionRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postSnapshotDecision>>,
+        TError,
+        {data: BodyType<CandleDecisionRequest>},
+        TContext
+      > => {
+      return useMutation(getPostSnapshotDecisionMutationOptions(options));
+    }
+
+export const getListSnapshotDecisionsUrl = (params: ListSnapshotDecisionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/signals/snapshot-decisions?${stringifiedParams}` : `/api/signals/snapshot-decisions`
+}
+
+/**
+ * @summary List recent snapshot decisions for a symbol and timeframe
+ */
+export const listSnapshotDecisions = async (params: ListSnapshotDecisionsParams, options?: RequestInit): Promise<SnapshotDecisionRow[]> => {
+
+  return customFetch<SnapshotDecisionRow[]>(getListSnapshotDecisionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSnapshotDecisionsQueryKey = (params?: ListSnapshotDecisionsParams,) => {
+    return [
+    `/api/signals/snapshot-decisions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSnapshotDecisionsQueryOptions = <TData = Awaited<ReturnType<typeof listSnapshotDecisions>>, TError = ErrorType<unknown>>(params: ListSnapshotDecisionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSnapshotDecisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSnapshotDecisionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSnapshotDecisions>>> = ({ signal }) => listSnapshotDecisions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSnapshotDecisions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSnapshotDecisionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSnapshotDecisions>>>
+export type ListSnapshotDecisionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List recent snapshot decisions for a symbol and timeframe
+ */
+
+export function useListSnapshotDecisions<TData = Awaited<ReturnType<typeof listSnapshotDecisions>>, TError = ErrorType<unknown>>(
+ params: ListSnapshotDecisionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSnapshotDecisions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSnapshotDecisionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getStartReplayUrl = () => {
 

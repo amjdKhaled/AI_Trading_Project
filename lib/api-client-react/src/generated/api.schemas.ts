@@ -642,6 +642,16 @@ export interface ReplayResult {
      * @maximum 100
      */
   learningScore: number;
+  /**
+     * 0–100 memory value score (loss avoidance, WR improvement, PF improvement, trade filtration)
+     * @minimum 0
+     * @maximum 100
+     */
+  memoryValueScore?: number;
+  /** Count of noMem sl_hit outcomes that memory prevented by not approving the trade */
+  lossesAvoided?: number;
+  /** Top 20 lessons most frequently associated with memory-driven decision divergences */
+  decisionChangingLessons?: string[];
   /** Candles where noMem and withMem verdicts diverged */
   decisionDiffs: ReplayDecisionDiff[];
 }
@@ -698,6 +708,89 @@ export interface PerformanceSummaryResponse {
   /** Win rate per week (most recent 12 weeks), oldest first */
   weeklyTrend: WeeklyTrendSlice[];
   updatedAt: string;
+}
+
+export type SnapshotDecisionDecision = typeof SnapshotDecisionDecision[keyof typeof SnapshotDecisionDecision];
+
+
+export const SnapshotDecisionDecision = {
+  BUY: 'BUY',
+  SELL: 'SELL',
+  WAIT: 'WAIT',
+} as const;
+
+export type SnapshotDecisionGrade = typeof SnapshotDecisionGrade[keyof typeof SnapshotDecisionGrade];
+
+
+export const SnapshotDecisionGrade = {
+  'A+': 'A+',
+  A: 'A',
+  B: 'B',
+  C: 'C',
+  WAIT: 'WAIT',
+} as const;
+
+export interface SnapshotDecision {
+  decision: SnapshotDecisionDecision;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  confidence: number;
+  reason: string;
+  /** @nullable */
+  entry?: number | null;
+  /** @nullable */
+  sl?: number | null;
+  /** @nullable */
+  tp?: number | null;
+  /** @nullable */
+  rr?: number | null;
+  grade: SnapshotDecisionGrade;
+  strengths: string[];
+  weaknesses: string[];
+}
+
+export type SnapshotDecisionRowDecision = typeof SnapshotDecisionRowDecision[keyof typeof SnapshotDecisionRowDecision];
+
+
+export const SnapshotDecisionRowDecision = {
+  BUY: 'BUY',
+  SELL: 'SELL',
+  WAIT: 'WAIT',
+} as const;
+
+export type SnapshotDecisionRowGrade = typeof SnapshotDecisionRowGrade[keyof typeof SnapshotDecisionRowGrade];
+
+
+export const SnapshotDecisionRowGrade = {
+  'A+': 'A+',
+  A: 'A',
+  B: 'B',
+  C: 'C',
+  WAIT: 'WAIT',
+} as const;
+
+export interface SnapshotDecisionRow {
+  id: number;
+  symbol: string;
+  timeframe: string;
+  candleTime: string;
+  decision: SnapshotDecisionRowDecision;
+  confidence: number;
+  reason: string;
+  /** @nullable */
+  entry?: number | null;
+  /** @nullable */
+  sl?: number | null;
+  /** @nullable */
+  tp?: number | null;
+  /** @nullable */
+  rr?: number | null;
+  grade: SnapshotDecisionRowGrade;
+  strengths?: string[];
+  weaknesses?: string[];
+  createdAt: string;
 }
 
 export type ReplayJobStatusStatus = typeof ReplayJobStatusStatus[keyof typeof ReplayJobStatusStatus];
@@ -757,6 +850,15 @@ limit?: number;
 };
 
 export type ListChartAnalysesParams = {
+limit?: number;
+};
+
+export type ListSnapshotDecisionsParams = {
+symbol: string;
+timeframe?: string;
+/**
+ * @maximum 200
+ */
 limit?: number;
 };
 
