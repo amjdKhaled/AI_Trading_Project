@@ -18,4 +18,4 @@
 - [Batch learn-all pipeline](batch-learn-all.md) — resume-safe: pre-fetches existing signal_ids into a Set; appendTradeToDb guards with existence check; BatchProgress singleton polled via GET /api/ai/learn-progress every 2 s.
 - [Live candle memory injection](live-candle-memory-injection.md) — filterCandleWithAi must call buildCandleMemoryContext before Ollama; buildCandleMemoryContext loads 6 sources in parallel; memDiag spread onto every return path.
 - [Polygon migration status](polygon-migration-status.md) — all equity data is Polygon-native; POLYGON_API_KEY must be updated in Replit Secrets to unlock real-time WS + REST.
-- [First-tick spike filter gap](first-tick-spike-filter.md) — CSM rejects first live tick when price gaps from stale historical close; use 5% threshold when liveBar===null.
+- [First-tick spike filter gap](first-tick-spike-filter.md) — CSM spike filter must be bypassed entirely on first tick; any % cap (even 5%) still blocks legitimate earnings gaps.

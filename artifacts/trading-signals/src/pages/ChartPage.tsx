@@ -13,6 +13,7 @@ import { useListSymbols } from "@workspace/api-client-react";
 import type { SnapshotDecision } from "@workspace/api-client-react";
 import { SnapshotDiagnosticsPanel } from "@/components/SnapshotDiagnosticsPanel";
 import { WsDebugPanel } from "@/components/WsDebugPanel";
+import { LiveFeedTicker } from "@/components/LiveFeedTicker";
 
 // ── Timeframe constants ───────────────────────────────────────────────────────
 
@@ -1196,6 +1197,20 @@ export default function ChartPage() {
             </div>
           )}
         </div>
+
+        {/* ── Live Feed Ticker ── */}
+        {isStocks && (
+          <div className="flex items-center justify-between px-3 py-1 border-b border-white/5 flex-shrink-0 bg-[#0d1018]">
+            <LiveFeedTicker
+              price={livePrice}
+              symbol={activeSymbol ?? ""}
+              isMarketOpen={isMarketOpen}
+            />
+            {!isMarketOpen && (
+              <span className="text-[10px] font-mono text-white/25 tracking-wider">Market closed — awaiting next session</span>
+            )}
+          </div>
+        )}
 
         {/* ── Chart ── */}
         {loading ? (

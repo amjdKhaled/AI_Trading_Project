@@ -125,15 +125,17 @@ export class CandleStateManager {
     const atr = this.opts.getHistoryAtrRange();
     const refPrice = this.liveBar?.close ?? this.opts.getLastHistoricalClose() ?? price;
     // Spike threshold:
-    //   First tick (no live bar): allow up to 5% gap. Day gaps and the transition from
-    //   yesterday's historical close to today's live price can legitimately exceed ATR×5
-    //   (e.g. TSLA -3.7% gap). Rejecting first ticks silences the entire live feed.
+    //   First tick (no live bar yet): skip the spike filter entirely. Any legitimate
+    //   overnight or earnings gap — no matter the size — should seed the live bar.
+    //   Rejecting first ticks silences the entire live feed for the session.
     //   Subsequent ticks: ATR×5 or 2% (whichever is larger). Fallback: 1%.
     const isFirstTick = this.liveBar === null;
-    const maxDelta = isFirstTick
-      ? refPrice * 0.05
-      : (atr > 0 ? Math.max(atr * 5, refPrice * 0.02) : refPrice * 0.01);
-    if (Math.abs(price - refPrice) > maxDelta) { this.reject("spike_filtered"); return; }
+    if (!isFirstTick) {
+      const maxDelta = atr > 0
+        ? Math.max(atr * 5, refPrice * 0.02)
+        : refPrice * 0.01;
+      if (Math.abs(price - refPrice) > maxDelta) { this.reject("spike_filtered"); return; }
+    }
 
     const intervalSec = this.opts.getIntervalSec();
     const t = timestampSec - (timestampSec % intervalSec);

@@ -1,19 +1,22 @@
 ---
 name: First-tick spike filter gap
-description: CSM spike filter rejects first live tick when price gaps from stale historical close — fix is 5% threshold for first tick only.
+description: CSM spike filter must be bypassed entirely on first live tick — any gap size is legitimate when seeding from a stale historical close.
 ---
 
 ## Rule
-CandleStateManager's spike filter MUST use a looser threshold for the very first live tick (when `this.liveBar === null`).
+CandleStateManager's spike filter MUST be **skipped entirely** for the very first live tick (when `this.liveBar === null`).
 
-**Why:** `refPrice` falls back to `getLastHistoricalClose()` when no live bar exists. That close is the last historical bar — often yesterday's close or end-of-extended-hours. A normal day gap (e.g. NVDA +5%, TSLA -3.7%) exceeds the ATR×5 or 2% intra-bar threshold, silently killing the entire live feed for the session.
+**Why:** `refPrice` falls back to `getLastHistoricalClose()` when no live bar exists. That close is yesterday's or end-of-extended-hours. A normal day gap (NVDA +5.06%, TSLA -3.7%) exceeds the ATR×5 or 2% intra-bar threshold, silently killing the entire live feed for the session. A 5% cap was tried and still blocked NVDA's 5.06% gap. Any hard percentage fails for earnings surprises (10–20%+ moves are real).
 
-**How to apply:** In `ingestTick`, branch on `isFirstTick = this.liveBar === null`:
+**How to apply:** In `ingestTick`, only apply the spike filter when a live bar already exists:
 ```typescript
 const isFirstTick = this.liveBar === null;
-const maxDelta = isFirstTick
-  ? refPrice * 0.05          // 5% — handles day gaps, AH opens
-  : (atr > 0 ? Math.max(atr * 5, refPrice * 0.02) : refPrice * 0.01);
+if (!isFirstTick) {
+  const maxDelta = atr > 0
+    ? Math.max(atr * 5, refPrice * 0.02)
+    : refPrice * 0.01;
+  if (Math.abs(price - refPrice) > maxDelta) { this.reject("spike_filtered"); return; }
+}
 ```
 
-5% is the empirically observed worst-case (NVDA gap was 5.02%). If gaps wider than 5% appear (e.g. earnings surprises, halts), raise to 8–10%. Do NOT raise subsequent-tick threshold — that would admit genuine spikes.
+Do NOT apply any threshold on first tick — the very purpose is to seed the live bar, and the stale historical close is not a valid comparison point.
