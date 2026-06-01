@@ -1,0 +1,451 @@
+ARCHITECTURE REBUILD REQUEST — REMOVE HARDCODED SIGNAL GENERATION AND CONVERT THE ENTIRE SYSTEM INTO A TRUE AI-ASSISTED TRADING ENGINE
+
+Current problem:
+
+The BUY/SELL markers shown on the chart are still largely generated from traditional pattern logic and hardcoded signal rules.
+
+Even though we now have:
+
+- AI Memory
+- Lessons Database
+- Historical Replay
+- Validation Center
+- AI Decisions
+- Qwen3 Integration
+
+The chart itself is still behaving like a classic indicator with AI attached on the side.
+
+I want the architecture inverted.
+
+====================================================
+NEW TARGET ARCHITECTURE
+====================================================
+
+Market Data (Live)
+↓
+Strategy Engine
+↓
+Candidate Setup
+↓
+AI Memory Layer
+↓
+Qwen3 Decision Layer
+↓
+Approved AI Trade
+↓
+Chart Marker
+↓
+Live TP/SL Tracking
+↓
+Lesson Creation
+↓
+AI Memory Growth
+↓
+Future Decisions Improve
+
+====================================================
+PHASE 1 — REMOVE HARDCODED ENTRY AUTHORITY
+====================================================
+
+Current hardcoded patterns must no longer directly create chart BUY/SELL markers.
+
+Examples:
+
+- Bull Flag
+- Bear Flag
+- Double Bottom
+- Double Top
+- Hammer
+- Morning Star
+- EMA Pullback
+- VWAP Rejection
+- Trend Pullback
+- Breakout
+
+These should only create:
+
+Candidate Setup
+
+NOT:
+
+Approved Trade
+
+No pattern should ever appear on the chart directly.
+
+Instead:
+
+Pattern Engine
+→ Candidate Setup Queue
+
+Example:
+
+{
+ setup: "Bull Flag",
+ side: "LONG",
+ confidence: 81,
+ patternScore: 86
+}
+
+Store internally only.
+
+Nothing drawn on chart.
+
+====================================================
+PHASE 2 — STRATEGY ENGINE BECOMES SIGNAL SOURCE
+====================================================
+
+Create a dedicated Strategy Engine.
+
+It should evaluate:
+
+- Market Structure
+- EMA alignment
+- VWAP position
+- RSI
+- MACD
+- Volume
+- Relative Volume
+- Trend strength
+- Volatility
+- Support / Resistance
+- Candlestick patterns
+- Multi-candle formations
+
+The Strategy Engine should generate candidate trades.
+
+Example:
+
+Potential LONG
+Potential SHORT
+
+Only candidates.
+
+Never chart markers.
+
+====================================================
+PHASE 3 — AI MEMORY FILTER
+====================================================
+
+Before Qwen sees anything:
+
+Pass setup through AI Memory.
+
+Use:
+
+getRecentLessonsFromDb()
+
+getWinnerLoserSummary()
+
+getFailureCategoryStats()
+
+getMostRecentLossReasoning()
+
+findSimilarHistoricalSetups()
+
+buildCandleMemoryContext()
+
+For every candidate setup.
+
+Memory must produce:
+
+Memory Score
+Memory Confidence
+Memory Risk Score
+
+Example:
+
+Historical Similarity: 84%
+Past Win Rate: 61%
+Failure Category Match: 12%
+
+Memory Score = 78
+
+====================================================
+PHASE 4 — QWEN3 BECOMES FINAL DECISION MAKER
+====================================================
+
+The AI should not generate random entries.
+
+Instead Qwen receives:
+
+Market State
+Strategy Output
+Memory Output
+Lessons
+Failure Categories
+Similar Setups
+
+Qwen decides:
+
+APPROVE
+REJECT
+WAIT
+
+Only these.
+
+Example:
+
+{
+ decision:"APPROVE",
+ side:"LONG",
+ confidence:89,
+ reason:"Strong volume breakout with positive historical memory"
+}
+
+====================================================
+PHASE 5 — ONLY APPROVED TRADES APPEAR ON CHART
+====================================================
+
+Chart markers must come ONLY from:
+
+AI APPROVED decisions.
+
+Meaning:
+
+No AI approval
+=
+No chart marker
+
+No exceptions.
+
+The chart should become:
+
+AI Decision Visualization
+
+NOT
+
+Pattern Visualization
+
+====================================================
+PHASE 6 — LIVE MARKET MODE
+====================================================
+
+When market is open:
+
+Every incoming live candle update should:
+
+Update indicators
+Update strategy engine
+
+If a setup appears:
+
+Immediately run:
+
+Memory
++
+Qwen
+
+without requiring:
+
+- Replay button
+- Validation button
+- Manual button
+- User interaction
+
+Everything automatic.
+
+====================================================
+PHASE 7 — REAL-TIME ENTRY EXPERIENCE
+====================================================
+
+Goal:
+
+LuxAlgo-like behavior.
+
+While market is live:
+
+The user watches chart.
+
+AI identifies setup.
+
+Within seconds:
+
+BUY marker appears.
+
+Example:
+
+BUY
+Confidence 91%
+Memory Score 83
+Setup Grade A
+
+At exact candle.
+
+Not later.
+
+Not after replay.
+
+Not after refresh.
+
+Live.
+
+====================================================
+PHASE 8 — LIVE TRADE LIFE CYCLE
+====================================================
+
+When AI approves trade:
+
+Create:
+
+Entry
+SL
+TP
+
+Immediately.
+
+Draw active trade zone.
+
+Visual style:
+
+Green zone for LONG
+
+Red zone for SHORT
+
+Exactly like professional trading indicators.
+
+Trade remains ACTIVE.
+
+====================================================
+PHASE 9 — TP/SL MANAGEMENT
+====================================================
+
+Every tick:
+
+Monitor active trades.
+
+If TP hit:
+
+Trade closes.
+
+Move trade into history.
+
+If SL hit:
+
+Trade closes.
+
+Move trade into history.
+
+Active trade disappears.
+
+Historical trade remains visible.
+
+====================================================
+PHASE 10 — LESSON CREATION
+====================================================
+
+When trade closes:
+
+Create lesson automatically.
+
+Store:
+
+Setup
+Indicators
+Memory State
+Qwen Reasoning
+Result
+Win/Loss
+R:R
+
+Generate lesson.
+
+Save to AI Memory.
+
+====================================================
+PHASE 11 — MEMORY FEEDBACK LOOP
+====================================================
+
+Every new lesson must affect future decisions.
+
+Example:
+
+Memory learns:
+
+"VWAP Rejection shorts fail often during low volume."
+
+Future similar setups should receive:
+
+Lower approval probability.
+
+I need measurable learning.
+
+Not lesson collection.
+
+Actual decision influence.
+
+====================================================
+PHASE 12 — VALIDATION
+====================================================
+
+Prove the system is working.
+
+Create diagnostics showing:
+
+Candidate Setups Generated
+Memory Filtered
+Qwen Approved
+Qwen Rejected
+Live Trades Created
+TP Hits
+SL Hits
+
+Also show:
+
+How many decisions changed because of memory.
+
+====================================================
+PHASE 13 — PROJECT AUDIT
+====================================================
+
+Before finishing:
+
+Audit every path.
+
+Verify:
+
+Chart
+Signals
+AI Memory
+Replay
+Performance
+AI Decisions
+Database
+WebSocket
+Live Feed
+
+all connected correctly.
+
+Remove dead code.
+
+Remove duplicate signal paths.
+
+Remove old hardcoded signal authority.
+
+There must be exactly one final decision pipeline:
+
+Market
+→ Strategy Engine
+→ Memory
+→ Qwen3
+→ Approved Trade
+→ Chart
+→ TP/SL
+→ Lesson
+→ Memory
+
+No parallel legacy paths.
+
+No fake markers.
+
+No orphan systems.
+
+Provide a final report showing:
+
+1. Which files were changed.
+2. Which old paths were removed.
+3. Which component now owns signal generation.
+4. How memory affects live decisions.
+5. How Qwen affects live decisions.
+6. How active trades become lessons.
+7. How lessons influence future trades.
+8. Evidence that chart markers are now AI-generated rather than hardcoded.

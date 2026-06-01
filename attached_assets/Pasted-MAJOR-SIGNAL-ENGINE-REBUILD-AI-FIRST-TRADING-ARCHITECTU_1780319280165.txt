@@ -1,0 +1,481 @@
+MAJOR SIGNAL ENGINE REBUILD — AI-FIRST TRADING ARCHITECTURE
+
+Current problem:
+
+The chart is still largely driven by traditional signal generation and pattern detections. The AI is not acting as the real market analyst. I want to invert the architecture.
+
+====================================================
+NEW GOAL
+====================================================
+
+The indicator system should become a MARKET DATA COLLECTOR.
+
+The AI should become the MARKET ANALYST.
+
+The chart should display ONLY AI-approved trades.
+
+====================================================
+NEW EXECUTION FLOW
+====================================================
+
+5-minute candle closes
+↓
+Indicator Engine analyzes market
+↓
+Build complete market snapshot
+↓
+Send snapshot to AI
+↓
+AI analyzes entire situation
+↓
+AI returns:
+
+BUY
+SELL
+WAIT
+
+If BUY/SELL:
+↓
+AI calculates Entry
+↓
+AI calculates Stop Loss
+↓
+AI calculates Take Profit
+↓
+AI calculates Confidence
+↓
+Trade appears on chart
+
+====================================================
+PHASE 1 — MARKET SNAPSHOT ENGINE
+====================================================
+
+After every closed 5-minute candle:
+
+Collect ALL market information.
+
+Trend Analysis:
+
+- EMA20
+- EMA50
+- EMA200
+- EMA alignment
+- Trend strength
+- Trend direction
+
+Volume Analysis:
+
+- Current volume
+- Average volume
+- Relative volume
+- Volume spike detection
+- Volume trend
+
+VWAP Analysis:
+
+- Above VWAP
+- Below VWAP
+- VWAP rejection
+- VWAP breakout
+- VWAP retest
+
+RSI Analysis:
+
+- RSI value
+- RSI slope
+- RSI divergence
+
+MACD Analysis:
+
+- Bullish crossover
+- Bearish crossover
+- Momentum strength
+- Histogram direction
+
+ATR Analysis:
+
+- Current ATR
+- Volatility expansion
+- Volatility contraction
+
+====================================================
+PHASE 2 — CANDLESTICK ANALYSIS
+====================================================
+
+Detect all important candlestick patterns.
+
+Examples:
+
+- Hammer
+- Inverted Hammer
+- Shooting Star
+- Doji
+- Dragonfly Doji
+- Gravestone Doji
+- Bullish Engulfing
+- Bearish Engulfing
+- Morning Star
+- Evening Star
+- Harami
+- Piercing Pattern
+- Dark Cloud Cover
+- Inside Bar
+- Outside Bar
+
+For every pattern:
+
+Store:
+
+- confidence
+- candle location
+- trend context
+
+====================================================
+PHASE 3 — PRICE ACTION ENGINE
+====================================================
+
+Detect:
+
+- Higher High
+- Higher Low
+- Lower High
+- Lower Low
+
+Detect:
+
+- BOS
+- CHOCH
+
+Detect:
+
+- Trend continuation
+- Trend reversal
+
+Detect:
+
+- Pullback
+- Breakout
+- Retest
+- Rejection
+
+====================================================
+PHASE 4 — CHART PATTERN ENGINE
+====================================================
+
+Detect:
+
+- Bull Flag
+- Bear Flag
+- Channel
+- Ascending Triangle
+- Descending Triangle
+- Symmetrical Triangle
+- Wedge
+- Double Bottom
+- Double Top
+- Cup and Handle
+- Support Retest
+- Resistance Retest
+- Range Market
+- Breakout
+- Fake Breakout
+
+Store:
+
+Pattern name
+Pattern confidence
+Pattern quality
+
+====================================================
+PHASE 5 — SUPPORT AND RESISTANCE ENGINE
+====================================================
+
+Calculate:
+
+Nearest Support
+
+Nearest Resistance
+
+Distance to support
+
+Distance to resistance
+
+Support strength
+
+Resistance strength
+
+Multiple timeframe confirmation
+
+====================================================
+PHASE 6 — PIVOT POINT ENGINE
+====================================================
+
+Calculate:
+
+Pivot
+
+R1
+R2
+R3
+
+S1
+S2
+S3
+
+Determine:
+
+- approaching pivot
+- rejecting pivot
+- breaking pivot
+
+====================================================
+PHASE 7 — FIBONACCI ENGINE
+====================================================
+
+Calculate:
+
+23.6
+
+38.2
+
+50
+
+61.8
+
+78.6
+
+Determine:
+
+- Fibonacci retracement
+- Fibonacci bounce
+- Fibonacci extension
+
+====================================================
+PHASE 8 — MARKET SNAPSHOT OBJECT
+====================================================
+
+Build ONE structured object.
+
+Example:
+
+{
+ symbol,
+ timeframe,
+ trend,
+ ema,
+ vwap,
+ volume,
+ rsi,
+ macd,
+ atr,
+ support,
+ resistance,
+ pivots,
+ fibonacci,
+ marketStructure,
+ candlestickPatterns,
+ chartPatterns
+}
+
+This becomes the AI input.
+
+====================================================
+PHASE 9 — AI BECOMES FINAL ANALYST
+====================================================
+
+The AI should receive ONLY the market snapshot.
+
+The AI should NOT receive:
+
+- old hardcoded decisions
+- previous chart markers
+- previous signal engine output
+
+The AI must independently evaluate the market.
+
+The AI acts like a professional trader.
+
+It must answer:
+
+BUY
+SELL
+WAIT
+
+and provide:
+
+confidence
+
+reason
+
+entry
+
+stop loss
+
+take profit
+
+risk/reward
+
+trade grade
+
+====================================================
+PHASE 10 — AI GENERATED TRADES ONLY
+====================================================
+
+The chart must stop drawing trades directly from pattern detections.
+
+Patterns are information only.
+
+Only AI-approved trades may appear on chart.
+
+If AI says WAIT:
+
+No marker.
+
+No signal.
+
+No trade.
+
+====================================================
+PHASE 11 — AI ENTRY / SL / TP
+====================================================
+
+AI should calculate:
+
+Entry
+
+Stop Loss
+
+Take Profit
+
+based on:
+
+support
+
+resistance
+
+ATR
+
+volatility
+
+trend
+
+structure
+
+pivot levels
+
+fibonacci
+
+risk/reward
+
+The AI should NOT use fixed SL/TP formulas.
+
+====================================================
+PHASE 12 — LIVE TRADING MODE
+====================================================
+
+When market is open:
+
+Every closed 5-minute candle:
+
+Build snapshot
+↓
+Send to AI
+↓
+AI decision
+↓
+Draw trade
+
+No manual replay.
+
+No manual validation.
+
+No manual learning.
+
+Everything automatic.
+
+====================================================
+PHASE 13 — CHART VISUALIZATION
+====================================================
+
+When AI approves trade:
+
+Display:
+
+BUY / SELL marker
+
+Entry line
+
+Stop Loss line
+
+Take Profit line
+
+Confidence
+
+Trade Grade
+
+Risk Reward
+
+Create professional visualization similar to LuxAlgo style.
+
+====================================================
+PHASE 14 — TRADE MANAGEMENT
+====================================================
+
+Once trade is active:
+
+Monitor every incoming tick.
+
+If TP hit:
+
+Close trade
+Move to history
+
+If SL hit:
+
+Close trade
+Move to history
+
+Historical trades remain visible.
+
+Active trades remain highlighted.
+
+====================================================
+PHASE 15 — QUALITY CONTROL
+====================================================
+
+Audit the entire project.
+
+Remove:
+
+dead code
+
+duplicate signal paths
+
+legacy decision systems
+
+hardcoded marker generation
+
+Ensure there is ONE final pipeline:
+
+Market Data
+↓
+Indicator Engine
+↓
+Market Snapshot
+↓
+AI Analysis
+↓
+BUY / SELL / WAIT
+↓
+Entry / SL / TP
+↓
+Chart
+
+Provide a final implementation report showing:
+
+- files changed
+- removed legacy paths
+- AI input structure
+- AI output structure
+- final signal generation path
+- proof that chart markers are now AI-generated
