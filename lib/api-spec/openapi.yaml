@@ -1041,7 +1041,7 @@ components:
 
     ReplayDelta:
       type: object
-      required: [removedByMemory, addedByMemory, avgConfChange]
+      required: [removedByMemory, addedByMemory, avgConfChange, approveRateDelta]
       properties:
         removedByMemory:
           type: integer
@@ -1049,6 +1049,9 @@ components:
           type: integer
         avgConfChange:
           type: number
+        approveRateDelta:
+          type: number
+          description: withMem.approveRate − noMem.approveRate; positive = memory increased signal rate
 
     ReplayResult:
       type: object

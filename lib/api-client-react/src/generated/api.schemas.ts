@@ -498,6 +498,8 @@ export interface ReplayDelta {
   removedByMemory: number;
   addedByMemory: number;
   avgConfChange: number;
+  /** withMem.approveRate − noMem.approveRate; positive = memory increased signal rate */
+  approveRateDelta: number;
 }
 
 export type ReplayResultCandlesItem = { [key: string]: unknown };

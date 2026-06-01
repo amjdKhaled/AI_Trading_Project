@@ -663,7 +663,7 @@ interface ReplayJobResult {
   candles?: ReplayCandleResult[];
   noMem:   ReplayPassStats;
   withMem: ReplayPassStats;
-  delta:   { removedByMemory: number; addedByMemory: number; avgConfChange: number };
+  delta:   { removedByMemory: number; addedByMemory: number; avgConfChange: number; approveRateDelta: number };
 }
 
 // ── Tab: Tools (Ollama + Reflect + Import) ─────────────────────
@@ -974,11 +974,15 @@ function ToolsTab({
             {/* Delta summary */}
             <div className="flex gap-2 text-[10px] font-mono flex-wrap">
               <span className={replayResult.delta.addedByMemory > 0 ? "text-emerald-400" : "text-muted-foreground"}>
-                +{replayResult.delta.addedByMemory} signals added by memory
+                +{replayResult.delta.addedByMemory} added
               </span>
               <span className="text-muted-foreground">·</span>
               <span className={replayResult.delta.removedByMemory > 0 ? "text-amber-400" : "text-muted-foreground"}>
                 −{replayResult.delta.removedByMemory} removed
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <span className={replayResult.delta.approveRateDelta >= 0 ? "text-emerald-400" : "text-red-400"}>
+                WR {replayResult.delta.approveRateDelta >= 0 ? "+" : ""}{Math.round(replayResult.delta.approveRateDelta * 100)}%
               </span>
               <span className="text-muted-foreground">·</span>
               <span className={replayResult.delta.avgConfChange >= 0 ? "text-emerald-400" : "text-red-400"}>

@@ -35,6 +35,13 @@ export interface ReplayPassStats {
   topRejectLessons: string[]; // lessons most frequently cited when memory still said REJECT/WAIT
 }
 
+export interface ReplayDelta {
+  removedByMemory:  number;
+  addedByMemory:    number;
+  avgConfChange:    number;
+  approveRateDelta: number; // withMem.approveRate − noMem.approveRate (positive = memory increased signal rate)
+}
+
 export interface ReplayResult {
   symbol:    string;
   timeframe: string;
@@ -42,11 +49,7 @@ export interface ReplayResult {
   candles:   ReplayCandleResult[];
   noMem:     ReplayPassStats;
   withMem:   ReplayPassStats;
-  delta: {
-    removedByMemory: number;
-    addedByMemory:   number;
-    avgConfChange:   number;
-  };
+  delta:     ReplayDelta;
 }
 
 export type OnReplayProgress = (done: number, total: number) => void;
@@ -198,6 +201,10 @@ export async function runReplay(
         classify(c.withMem.decision, c.withMem.confidence) === "approve",
       ).length,
       avgConfChange: Math.round((withMemAvgConf - noMemAvgConf) * 10) / 10,
+      approveRateDelta: Math.round(
+        ((withMemTotal > 0 ? withMemApprove / withMemTotal : 0) -
+         (noMemTotal   > 0 ? noMemApprove   / noMemTotal   : 0)) * 1000,
+      ) / 1000,
     },
   };
 }

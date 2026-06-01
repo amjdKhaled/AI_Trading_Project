@@ -443,7 +443,8 @@ export const GetReplayStatusResponse = zod.object({
   "delta": zod.object({
   "removedByMemory": zod.number(),
   "addedByMemory": zod.number(),
-  "avgConfChange": zod.number()
+  "avgConfChange": zod.number(),
+  "approveRateDelta": zod.number().describe('withMem.approveRate − noMem.approveRate; positive = memory increased signal rate')
 })
 }),zod.null()]).optional(),
   "error": zod.string().nullish()

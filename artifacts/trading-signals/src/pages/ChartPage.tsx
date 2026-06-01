@@ -290,9 +290,14 @@ export default function ChartPage() {
     return subscribeReplayMarkers((_key, markers) => setReplayMarkers(markers));
   }, []);
 
-  // Clear replay markers when the symbol changes
+  // Clear replay markers only when activeSymbol *changes* to a different symbol.
+  // Using a ref so initial mount does NOT clear markers that were set before navigating here.
+  const prevSymbolRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    clearReplayMarkers();
+    if (prevSymbolRef.current !== undefined && prevSymbolRef.current !== activeSymbol) {
+      clearReplayMarkers();
+    }
+    prevSymbolRef.current = activeSymbol;
   }, [activeSymbol]);
 
   const isStocks = marketType === "stocks";
