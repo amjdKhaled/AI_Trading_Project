@@ -662,7 +662,7 @@ interface ReplayCandleResult {
 }
 interface ReplayDecisionDiff {
   candleTime: number;
-  direction: "memory_added" | "memory_removed" | "conf_boost" | "conf_drop";
+  direction: "memory_added" | "memory_removed" | "direction_flipped" | "conf_boost" | "conf_drop";
   noMemVerdict: string; withMemVerdict: string;
   noMemConf: number; withMemConf: number;
   keyLesson: string | null;
@@ -1068,10 +1068,11 @@ function ToolsTab({
                 <div className="space-y-0.5 max-h-28 overflow-y-auto">
                   {replayResult.decisionDiffs.slice(0, 15).map((d, i) => {
                     const ts = new Date(d.candleTime * 1000);
-                    const label = d.direction === "memory_added"   ? { text: "+MEM",   cls: "text-emerald-400" }
-                                : d.direction === "memory_removed" ? { text: "−MEM",   cls: "text-amber-400" }
-                                : d.direction === "conf_boost"     ? { text: "↑CONF",  cls: "text-blue-400" }
-                                :                                    { text: "↓CONF",  cls: "text-red-400" };
+                    const label = d.direction === "memory_added"      ? { text: "+MEM",  cls: "text-emerald-400" }
+                                : d.direction === "memory_removed"   ? { text: "−MEM",  cls: "text-amber-400" }
+                                : d.direction === "direction_flipped" ? { text: "↔FLIP", cls: "text-yellow-400" }
+                                : d.direction === "conf_boost"        ? { text: "↑CONF", cls: "text-blue-400" }
+                                :                                       { text: "↓CONF", cls: "text-red-400" };
                     return (
                       <div key={i} className="flex flex-col border-l-2 border-border/40 pl-1.5 py-0.5 gap-0.5">
                         <div className="flex items-center gap-2 font-mono text-muted-foreground">

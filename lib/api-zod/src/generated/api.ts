@@ -615,7 +615,7 @@ export const GetReplayStatusResponse = zod.object({
   "learningScore": zod.number().min(getReplayStatusResponseResultOneLearningScoreMin).max(getReplayStatusResponseResultOneLearningScoreMax).describe('0–100 composite learning effectiveness score'),
   "decisionDiffs": zod.array(zod.object({
   "candleTime": zod.number(),
-  "direction": zod.enum(['memory_added', 'memory_removed', 'conf_boost', 'conf_drop']),
+  "direction": zod.enum(['memory_added', 'memory_removed', 'direction_flipped', 'conf_boost', 'conf_drop']),
   "noMemVerdict": zod.string(),
   "withMemVerdict": zod.string(),
   "noMemConf": zod.number(),

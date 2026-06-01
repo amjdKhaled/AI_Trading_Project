@@ -1248,7 +1248,7 @@ components:
           type: number
         direction:
           type: string
-          enum: [memory_added, memory_removed, conf_boost, conf_drop]
+          enum: [memory_added, memory_removed, direction_flipped, conf_boost, conf_drop]
         noMemVerdict:
           type: string
         withMemVerdict:

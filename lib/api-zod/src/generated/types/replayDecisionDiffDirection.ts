@@ -12,6 +12,7 @@ export type ReplayDecisionDiffDirection = typeof ReplayDecisionDiffDirection[key
 export const ReplayDecisionDiffDirection = {
   memory_added: 'memory_added',
   memory_removed: 'memory_removed',
+  direction_flipped: 'direction_flipped',
   conf_boost: 'conf_boost',
   conf_drop: 'conf_drop',
 } as const;

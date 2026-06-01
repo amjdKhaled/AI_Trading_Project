@@ -26,8 +26,15 @@ export interface ReplayCandleResult {
 
 export interface ReplayDecisionDiff {
   candleTime:     number;
-  direction:      "memory_added" | "memory_removed" | "conf_boost" | "conf_drop";
+  /** How memory changed the outcome:
+   *  memory_added    — noMem didn't approve, withMem did
+   *  memory_removed  — noMem approved, withMem didn't
+   *  direction_flipped — both approved but opposite directions (LONG↔SHORT)
+   *  conf_boost / conf_drop — class changed via confidence crossing threshold */
+  direction:      "memory_added" | "memory_removed" | "direction_flipped" | "conf_boost" | "conf_drop";
+  /** Actual decision: LONG | SHORT | WAIT */
   noMemVerdict:   string;
+  /** Actual decision: LONG | SHORT | WAIT */
   withMemVerdict: string;
   noMemConf:      number;
   withMemConf:    number;
@@ -209,6 +216,7 @@ export async function runReplay(
   const noMemAcc   = newAcc();
   const withMemAcc = newAcc();
 
+  let noMemLossesAvoided = 0;
   let done = 0;
 
   for (let i = startIdx; i < endIdx; i++) {
@@ -252,28 +260,9 @@ export async function runReplay(
         rejectLessonsBag.push(...withMem.lessons);
       }
 
-      // Collect decision diffs
-      if (noMemCls !== memCls) {
-        let direction: ReplayDecisionDiff["direction"];
-        if (noMemCls !== "approve" && memCls === "approve")      direction = "memory_added";
-        else if (noMemCls === "approve" && memCls !== "approve") direction = "memory_removed";
-        else direction = withMem.confidence > noMem.confidence ? "conf_boost" : "conf_drop";
-
-        decisionDiffs.push({
-          candleTime,
-          direction,
-          noMemVerdict:   noMemCls,
-          withMemVerdict: memCls,
-          noMemConf:      noMem.confidence,
-          withMemConf:    withMem.confidence,
-          keyLesson:      (direction === "memory_added" || direction === "conf_boost")
-                            ? (withMem.lessons[0] ?? null)
-                            : null,
-        });
-      }
-
-      // Lifecycle simulation — noMem approved signals
+      // Lifecycle simulation — noMem approved signals (run first for outcome-aware lossesAvoided)
       const noMemSide = noMem.decision === "LONG" ? "long" : noMem.decision === "SHORT" ? "short" : null;
+      let noMemOutcome: string | null = null;
       if (
         noMemCls === "approve" && noMemSide &&
         noMem.entry != null && noMem.stopLoss != null && noMem.takeProfit != null
@@ -283,6 +272,7 @@ export async function runReplay(
             bars, i, noMemSide as "long" | "short",
             noMem.entry, noMem.stopLoss, noMem.takeProfit,
           );
+          noMemOutcome = lc.state;
           recordOutcome(noMemAcc, lc.state, noMem.rr ?? 1.5);
         } catch { /* skip */ }
       }
@@ -300,6 +290,34 @@ export async function runReplay(
           );
           recordOutcome(withMemAcc, lc.state, withMem.rr ?? 1.5);
         } catch { /* skip */ }
+      }
+
+      // Collect decision diffs — compare ACTUAL decisions (LONG/SHORT/WAIT), not just class labels.
+      // Diverges when: class changed, or both approve but chose opposite directions.
+      const directionFlipped =
+        noMemCls === "approve" && memCls === "approve" && noMem.decision !== withMem.decision;
+      if (noMemCls !== memCls || directionFlipped) {
+        let direction: ReplayDecisionDiff["direction"];
+        if (directionFlipped)                                         direction = "direction_flipped";
+        else if (noMemCls !== "approve" && memCls === "approve")      direction = "memory_added";
+        else if (noMemCls === "approve" && memCls !== "approve")      direction = "memory_removed";
+        else direction = withMem.confidence > noMem.confidence ? "conf_boost" : "conf_drop";
+
+        const isPositive = direction === "memory_added" || direction === "conf_boost" || direction === "direction_flipped";
+        decisionDiffs.push({
+          candleTime,
+          direction,
+          noMemVerdict:   noMem.decision,   // actual LONG | SHORT | WAIT
+          withMemVerdict: withMem.decision, // actual LONG | SHORT | WAIT
+          noMemConf:      noMem.confidence,
+          withMemConf:    withMem.confidence,
+          keyLesson:      isPositive ? (withMem.lessons[0] ?? null) : null,
+        });
+      }
+
+      // Outcome-aware losses avoided: noMem would have lost an SL-hit, and memory prevented that trade
+      if (noMemOutcome === "sl_hit" && memCls !== "approve") {
+        noMemLossesAvoided++;
       }
 
     } catch (err) {
@@ -371,7 +389,7 @@ export async function runReplay(
   const addedByMem   = decisionDiffs.filter(d => d.direction === "memory_added").length;
   const changedByMem = decisionDiffs.filter(d => d.direction === "conf_boost" || d.direction === "conf_drop").length;
 
-  const learningScore = computeLearningScore(noMemStats, withMemStats, removedByMem);
+  const learningScore = computeLearningScore(noMemStats, withMemStats, noMemLossesAvoided);
 
   return {
     symbol, timeframe,
