@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { patchWsDebug, getWsDebug } from "@/lib/wsDebugStore";
 
 // ── Server message types ───────────────────────────────────────────────────────
 //
@@ -86,6 +87,8 @@ interface UseMarketSocketResult {
   newSignals: SignalNew[];
   slUpdates: SlUpdate[];
   signalExits: SignalExit[];
+  // Debug counter — total messages received since mount
+  msgCount: number;
 }
 
 export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
@@ -97,9 +100,11 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
   const [newSignals,   setNewSignals]   = useState<SignalNew[]>([]);
   const [slUpdates,    setSlUpdates]    = useState<SlUpdate[]>([]);
   const [signalExits,  setSignalExits]  = useState<SignalExit[]>([]);
+  const [msgCount,     setMsgCount]     = useState(0);
 
   const wsRef          = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const msgCountRef    = useRef(0);
 
   const connect = useCallback(() => {
     if (!symbol) return;
@@ -110,14 +115,13 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
     const base     = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
     const url      = `${protocol}//${host}${base}/ws?symbol=${encodeURIComponent(symbol)}`;
 
+    console.log(`[WS] Connecting to ${url}`);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // Mirror of the server-side socket-identity guard: a late open from a
-      // socket we already replaced must not mark us connected or cancel the
-      // current pending reconnect.
       if (ws !== wsRef.current) return;
+      console.log(`[WS] Connected — symbol=${symbol}`);
       setConnected(true);
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
@@ -129,6 +133,33 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
       if (ws !== wsRef.current) return;
       try {
         const msg = JSON.parse(ev.data) as MarketEvent;
+
+        // Track every message in the debug store
+        msgCountRef.current += 1;
+        const count = msgCountRef.current;
+        setMsgCount(count);
+
+        const prev = getWsDebug();
+        patchWsDebug({
+          frontendMsgCount: count,
+          lastMsgTime:      Date.now(),
+          lastSymbol:       "symbol" in msg ? (msg as { symbol?: string }).symbol ?? prev.lastSymbol : prev.lastSymbol,
+          lastPrice:        msg.type === "price.update"
+            ? (msg as PriceUpdate).price
+            : msg.type === "market.status"
+            ? (msg as MarketStatus).price || prev.lastPrice
+            : prev.lastPrice,
+        });
+
+        // Verbose console log for every message (throttle price.update to every 10th)
+        if (msg.type === "price.update") {
+          if (count % 10 === 1) {
+            console.log(`[WS] #${count} price.update sym=${(msg as PriceUpdate).symbol} price=${(msg as PriceUpdate).price}`);
+          }
+        } else {
+          console.log(`[WS] #${count} ${msg.type}`, msg);
+        }
+
         switch (msg.type) {
           case "price.update": {
             const p = msg as PriceUpdate;
@@ -142,12 +173,13 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
           case "market.status": {
             const s = msg as MarketStatus;
             setIsMarketOpen(s.isOpen);
-            // Only update displayed price if the server has a real value
+            console.log(`[WS] market.status isOpen=${s.isOpen} price=${s.price}`);
             if (s.price > 0) setMarketPrice(s.price);
             break;
           }
           case "market.capability": {
             const c = msg as MarketCapability;
+            console.log(`[WS] market.capability realtimeAvailable=${c.realtimeAvailable} reason=${c.reason}`);
             setRealtimeAvailable(c.realtimeAvailable);
             break;
           }
@@ -164,18 +196,16 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
       } catch { /* ignore */ }
     };
 
-    ws.onclose = () => {
-      // Ignore close events from a socket that has already been replaced —
-      // otherwise a late close from the previous symbol's socket would flip
-      // `connected` off and schedule a duplicate reconnect on top of the
-      // current healthy one.
+    ws.onclose = (ev) => {
       if (ws !== wsRef.current) return;
+      console.log(`[WS] Closed code=${ev.code} — reconnecting in 3 s`);
       setConnected(false);
       reconnectTimer.current = setTimeout(() => connect(), 3000);
     };
 
-    ws.onerror = () => {
+    ws.onerror = (ev) => {
       if (ws !== wsRef.current) return;
+      console.error("[WS] Error", ev);
       ws.close();
     };
   }, [symbol]);
@@ -188,12 +218,12 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
     };
   }, [connect]);
 
-  // Clear accumulated signal arrays when the symbol changes so stale events
-  // from the previous symbol never bleed into the new one's chart/panel.
   useEffect(() => {
     setNewSignals([]);
     setSlUpdates([]);
     setSignalExits([]);
+    msgCountRef.current = 0;
+    setMsgCount(0);
   }, [symbol]);
 
   return {
@@ -205,5 +235,6 @@ export function useMarketSocket(symbol: string | null): UseMarketSocketResult {
     newSignals,
     slUpdates,
     signalExits,
+    msgCount,
   };
 }

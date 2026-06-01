@@ -10,8 +10,15 @@ const clients: Set<WsClient> = new Set();
 
 function broadcast(symbol: string, message: object) {
   const data = JSON.stringify(message);
+  let sent = 0;
   for (const c of clients) {
-    if (c.symbol === symbol && c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
+    if (c.symbol === symbol && c.ws.readyState === WebSocket.OPEN) {
+      c.ws.send(data);
+      sent++;
+    }
+  }
+  if (sent > 0) {
+    _stats.forwarded += sent;
   }
 }
 
@@ -19,6 +26,76 @@ function getActiveSymbols(): Set<string> {
   const s = new Set<string>();
   for (const c of clients) s.add(c.symbol);
   return s;
+}
+
+// ── Live stats ────────────────────────────────────────────────────────────────
+
+interface RecentMsg {
+  ev:    string;
+  sym?:  string;
+  p?:    number;
+  t?:    number;
+  ts:    number; // Date.now() when received
+}
+
+interface WsStatsData {
+  // Polygon connection
+  connected:         boolean;
+  authenticated:     boolean;
+  url:               string | null;
+  subscribedSymbols: string[];
+  // Per-type message counters (from Polygon)
+  tMsgReceived:      number;
+  amMsgReceived:     number;
+  aMsgReceived:      number;
+  statusMsgReceived: number;
+  otherMsgReceived:  number;
+  // Relay
+  forwarded:         number;
+  clientCount:       number;
+  // Last message from Polygon
+  lastSymbol:        string | null;
+  lastPrice:         number | null;
+  lastMsgTime:       number | null;
+  // Last 20 messages (circular buffer)
+  recentMsgs:        RecentMsg[];
+}
+
+const _stats: WsStatsData = {
+  connected: false,
+  authenticated: false,
+  url: null,
+  subscribedSymbols: [],
+  tMsgReceived: 0,
+  amMsgReceived: 0,
+  aMsgReceived: 0,
+  statusMsgReceived: 0,
+  otherMsgReceived: 0,
+  forwarded: 0,
+  clientCount: 0,
+  lastSymbol: null,
+  lastPrice: null,
+  lastMsgTime: null,
+  recentMsgs: [],
+};
+
+function pushRecentMsg(msg: RecentMsg) {
+  _stats.recentMsgs.push(msg);
+  if (_stats.recentMsgs.length > 20) _stats.recentMsgs.shift();
+}
+
+export function getWsStats(): WsStatsData {
+  return {
+    ..._stats,
+    subscribedSymbols: [...polygonSubscribed],
+    connected:    polygonSocket !== null &&
+                  (polygonSocket.readyState === WebSocket.OPEN ||
+                   polygonSocket.readyState === WebSocket.CONNECTING),
+    authenticated: polygonAuthed,
+    url:           polygonUrl,
+    clientCount:   clients.size,
+    recentMsgs:    [..._stats.recentMsgs],
+  };
 }
 
 // ── Polygon WebSocket streaming ───────────────────────────────────────────────
@@ -53,11 +130,10 @@ const polygonSubscribed = new Set<string>();
 const lastBroadcastMs   = new Map<string, number>(); // per-symbol throttle clock
 const lastKnownPrices   = new Map<string, number>(); // for market-status heartbeats
 
+// Per-symbol log throttle: avoid spamming "first T message" more than once per 60 s
+const firstTLoggedAt = new Map<string, number>();
+
 function polygonConnect() {
-  // Polygon's free tier rejects WS auth on *both* realtime and delayed feeds.
-  // Once we've confirmed both refuse our key, stop reconnecting forever — the
-  // reconnect loop otherwise hammers Polygon and burns the 5-req/min REST budget
-  // (which the history endpoint shares). Live updates simply require a paid plan.
   if (wsPermanentlyDisabled) return;
 
   if (
@@ -86,6 +162,9 @@ function polygonConnect() {
       for (const msg of msgs) {
 
         if (msg.ev === "status") {
+          _stats.statusMsgReceived++;
+          pushRecentMsg({ ev: "status", sym: String(msg.status ?? ""), ts: Date.now() });
+
           if (msg.status === "auth_success") {
             polygonAuthed = true;
             logger.info({ url: polygonUrl }, "Polygon WS authenticated");
@@ -93,17 +172,15 @@ function polygonConnect() {
           } else if (msg.status === "auth_failed") {
             logger.warn({ url: polygonUrl, msg: msg.message }, "Polygon WS auth failed");
             if (polygonUrl === REALTIME_WS_URL) {
-              // Plan doesn't include real-time — try delayed next.
               realtimeAuthFailed = true;
             } else {
-              // Delayed also rejected. Free tier has no WS access at all.
-              // Disable WS reconnects permanently to stop the spam loop, and
-              // tell every connected client so the UI can surface it.
               wsPermanentlyDisabled = true;
               logger.warn("Polygon WS unavailable on this plan — live updates disabled. Historical bars still work via REST.");
               broadcastCapability();
             }
             ws.close();
+          } else {
+            logger.info({ status: msg.status, message: msg.message }, "Polygon WS status");
           }
 
         } else if (msg.ev === "T" && typeof msg.sym === "string") {
@@ -113,6 +190,25 @@ function polygonConnect() {
           const ts    = typeof msg.t === "number"
             ? Math.floor((msg.t as number) / 1000)
             : Math.floor(Date.now() / 1000);
+
+          _stats.tMsgReceived++;
+          _stats.lastMsgTime  = Date.now();
+          _stats.lastSymbol   = sym;
+          _stats.lastPrice    = price;
+          pushRecentMsg({ ev: "T", sym, p: price, t: ts, ts: Date.now() });
+
+          // Log the very first trade message per symbol (once per 60 s)
+          const lastLog = firstTLoggedAt.get(sym) ?? 0;
+          if (Date.now() - lastLog > 60_000) {
+            firstTLoggedAt.set(sym, Date.now());
+            logger.info({
+              sym,
+              price,
+              ts,
+              tTotal: _stats.tMsgReceived,
+              clients: clients.size,
+            }, "Polygon T (trade) received");
+          }
 
           if (price <= 0) continue;
 
@@ -126,20 +222,41 @@ function polygonConnect() {
 
         } else if (msg.ev === "AM" && typeof msg.sym === "string") {
           // 1-minute aggregate completed.
-          // Broadcast the bar's close price — this is the definitive end-of-minute
-          // price and is more accurate than any throttled trade tick.
           const sym   = msg.sym as string;
           const price = typeof msg.c === "number" ? msg.c : 0;
-          // `s` = bar start ms, `e` = bar end ms. Use end as the timestamp.
           const ts    = typeof msg.e === "number"
             ? Math.floor((msg.e as number) / 1000)
             : Math.floor(Date.now() / 1000);
 
+          _stats.amMsgReceived++;
+          _stats.lastMsgTime = Date.now();
+          _stats.lastSymbol  = sym;
+          _stats.lastPrice   = price;
+          pushRecentMsg({ ev: "AM", sym, p: price, t: ts, ts: Date.now() });
+
+          logger.info({
+            sym,
+            close: price,
+            ts,
+            amTotal: _stats.amMsgReceived,
+            clients: clients.size,
+          }, "Polygon AM (minute agg) received");
+
           if (price <= 0) continue;
 
-          lastBroadcastMs.set(sym, Date.now()); // reset throttle (bar close supersedes trades)
+          lastBroadcastMs.set(sym, Date.now());
           lastKnownPrices.set(sym, price);
           broadcast(sym, { type: "price.update", symbol: sym, price, timestamp: ts });
+
+        } else if (msg.ev === "A" && typeof msg.sym === "string") {
+          // Second aggregate — count it but don't relay (we use T and AM only)
+          _stats.aMsgReceived++;
+          _stats.lastMsgTime = Date.now();
+          pushRecentMsg({ ev: "A", sym: msg.sym as string, ts: Date.now() });
+
+        } else {
+          _stats.otherMsgReceived++;
+          pushRecentMsg({ ev: String(msg.ev ?? "?"), ts: Date.now() });
         }
         // All other message types (subscription acks, errors) are silently ignored
       }
@@ -147,9 +264,6 @@ function polygonConnect() {
   });
 
   ws.on("close", (code, reason) => {
-    // Only the currently-active socket may mutate shared state. A late close
-    // from a superseded socket would otherwise clobber a healthy connection
-    // and trigger a duplicate reconnect.
     if (ws !== polygonSocket) {
       logger.info({ code }, "Stale Polygon WS close ignored");
       return;
@@ -166,7 +280,6 @@ function polygonConnect() {
   });
 
   ws.on("error", (err) => {
-    // Same identity guard as close — ignore errors from a superseded socket.
     if (ws !== polygonSocket) return;
     logger.warn({ err: err.message }, "Polygon WS error");
     ws.close();
@@ -177,19 +290,20 @@ function polygonSubscribeNew(symbols: string[]) {
   if (!polygonSocket || !polygonAuthed) return;
   const fresh = symbols.filter((s) => !polygonSubscribed.has(s));
   if (fresh.length === 0) return;
-  // Subscribe to both trades (real-time price) and minute aggregates (end-of-minute accuracy).
-  // Polygon supports comma-separated multi-symbol subscriptions per channel.
-  const tradesParam = fresh.map((s) => `T.${s}`).join(",");
-  const aggsParam   = fresh.map((s) => `AM.${s}`).join(",");
-  polygonSocket.send(JSON.stringify({ action: "subscribe", params: `${tradesParam},${aggsParam}` }));
+
+  const channels = fresh.flatMap((s) => [`T.${s}`, `AM.${s}`]);
+  const params   = channels.join(",");
+  polygonSocket.send(JSON.stringify({ action: "subscribe", params }));
   fresh.forEach((s) => polygonSubscribed.add(s));
-  logger.info({ symbols: fresh }, "Polygon trades + minute aggs subscribed");
+
+  // Log each channel on its own line so it's easy to verify in the server logs
+  logger.info({ channels, params }, "Polygon subscribe sent");
+  for (const ch of channels) {
+    logger.info({ channel: ch }, "  → subscribed");
+  }
 }
 
 // ── Capability broadcast ──────────────────────────────────────────────────────
-// Tells every connected client whether real-time data is available. Sent once
-// per client on connect, and again to all clients when WS is permanently
-// disabled (so the UI can switch to a "historical only" display).
 
 function buildCapabilityMessage(symbol: string) {
   return {
@@ -207,9 +321,6 @@ function broadcastCapability() {
 }
 
 // ── Market status heartbeat ───────────────────────────────────────────────────
-// Broadcasts open/closed status to all active clients every 60 seconds.
-// Includes the last known price so the client can display it when the market
-// is closed and no price.updates are flowing.
 
 function broadcastMarketStatus() {
   const isOpen = isNyseOpen();
@@ -232,7 +343,6 @@ function startMarketStatusHeartbeat() {
 }
 
 // ── WS status export ──────────────────────────────────────────────────────────
-// Returns the current Polygon WebSocket connection state for diagnostics.
 export function getWsStatus(): {
   status:        "realtime" | "delayed" | "connecting" | "offline";
   url:           string | null;
@@ -253,10 +363,9 @@ export function setupWebSocket(server: Server) {
     const symbol = urlObj.searchParams.get("symbol")?.toUpperCase() ?? "NVDA";
     const client: WsClient = { ws, symbol };
     clients.add(client);
-    logger.info({ symbol }, "WebSocket client connected");
+    logger.info({ symbol, totalClients: clients.size }, "WebSocket client connected");
 
     // On-connect: one snapshot fetch to establish market status and seed the price.
-    // This is the ONLY HTTP snapshot call — it does NOT recur.
     fetchPolygonSnapshot(symbol).then((snap) => {
       if (!snap || ws.readyState !== WebSocket.OPEN) return;
       const isOpen = isNyseOpen();
@@ -264,7 +373,6 @@ export function setupWebSocket(server: Server) {
 
       if (price > 0) lastKnownPrices.set(symbol, price);
 
-      // Always send market status first so the client knows open/closed state
       ws.send(JSON.stringify({
         type:      "market.status",
         symbol,
@@ -273,8 +381,8 @@ export function setupWebSocket(server: Server) {
         lastClose: snap.prevClose || price,
       }));
 
-      // If market is open, also seed the live price so the chart can start
-      // building its first bar immediately (before the first Polygon trade arrives)
+      logger.info({ symbol, isOpen, price, isNyseOpen: isOpen }, "market.status sent to client on connect");
+
       if (isOpen && price > 0) {
         ws.send(JSON.stringify({
           type:      "price.update",
@@ -286,7 +394,6 @@ export function setupWebSocket(server: Server) {
     }).catch(() => {});
 
     ws.send(JSON.stringify({ type: "subscribed", symbol }));
-    // Tell the client up-front whether real-time updates will flow.
     ws.send(JSON.stringify(buildCapabilityMessage(symbol)));
 
     ws.on("message", (raw) => {
@@ -302,7 +409,7 @@ export function setupWebSocket(server: Server) {
 
     ws.on("close", () => {
       clients.delete(client);
-      logger.info({ symbol: client.symbol }, "WS disconnected");
+      logger.info({ symbol: client.symbol, remainingClients: clients.size }, "WS disconnected");
     });
     ws.on("error", () => { clients.delete(client); });
 
@@ -311,7 +418,6 @@ export function setupWebSocket(server: Server) {
     startMarketStatusHeartbeat();
   });
 
-  // Pre-warm connection so it is ready before the first client arrives
   polygonConnect();
   logger.info("WebSocket server attached at /ws");
   return wss;

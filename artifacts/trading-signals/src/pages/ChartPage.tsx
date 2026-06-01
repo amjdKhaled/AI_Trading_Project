@@ -12,6 +12,7 @@ import { computeOpportunityScore, type OpportunityScore, type CachedMemoryContex
 import { useListSymbols } from "@workspace/api-client-react";
 import type { SnapshotDecision } from "@workspace/api-client-react";
 import { SnapshotDiagnosticsPanel } from "@/components/SnapshotDiagnosticsPanel";
+import { WsDebugPanel } from "@/components/WsDebugPanel";
 
 // ── Timeframe constants ───────────────────────────────────────────────────────
 
@@ -538,6 +539,7 @@ export default function ChartPage() {
   const isMarketOpen       = isStocks ? stockSocket.isMarketOpen      : true;
   const realtimeAvailable  = isStocks ? stockSocket.realtimeAvailable : binanceSocket.realtimeAvailable;
   const wsSignals          = isStocks ? stockSocket.newSignals        : [];
+  const wsMsgCount         = isStocks ? stockSocket.msgCount          : 0;
   const cryptoLiveBar      = isCrypto ? binanceSocket.liveBar         : null;
 
   // Effective display values
@@ -1249,6 +1251,15 @@ export default function ChartPage() {
               {isStocks ? "Select a symbol from the watchlist" : "Select a crypto pair"}
             </p>
           </div>
+        )}
+
+        {/* ── WS Pipeline Debug Panel (overlay, toggle with D) ── */}
+        {isStocks && (
+          <WsDebugPanel
+            isMarketOpen={isMarketOpen}
+            realtimeAvailable={realtimeAvailable}
+            msgCount={wsMsgCount}
+          />
         )}
 
         {/* ── Snapshot Diagnostics Panel (overlay) ── */}

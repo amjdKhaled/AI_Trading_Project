@@ -8,6 +8,7 @@ import aiRouter from "./ai";
 import cryptoRouter from "./crypto";
 import newsRouter from "./news";
 import diagnosticsRouter from "./diagnostics";
+import wsStatsRouter from "./ws-stats";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(aiRouter);
 router.use(cryptoRouter);
 router.use(newsRouter);
 router.use(diagnosticsRouter);
+router.use(wsStatsRouter);
 
 export default router;
